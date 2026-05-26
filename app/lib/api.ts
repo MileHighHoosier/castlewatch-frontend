@@ -7,7 +7,10 @@ export type ApiResult<T = unknown> = {
 };
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+  (process.env.NEXT_PUBLIC_API_BASE_URL || "")
+    .replace(/^Value:\s*/i, "")
+    .trim()
+    .replace(/\/$/, "");
 
 async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${path}`;

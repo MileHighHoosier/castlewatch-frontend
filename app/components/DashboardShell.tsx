@@ -18,16 +18,6 @@ export default function DashboardShell() {
 
   return (
     <main className="page">
-      <section className="hero">
-        <div className="eyebrow">CastleWatch Phase One</div>
-        <h1>Disney demand dashboard foundation</h1>
-        <p>
-          A mobile-first frontend for checking backend health, testing ride data,
-          planning free Disney transportation, and preparing for future park heat maps
-          and demand forecasting.
-        </p>
-      </section>
-
       <nav className="top-park-banner" aria-label="Choose a Walt Disney World park">
         {PARKS.map((park) => (
           <button

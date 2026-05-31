@@ -48,8 +48,6 @@ export default function DashboardShell() {
       </nav>
 
       <section className="grid">
-        <BackendStatus />
-
         {activeSection === "transportation" ? (
           <TransportationPlanner />
         ) : (
@@ -80,6 +78,8 @@ export default function DashboardShell() {
             <HeatMapPreview selectedPark={selectedPark} onSelectPark={setSelectedPark} />
           </>
         )}
+
+        <BackendStatus />
       </section>
 
       <p className="footer">

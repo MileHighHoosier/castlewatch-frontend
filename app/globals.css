@@ -214,6 +214,74 @@ h1 {
   font-size: 11px;
 }
 
+.transport-picker-grid {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.transport-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.transport-picker span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transport-picker select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--card2);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.transport-summary {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+@media (min-width: 520px) {
+  .transport-summary,
+  .transport-picker-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.transport-summary > div,
+.transport-result {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.transport-result {
+  display: grid;
+  gap: 10px;
+}
+
+.transport-result h3 {
+  margin: 0;
+}
+
+.transport-result ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text);
+}
+
+.transport-result li {
+  margin: 8px 0;
+}
+
 .ride-list {
   display: grid;
   gap: 10px;

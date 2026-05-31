@@ -13,6 +13,10 @@ type Ride = {
   is_open?: boolean;
   land?: string;
   park?: string;
+  status?: string;
+  status_text?: string;
+  operating_status?: string;
+  availability?: string;
 };
 
 type DisplayRide = Ride & {
@@ -133,6 +137,13 @@ function isSingleRiderEntry(ride: Partial<Ride & DisplayRide>) {
   return combined.includes("single rider") || combined.includes("single-rider") || combined.includes("single rider lane");
 }
 
+function isRideAvailableForPlan(ride: DisplayRide) {
+  if (ride.is_open === false) return false;
+  const status = `${ride.status || ""} ${ride.status_text || ""} ${ride.operating_status || ""} ${ride.availability || ""}`.toLowerCase();
+  const downWords = ["down", "closed", "refurb", "temporarily unavailable", "unavailable", "not operating", "delayed"];
+  return !downWords.some((word) => status.includes(word));
+}
+
 function uniqueRides(rides: DisplayRide[]) {
   const seen = new Set<string>();
   return rides.filter((ride) => {
@@ -195,6 +206,7 @@ export default function SexyCastleWatch() {
 
   const parkRides = useMemo(() => rides.filter((ride) => ride.displayPark === selectedPark).sort((a, b) => b.displayWait - a.displayWait), [rides, selectedPark]);
   const openRides = parkRides.filter((ride) => ride.is_open !== false);
+  const planCandidateRides = openRides.filter(isRideAvailableForPlan);
   const peakWait = openRides.length ? Math.max(...openRides.map((ride) => ride.displayWait)) : 0;
 
   const zones = useMemo(() => {
@@ -217,13 +229,13 @@ export default function SexyCastleWatch() {
   const route = routeAdvice(from, to);
   const morningRoute = routeAdvice(morningResort, morningPark);
 
-  const aggressivePlan = uniqueRides([...openRides].sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
-  const lowStressPlan = uniqueRides(openRides.filter((ride) => ride.displayLand !== hottestZone?.land && ride.displayWait <= 45).sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
-  const coolDownPlan = uniqueRides(openRides.filter(isCoolDownRide).sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
+  const aggressivePlan = uniqueRides([...planCandidateRides].sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
+  const lowStressPlan = uniqueRides(planCandidateRides.filter((ride) => ride.displayLand !== hottestZone?.land && ride.displayWait <= 45).sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
+  const coolDownPlan = uniqueRides(planCandidateRides.filter(isCoolDownRide).sort((a, b) => a.displayWait - b.displayWait)).slice(0, 3);
   const planRides = mode === "aggressive" ? aggressivePlan : mode === "coolDown" ? (coolDownPlan.length ? coolDownPlan : lowStressPlan.length ? lowStressPlan : aggressivePlan) : (lowStressPlan.length ? lowStressPlan : aggressivePlan);
   const planRide = planRides[0];
-  const avoidRide = [...openRides].sort((a, b) => b.displayWait - a.displayWait)[0];
-  const watchRide = openRides.filter((ride) => ride.displayWait >= 20 && ride.displayWait <= 55).sort((a, b) => a.displayWait - b.displayWait)[0] || openRides[1];
+  const avoidRide = [...planCandidateRides].sort((a, b) => b.displayWait - a.displayWait)[0];
+  const watchRide = planCandidateRides.filter((ride) => ride.displayWait >= 20 && ride.displayWait <= 55).sort((a, b) => a.displayWait - b.displayWait)[0] || planCandidateRides[1];
   const modeCopy = mode === "aggressive"
     ? "Shortest useful waits first. Best when you want the most rides with the least hesitation."
     : mode === "coolDown"
@@ -261,8 +273,8 @@ export default function SexyCastleWatch() {
             {activeTab === "heat" && <section className="sexy-heat"><div className="sexy-map-card">{zones.slice(0, 5).map((zone, index) => <button key={zone.land} className={`${pressureClass(zone.pressure)} map-zone map-zone-${index} ${selectedZone?.land === zone.land ? "selected" : ""}`} onClick={() => setSelectedHeatLand(zone.land)} type="button" aria-pressed={selectedZone?.land === zone.land}><h3>{zone.land}</h3><strong>{zone.pressure}</strong><span>Avg {zone.avg} min</span><span>Peak {zone.peak} min</span><small>{zone.pressure}</small></button>)}</div>{selectedZone && <article className="sexy-detail-card hot-detail"><div className="sexy-thumb thumb-0" /><div><span>{selectedZone.land === hottestZone?.land ? "Hottest Area" : "Selected Area"}</span><h3>{selectedZone.land}</h3><p>{selectedZone.rides.length} rides · Avg {selectedZone.avg} min · Peak {selectedZone.peak} min · {selectedZone.pressure}</p></div>{selectedZone.rides.map((ride) => <div className="sexy-mini-row" key={ride.displayName}><strong>{ride.displayName}</strong><span>{ride.displayWait} min</span></div>)}</article>}</section>}
             {activeTab === "plan" && <section className="sexy-plan">
               <article className="sexy-next-move"><span>✦ Plan Mode</span><div className="sexy-mode-row"><button className={mode === "aggressive" ? "active" : ""} onClick={() => setMode("aggressive")} type="button">↗ Max Rides</button><button className={mode === "lowStress" ? "active" : ""} onClick={() => setMode("lowStress")} type="button">◆ Low-Stress</button><button className={mode === "coolDown" ? "active" : ""} onClick={() => setMode("coolDown")} type="button">✦ Cool Down</button></div><p>{modeCopy}</p></article>
-              <article className="sexy-next-move"><span>✦ Next Best Move</span><div className="sexy-plan-main"><div className="sexy-thumb thumb-1" /><div><h3>{planRide?.displayName || bestInsight?.name || "Refresh park data"}</h3><p>{planRide?.displayLand || bestInsight?.land || selectedPark}</p></div><strong>{planRide?.displayWait ?? bestInsight?.current_wait ?? 0}<small>min</small></strong></div><p>{planRide ? `Chosen for ${mode === "aggressive" ? "short wait efficiency" : mode === "coolDown" ? "recovery-friendly pacing" : "lower stress and lower area pressure"}.` : "Refresh data to build a live recommendation."}</p></article>
-              <article className="sexy-transport-card"><span>30-Minute Suggested Order</span>{planRides.length ? planRides.map((ride, index) => <div className="sexy-step" key={`${ride.displayName}-plan`}><b>{index + 1}</b><p>{ride.displayName} · {ride.displayLand} · {ride.displayWait} min</p></div>) : <div className="sexy-step"><b>1</b><p>Refresh CastleWatch to build a plan.</p></div>}</article>
+              <article className="sexy-next-move"><span>✦ Next Best Move</span><div className="sexy-plan-main"><div className="sexy-thumb thumb-1" /><div><h3>{planRide?.displayName || bestInsight?.name || "Refresh park data"}</h3><p>{planRide?.displayLand || bestInsight?.land || selectedPark}</p></div><strong>{planRide?.displayWait ?? bestInsight?.current_wait ?? 0}<small>min</small></strong></div><p>{planRide ? `Chosen for ${mode === "aggressive" ? "short wait efficiency" : mode === "coolDown" ? "recovery-friendly pacing" : "lower stress and lower area pressure"}. Down rides are excluded.` : "Refresh data to build a live recommendation."}</p></article>
+              <article className="sexy-transport-card"><span>30-Minute Suggested Order</span>{planRides.length ? planRides.map((ride, index) => <div className="sexy-step" key={`${ride.displayName}-plan`}><b>{index + 1}</b><p>{ride.displayName} · {ride.displayLand} · {ride.displayWait} min</p></div>) : <div className="sexy-step"><b>1</b><p>No currently operating rides fit this plan mode. Try another mode or refresh CastleWatch.</p></div>}</article>
               <article className="sexy-transport-card"><span>Target / Watch / Avoid</span>{planRide && <div className="sexy-mini-row"><strong>Target: {planRide.displayName}</strong><span>{planRide.displayWait} min</span></div>}{watchRide && <div className="sexy-mini-row"><strong>Watch: {watchRide.displayName}</strong><span>{watchRide.displayWait} min</span></div>}{avoidRide && <div className="sexy-mini-row"><strong>Avoid now: {avoidRide.displayName}</strong><span>{avoidRide.displayWait} min</span></div>}</article>
               <article className="sexy-transport-card"><span><Icon name="transport" /> Morning Resort → Park</span><div className="sexy-picker-grid"><label><small>Resort</small><select value={morningResort} onChange={(event) => setMorningResort(event.target.value)}>{RESORTS.map((resort) => <option key={resort} value={resort}>{resort}</option>)}</select></label><label><small>Park</small><select value={morningPark} onChange={(event) => setMorningPark(event.target.value)}>{PARK_NAMES.map((park) => <option key={park} value={park}>{park}</option>)}</select></label></div><div className="sexy-route"><strong>{morningResort}</strong><b>→</b><strong>{morningPark}</strong></div><div className="sexy-plan-main"><div className="sexy-thumb thumb-2" /><div><h3>{morningRoute.method}</h3><p>Morning arrival plan for rope drop or early entry.</p></div><strong>{morningRoute.time}</strong></div>{morningRoute.steps.map((step, index) => <div className="sexy-step" key={`${step}-${index}`}><b>{index + 1}</b><p>{step}</p></div>)}</article>
             </section>}

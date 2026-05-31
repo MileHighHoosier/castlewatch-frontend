@@ -15,6 +15,11 @@ type Ride = {
   created_at?: string;
 };
 
+type HeatMapPreviewProps = {
+  selectedPark: string;
+  onSelectPark: (park: string) => void;
+};
+
 type HeatZone = {
   park: string;
   land: string;
@@ -32,13 +37,6 @@ const PARK_ORDER = [
   "Hollywood Studios",
   "Animal Kingdom",
 ];
-
-const PARK_ICONS: Record<string, string> = {
-  "Magic Kingdom": "🏰",
-  Epcot: "🌐",
-  "Hollywood Studios": "🎬",
-  "Animal Kingdom": "🌳",
-};
 
 function normalizeParkName(value?: string) {
   if (!value) return "Unknown Park";
@@ -76,10 +74,9 @@ function pressureClass(pressure: HeatZone["pressure"]) {
   return "zone-low";
 }
 
-export default function HeatMapPreview() {
+export default function HeatMapPreview({ selectedPark, onSelectPark }: HeatMapPreviewProps) {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
   const [lastRefreshed, setLastRefreshed] = useState("");
 
   async function loadHeatMap() {
@@ -125,6 +122,13 @@ export default function HeatMapPreview() {
     ? selectedPark
     : availableParks[0] || selectedPark;
 
+  useEffect(() => {
+    if (!availableParks.length) return;
+    if (!availableParks.includes(selectedPark)) {
+      onSelectPark(availableParks[0]);
+    }
+  }, [availableParks, onSelectPark, selectedPark]);
+
   const zones = useMemo(() => {
     const parkRides = rides.filter((ride) => ride.park === activePark);
     const groups = new Map<string, Ride[]>();
@@ -165,7 +169,7 @@ export default function HeatMapPreview() {
     <div className="card">
       <h2>Live Park Heat Map</h2>
       <p className="muted">
-        Live demand zones are calculated from current ride waits grouped by park area. Higher waits make an area hotter.
+        Use the park banner at the top of the page to switch parks. Live demand zones are calculated from current ride waits grouped by park area.
       </p>
 
       <div className="status-row">
@@ -179,28 +183,12 @@ export default function HeatMapPreview() {
         </strong>
       </div>
 
-      {availableParks.length > 0 && (
-        <div className="park-tabs compact" role="tablist" aria-label="Choose heat map park">
-          {availableParks.map((park) => (
-            <button
-              className={`park-tab ${park === activePark ? "park-tab-active" : ""}`}
-              key={park}
-              onClick={() => setSelectedPark(park)}
-              role="tab"
-              aria-selected={park === activePark}
-              type="button"
-            >
-              <span className="park-tab-icon" aria-hidden="true">
-                {PARK_ICONS[park] || "✨"}
-              </span>
-              <span className="park-tab-label">{park}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
       {hottestZone && (
         <div className="heat-summary">
+          <div>
+            <span className="stat-label">Selected park</span>
+            <strong>{activePark}</strong>
+          </div>
           <div>
             <span className="stat-label">Hottest area</span>
             <strong>{hottestZone.land}</strong>

@@ -39,11 +39,43 @@ type HeatZone = {
   pressure: "Low" | "Moderate" | "High" | "Very High";
 };
 
+type PlanMode = "aggressive" | "lowStress" | "coolDown";
+
+type PlanRecommendation = {
+  title: string;
+  subtitle: string;
+  reason: string;
+  steps: string[];
+  avoid?: string;
+};
+
 const PARK_ORDER = [
   "Magic Kingdom",
   "Epcot",
   "Hollywood Studios",
   "Animal Kingdom",
+];
+
+const COOL_DOWN_KEYWORDS = [
+  "philharmagic",
+  "small world",
+  "carousel of progress",
+  "laugh floor",
+  "living with the land",
+  "spaceship earth",
+  "american adventure",
+  "frozen",
+  "soarin",
+  "muppet",
+  "runaway railway",
+  "star tours",
+  "navi",
+  "avatar",
+  "dinosaur",
+  "nemo",
+  "mermaid",
+  "pirates",
+  "haunted mansion",
 ];
 
 function normalizeParkName(value?: string) {
@@ -94,12 +126,97 @@ function waitLevel(wait: number) {
   return "ride-unknown";
 }
 
+function isCoolDownRide(ride: DisplayRide) {
+  const name = ride.displayName.toLowerCase();
+  const land = ride.displayLand.toLowerCase();
+
+  return COOL_DOWN_KEYWORDS.some((keyword) => name.includes(keyword) || land.includes(keyword));
+}
+
+function pickPlanRecommendation(
+  mode: PlanMode,
+  parkRides: DisplayRide[],
+  hottestZone?: HeatZone,
+): PlanRecommendation {
+  const openRides = parkRides
+    .filter((ride) => ride.is_open !== false)
+    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
+
+  const allCandidates = openRides.length > 0 ? openRides : parkRides;
+
+  if (allCandidates.length === 0) {
+    return {
+      title: "Refresh park data",
+      subtitle: "No plan yet",
+      reason: "CastleWatch needs current ride data before it can make a recommendation.",
+      steps: [
+        "Tap Refresh.",
+        "Check the Rides tab for available attractions.",
+        "Use the Heat tab to avoid crowded areas.",
+      ],
+    };
+  }
+
+  const hottestLand = hottestZone?.land;
+  const lowStressCandidates = allCandidates
+    .filter((ride) => !hottestLand || ride.displayLand !== hottestLand)
+    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
+  const coolDownCandidates = allCandidates
+    .filter(isCoolDownRide)
+    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
+
+  const aggressivePick = allCandidates[0];
+  const lowStressPick = lowStressCandidates[0] || aggressivePick;
+  const coolDownPick = coolDownCandidates[0] || lowStressPick || aggressivePick;
+
+  if (mode === "aggressive") {
+    return {
+      title: aggressivePick.displayName,
+      subtitle: "Next best move · Max rides",
+      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. This mode prioritizes getting on something efficiently now.`,
+      steps: [
+        `Go to ${aggressivePick.displayName}.`,
+        "After riding, refresh CastleWatch before choosing the next attraction.",
+        hottestZone ? `Avoid lingering in ${hottestZone.land} if it remains the hottest area.` : "Use the Heat tab before crossing the park.",
+      ],
+      avoid: hottestZone ? hottestZone.land : undefined,
+    };
+  }
+
+  if (mode === "coolDown") {
+    return {
+      title: coolDownPick.displayName,
+      subtitle: "Next best move · Cool down",
+      reason: `${coolDownPick.displayName} is a better cooling/reset choice than simply chasing the lowest wait.`,
+      steps: [
+        `Head to ${coolDownPick.displayName}.`,
+        "Use this stop as an A/C, shade, or seated reset if available.",
+        "Afterward, switch back to Low-stress or Max rides depending on energy.",
+      ],
+      avoid: hottestZone ? hottestZone.land : undefined,
+    };
+  }
+
+  return {
+    title: lowStressPick.displayName,
+    subtitle: "Next best move · Low-stress",
+    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. This mode balances waits, crowds, and walking stress.`,
+    steps: [
+      `Go to ${lowStressPick.displayName}.`,
+      "Keep the group moving without crossing into the hottest area unless necessary.",
+      "Plan a snack, bathroom, or shade break after this ride.",
+    ],
+    avoid: hottestZone ? hottestZone.land : undefined,
+  };
+}
+
 export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCommandCenterProps) {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState("");
   const [activeTab, setActiveTab] = useState<"rides" | "heat" | "plan">("rides");
   const [selectedLand, setSelectedLand] = useState<string>("");
+  const [planMode, setPlanMode] = useState<PlanMode>("lowStress");
 
   async function loadData() {
     setLoading(true);
@@ -212,6 +329,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const hottestZone = zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
   const priorityRides = parkRides.slice(0, 8);
+  const planRecommendation = pickPlanRecommendation(planMode, parkRides, hottestZone);
 
   return (
     <div className="card command-center">
@@ -326,10 +444,46 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "plan" && (
         <div className="compact-panel">
-          <h3>Plan</h3>
-          <p className="muted">
-            This tab can become your quick action plan: next ride, food break, low-walk option, and return-later alerts.
-          </p>
+          <div className="plan-mode-tabs" role="tablist" aria-label="Choose planning style">
+            <button className={`plan-mode ${planMode === "aggressive" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("aggressive")} type="button">
+              <span>⚡</span>
+              <strong>Max rides</strong>
+            </button>
+            <button className={`plan-mode ${planMode === "lowStress" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("lowStress")} type="button">
+              <span>😌</span>
+              <strong>Low-stress</strong>
+            </button>
+            <button className={`plan-mode ${planMode === "coolDown" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("coolDown")} type="button">
+              <span>❄️</span>
+              <strong>Cool down</strong>
+            </button>
+          </div>
+
+          <div className="next-move-card">
+            <span className="stat-label">{planRecommendation.subtitle}</span>
+            <h3>{planRecommendation.title}</h3>
+            <p className="muted">{planRecommendation.reason}</p>
+
+            <div className="next-move-actions">
+              <button className="button" type="button">Start route</button>
+              <button className="button secondary-button" type="button" onClick={loadData}>Recalculate</button>
+            </div>
+          </div>
+
+          <div className="plan-steps">
+            {planRecommendation.steps.map((step, index) => (
+              <div className="plan-step" key={step}>
+                <span>{index + 1}</span>
+                <p>{step}</p>
+              </div>
+            ))}
+          </div>
+
+          {planRecommendation.avoid && (
+            <div className="plan-note">
+              <strong>Avoid for now:</strong> {planRecommendation.avoid}
+            </div>
+          )}
         </div>
       )}
 

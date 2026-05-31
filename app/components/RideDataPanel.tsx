@@ -142,10 +142,6 @@ export default function RideDataPanel({ selectedPark, onSelectPark }: RideDataPa
     }
   }, [availableParks, onSelectPark, selectedPark]);
 
-  const highWaitCount = visibleRides.filter((ride) => ride.displayWait >= 60).length;
-  const longestWait = visibleRides.length > 0 ? visibleRides[0] : null;
-  const openRideCount = visibleRides.filter((ride) => ride.is_open !== false).length;
-
   return (
     <div className="card half">
       <h2>Park Ride Dashboard</h2>
@@ -160,43 +156,6 @@ export default function RideDataPanel({ selectedPark, onSelectPark }: RideDataPa
               : "Ride endpoint not ready"}
         </strong>
       </div>
-
-      <p className="muted">
-        Use the park banner at the top of the page to switch parks. Character meets and non-ride experiences are filtered out.
-      </p>
-
-      {result?.ok && (
-        <div className="dashboard-stats">
-          <div className="stat-box">
-            <span className="stat-label">Selected park</span>
-            <strong>{activePark}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="stat-label">Rides loaded</span>
-            <strong>{visibleRides.length}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="stat-label">Open rides</span>
-            <strong>{openRideCount}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="stat-label">60+ min waits</span>
-            <strong>{highWaitCount}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="stat-label">Longest wait</span>
-            <strong>
-              {longestWait && longestWait.displayWait >= 0
-                ? `${longestWait.displayWait} min`
-                : "—"}
-            </strong>
-          </div>
-        </div>
-      )}
 
       {lastRefreshed && (
         <p className="muted">Last refreshed from CastleWatch: {lastRefreshed}</p>

@@ -24,6 +24,14 @@ const PARK_ORDER = [
   "Unknown Park",
 ];
 
+const PARK_ICONS: Record<string, string> = {
+  "Magic Kingdom": "🏰",
+  Epcot: "🌐",
+  "Hollywood Studios": "🎬",
+  "Animal Kingdom": "🌳",
+  "Unknown Park": "✨",
+};
+
 function formatDateTime(value?: string) {
   if (!value) return "Unknown";
 
@@ -62,6 +70,7 @@ export default function RideDataPanel() {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<string>("");
+  const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
 
   async function loadRides() {
     setLoading(true);
@@ -123,13 +132,20 @@ export default function RideDataPanel() {
       });
   }, [rides]);
 
-  const highWaitCount = rides.filter((ride) => ride.displayWait >= 60).length;
-  const longestWait = rides.length > 0 ? rides[0] : null;
-  const openRideCount = rides.filter((ride) => ride.is_open !== false).length;
+  const availableParks = groupedByPark.map((group) => group.park);
+  const activePark = availableParks.includes(selectedPark)
+    ? selectedPark
+    : availableParks[0] || selectedPark;
+  const activeGroup = groupedByPark.find((group) => group.park === activePark);
+  const visibleRides = activeGroup?.rides || [];
+
+  const highWaitCount = visibleRides.filter((ride) => ride.displayWait >= 60).length;
+  const longestWait = visibleRides.length > 0 ? visibleRides[0] : null;
+  const openRideCount = visibleRides.filter((ride) => ride.is_open !== false).length;
 
   return (
     <div className="card half">
-      <h2>All Parks Ride Dashboard</h2>
+      <h2>Park Ride Dashboard</h2>
 
       <div className="status-row">
         <span className={`dot ${loading ? "warn" : result?.ok ? "good" : "bad"}`} />
@@ -143,14 +159,40 @@ export default function RideDataPanel() {
       </div>
 
       <p className="muted">
-        This dashboard includes ride waits for all four Walt Disney World parks and excludes character meet-and-greet listings.
+        Tap a park to focus on ride-demand attractions only. Character meets and non-ride experiences are filtered out.
       </p>
+
+      {groupedByPark.length > 0 && (
+        <div className="park-tabs" role="tablist" aria-label="Choose a Walt Disney World park">
+          {groupedByPark.map((group) => (
+            <button
+              className={`park-tab ${group.park === activePark ? "park-tab-active" : ""}`}
+              key={group.park}
+              onClick={() => setSelectedPark(group.park)}
+              role="tab"
+              aria-selected={group.park === activePark}
+              type="button"
+            >
+              <span className="park-tab-icon" aria-hidden="true">
+                {PARK_ICONS[group.park] || "✨"}
+              </span>
+              <span className="park-tab-label">{group.park}</span>
+              <span className="park-tab-count">{group.rides.length}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {result?.ok && (
         <div className="dashboard-stats">
           <div className="stat-box">
+            <span className="stat-label">Selected park</span>
+            <strong>{activePark}</strong>
+          </div>
+
+          <div className="stat-box">
             <span className="stat-label">Rides loaded</span>
-            <strong>{rides.length}</strong>
+            <strong>{visibleRides.length}</strong>
           </div>
 
           <div className="stat-box">
@@ -178,39 +220,35 @@ export default function RideDataPanel() {
         <p className="muted">Last refreshed from CastleWatch: {lastRefreshed}</p>
       )}
 
-      {groupedByPark.length > 0 ? (
+      {visibleRides.length > 0 ? (
         <div className="ride-list">
-          {groupedByPark.map((group) => (
-            <div key={group.park}>
-              <h3>{group.park}</h3>
+          <h3>{activePark}</h3>
 
-              {group.rides.map((ride, index) => {
-                const wait =
-                  ride.displayWait >= 0 ? `${ride.displayWait} min` : "—";
-                const level = getWaitLevel(ride.displayWait);
+          {visibleRides.map((ride, index) => {
+            const wait =
+              ride.displayWait >= 0 ? `${ride.displayWait} min` : "—";
+            const level = getWaitLevel(ride.displayWait);
 
-                return (
-                  <div className={`ride ride-${level}`} key={ride.id || `${ride.displayPark}-${ride.displayName}-${index}`}>
-                    <div>
-                      <strong>{ride.displayName}</strong>
-                      <p className="muted">
-                        {ride.land ? `${ride.land} · ` : ""}
-                        {ride.is_open === false ? "Closed" : "Open"} · Updated: {formatDateTime(ride.displayUpdated)}
-                      </p>
-                    </div>
+            return (
+              <div className={`ride ride-${level}`} key={ride.id || `${ride.displayPark}-${ride.displayName}-${index}`}>
+                <div>
+                  <strong>{ride.displayName}</strong>
+                  <p className="muted">
+                    {ride.land ? `${ride.land} · ` : ""}
+                    {ride.is_open === false ? "Closed" : "Open"} · Updated: {formatDateTime(ride.displayUpdated)}
+                  </p>
+                </div>
 
-                    <div className="wait-pill">
-                      {wait}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                <div className="wait-pill">
+                  {wait}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <p className="muted">
-          {result?.error || "No Walt Disney World ride data displayed yet."}
+          {result?.error || "No ride-demand attractions displayed for this park yet."}
         </p>
       )}
 

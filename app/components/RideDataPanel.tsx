@@ -21,6 +21,7 @@ const PARK_ORDER = [
   "Epcot",
   "Hollywood Studios",
   "Animal Kingdom",
+  "Unknown Park",
 ];
 
 function formatDateTime(value?: string) {
@@ -35,6 +36,19 @@ function formatDateTime(value?: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function normalizeParkName(value?: string) {
+  if (!value) return "Unknown Park";
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized.includes("magic kingdom")) return "Magic Kingdom";
+  if (normalized.includes("epcot")) return "Epcot";
+  if (normalized.includes("hollywood")) return "Hollywood Studios";
+  if (normalized.includes("animal kingdom")) return "Animal Kingdom";
+
+  return value.trim() || "Unknown Park";
 }
 
 function getWaitLevel(wait?: number) {
@@ -80,7 +94,7 @@ export default function RideDataPanel() {
         return {
           ...ride,
           displayName: name,
-          displayPark: ride.park || "Unknown Park",
+          displayPark: normalizeParkName(ride.park),
           displayWait: typeof wait === "number" ? wait : -1,
           displayUpdated: ride.created_at,
         };
@@ -89,10 +103,24 @@ export default function RideDataPanel() {
   }, [result]);
 
   const groupedByPark = useMemo(() => {
-    return PARK_ORDER.map((park) => ({
-      park,
-      rides: rides.filter((ride) => ride.displayPark === park),
-    })).filter((group) => group.rides.length > 0);
+    const groups = new Map<string, typeof rides>();
+
+    for (const ride of rides) {
+      const park = ride.displayPark || "Unknown Park";
+      groups.set(park, [...(groups.get(park) || []), ride]);
+    }
+
+    return Array.from(groups.entries())
+      .map(([park, parkRides]) => ({ park, rides: parkRides }))
+      .sort((a, b) => {
+        const aIndex = PARK_ORDER.indexOf(a.park);
+        const bIndex = PARK_ORDER.indexOf(b.park);
+
+        if (aIndex === -1 && bIndex === -1) return a.park.localeCompare(b.park);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      });
   }, [rides]);
 
   const highWaitCount = rides.filter((ride) => ride.displayWait >= 60).length;

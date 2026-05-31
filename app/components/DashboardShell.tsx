@@ -53,28 +53,6 @@ export default function DashboardShell() {
         ) : (
           <>
             <RideDataPanel selectedPark={selectedPark} onSelectPark={setSelectedPark} />
-
-            <div className="card third">
-              <h3>Current phase</h3>
-              <p className="muted">
-                Prove the frontend can reliably connect to Railway before adding complicated predictions.
-              </p>
-            </div>
-
-            <div className="card third">
-              <h3>Trip use case</h3>
-              <p className="muted">
-                Designed for repeated phone checks during a 7-day Disney trip.
-              </p>
-            </div>
-
-            <div className="card third">
-              <h3>Next milestone</h3>
-              <p className="muted">
-                Add real park areas, wait-time history, transportation routing, and backend-generated demand scores.
-              </p>
-            </div>
-
             <HeatMapPreview selectedPark={selectedPark} onSelectPark={setSelectedPark} />
           </>
         )}

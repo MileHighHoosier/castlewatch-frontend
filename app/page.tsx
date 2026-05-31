@@ -1,6 +1,7 @@
 import BackendStatus from "./components/BackendStatus";
 import RideDataPanel from "./components/RideDataPanel";
 import HeatMapPreview from "./components/HeatMapPreview";
+import TransportationPlanner from "./components/TransportationPlanner";
 
 export default function HomePage() {
   return (
@@ -10,12 +11,14 @@ export default function HomePage() {
         <h1>Disney demand dashboard foundation</h1>
         <p>
           A mobile-first frontend for checking backend health, testing ride data,
-          and preparing for future park heat maps and demand forecasting.
+          planning free Disney transportation, and preparing for future park heat maps
+          and demand forecasting.
         </p>
       </section>
 
       <section className="grid">
         <BackendStatus />
+        <TransportationPlanner />
         <RideDataPanel />
 
         <div className="card third">
@@ -35,7 +38,7 @@ export default function HomePage() {
         <div className="card third">
           <h3>Next milestone</h3>
           <p className="muted">
-            Add real park areas, wait-time history, and backend-generated demand scores.
+            Add real park areas, wait-time history, transportation routing, and backend-generated demand scores.
           </p>
         </div>
 

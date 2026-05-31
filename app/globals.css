@@ -31,7 +31,7 @@ a {
 .page {
   width: min(1120px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
 }
 
 .hero {
@@ -64,6 +64,83 @@ h1 {
   line-height: 1.5;
   max-width: 760px;
   margin: 0;
+}
+
+.top-park-banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 16px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(7, 17, 31, 0.96);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.top-park-button {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 6px 3px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.top-park-button-active {
+  border-color: var(--accent);
+  background: rgba(142, 197, 255, 0.16);
+  box-shadow: inset 0 -3px 0 var(--accent), 0 0 0 1px rgba(142, 197, 255, 0.28);
+}
+
+.top-park-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.top-park-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 1.05;
+  font-weight: 800;
+  white-space: normal;
+}
+
+@media (min-width: 520px) {
+  .page {
+    padding: 24px;
+  }
+
+  .top-park-banner {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .top-park-button {
+    min-height: 72px;
+    padding: 8px;
+  }
+
+  .top-park-icon {
+    font-size: 28px;
+  }
+
+  .top-park-label {
+    font-size: 12px;
+  }
 }
 
 .grid {

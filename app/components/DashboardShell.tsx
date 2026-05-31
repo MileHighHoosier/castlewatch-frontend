@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import BackendStatus from "./BackendStatus";
-import RideDataPanel from "./RideDataPanel";
-import HeatMapPreview from "./HeatMapPreview";
 import TransportationPlanner from "./TransportationPlanner";
+import ParkCommandCenter from "./ParkCommandCenter";
 
 const PARKS = [
   { name: "Magic Kingdom", icon: "🏰" },
@@ -51,10 +50,7 @@ export default function DashboardShell() {
         {activeSection === "transportation" ? (
           <TransportationPlanner />
         ) : (
-          <>
-            <RideDataPanel selectedPark={selectedPark} onSelectPark={setSelectedPark} />
-            <HeatMapPreview selectedPark={selectedPark} onSelectPark={setSelectedPark} />
-          </>
+          <ParkCommandCenter selectedPark={selectedPark} onSelectPark={setSelectedPark} />
         )}
 
         <BackendStatus />

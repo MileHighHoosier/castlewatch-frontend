@@ -71,10 +71,10 @@ h1 {
   top: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
   margin: 12px 0 16px;
-  padding: 8px;
+  padding: 7px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(7, 17, 31, 0.96);
@@ -87,10 +87,10 @@ h1 {
   place-items: center;
   gap: 3px;
   min-width: 0;
-  min-height: 58px;
+  min-height: 54px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 6px 3px;
+  border-radius: 13px;
+  padding: 6px 2px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
   cursor: pointer;
@@ -104,7 +104,7 @@ h1 {
 }
 
 .top-park-icon {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -113,7 +113,7 @@ h1 {
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.05;
   font-weight: 800;
   white-space: normal;

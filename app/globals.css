@@ -149,6 +149,16 @@ h1 {
   gap: 10px;
 }
 
+.live-heat-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 760px) {
+  .live-heat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .zone {
   border-radius: 16px;
   padding: 14px;
@@ -161,6 +171,54 @@ h1 {
   margin-bottom: 4px;
 }
 
+.zone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.zone-low {
+  border-left: 7px solid var(--good);
+  background: rgba(56, 217, 150, 0.12);
+}
+
+.zone-moderate {
+  border-left: 7px solid var(--warn);
+  background: rgba(255, 204, 102, 0.12);
+}
+
+.zone-high {
+  border-left: 7px solid var(--bad);
+  background: rgba(255, 107, 107, 0.13);
+}
+
+.zone-very-high {
+  border-left: 7px solid var(--bad);
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.22), rgba(255, 204, 102, 0.12));
+  box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.18);
+}
+
+.heat-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+@media (min-width: 760px) {
+  .heat-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.heat-summary > div {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .park-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -170,6 +228,10 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.park-tabs.compact .park-tab {
+  min-height: 76px;
 }
 
 @media (min-width: 520px) {

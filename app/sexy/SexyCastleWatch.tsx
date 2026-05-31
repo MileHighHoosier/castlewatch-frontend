@@ -1,5 +1,6 @@
 "use client";
 
+import "./SexyCastleWatch.module.css";
 import { useEffect, useMemo, useState } from "react";
 import { fetchPlanningInsights, fetchRideData, type ApiResult } from "../lib/api";
 

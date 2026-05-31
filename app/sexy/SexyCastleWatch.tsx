@@ -13,7 +13,6 @@ type Ride = {
   is_open?: boolean;
   land?: string;
   park?: string;
-  created_at?: string;
 };
 
 type DisplayRide = Ride & {
@@ -28,11 +27,9 @@ type RideInsight = {
   land?: string;
   current_wait?: number;
   typical_wait?: number;
-  opportunity_score?: number;
 };
 
 type HistoricalInsights = {
-  summary?: string;
   historical_entries_analyzed?: number;
   best_now?: RideInsight[];
   reliable_low_wait?: RideInsight[];
@@ -41,20 +38,7 @@ type HistoricalInsights = {
 type Tab = "rides" | "heat" | "plan";
 type Section = "park" | "transport";
 type Mode = "aggressive" | "lowStress" | "coolDown";
-type IconName = "castle" | "globe" | "studio" | "tree" | "transport" | "spark" | "search" | "rides" | "heat" | "plan" | "route";
-
-type Location = {
-  id: string;
-  name: string;
-  area: string;
-};
-
-type RouteResult = {
-  method: string;
-  time: string;
-  steps: string[];
-  note?: string;
-};
+type IconName = "castle" | "globe" | "studio" | "tree" | "transport" | "spark" | "search" | "rides" | "heat" | "plan";
 
 const PARKS: Array<{ name: string; label: string; icon: IconName }> = [
   { name: "Magic Kingdom", label: "Magic Kingdom", icon: "castle" },
@@ -63,22 +47,18 @@ const PARKS: Array<{ name: string; label: string; icon: IconName }> = [
   { name: "Animal Kingdom", label: "Animal Kingdom", icon: "tree" },
 ];
 
-const LOCATIONS: Location[] = [
-  { id: "mk", name: "Magic Kingdom", area: "Park" },
-  { id: "epcot", name: "Epcot", area: "Park" },
-  { id: "hs", name: "Hollywood Studios", area: "Park" },
-  { id: "ak", name: "Animal Kingdom", area: "Park" },
-  { id: "ttc", name: "Transportation and Ticket Center", area: "Hub" },
-  { id: "ds", name: "Disney Springs", area: "Shopping/Dining" },
-  { id: "contemporary", name: "Contemporary Resort", area: "Magic Kingdom Resort" },
-  { id: "poly", name: "Polynesian Village Resort", area: "Magic Kingdom Resort" },
-  { id: "grand", name: "Grand Floridian Resort", area: "Magic Kingdom Resort" },
-  { id: "beach", name: "Beach Club Resort", area: "Epcot Resort" },
-  { id: "boardwalk", name: "BoardWalk Inn", area: "Epcot Resort" },
-  { id: "riviera", name: "Riviera Resort", area: "Skyliner Resort" },
-  { id: "pop", name: "Pop Century Resort", area: "Skyliner Resort" },
-  { id: "art", name: "Art of Animation Resort", area: "Skyliner Resort" },
-  { id: "akl", name: "Animal Kingdom Lodge", area: "Animal Kingdom Resort" },
+const TRANSPORT_LOCATIONS = [
+  "Magic Kingdom",
+  "Epcot",
+  "Hollywood Studios",
+  "Animal Kingdom",
+  "Transportation Hub",
+  "Contemporary Resort",
+  "Polynesian Resort",
+  "Grand Floridian Resort",
+  "Beach Club Resort",
+  "BoardWalk Resort",
+  "Animal Kingdom Lodge",
 ];
 
 const COOL_DOWN_KEYWORDS = [
@@ -95,106 +75,35 @@ const COOL_DOWN_KEYWORDS = [
   "haunted mansion",
 ];
 
-const MK_RESORTS = new Set(["contemporary", "poly", "grand"]);
-const EPCOT_RESORTS = new Set(["beach", "boardwalk"]);
-const SKYLINER_RESORTS = new Set(["riviera", "pop", "art"]);
-const PARK_LOCATION_IDS = new Set(["mk", "epcot", "hs", "ak"]);
-
 function Icon({ name }: { name: IconName }) {
   if (name === "castle") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M14 54h36V28l-6 4-6-8-6 8-6-8-6 8-6-4v26Z" />
-        <path d="M18 24V11l8 5v8M38 24V11l8 5v8M28 27V8l8 5v14" />
-        <path d="M27 54V42a5 5 0 0 1 10 0v12" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 54h36V28l-6 4-6-8-6 8-6-8-6 8-6-4v26Z" /><path d="M18 24V11l8 5v8M38 24V11l8 5v8M28 27V8l8 5v14" /><path d="M27 54V42a5 5 0 0 1 10 0v12" /></svg>;
   }
-
   if (name === "globe") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <circle cx="32" cy="32" r="22" />
-        <path d="M10 32h44M32 10c8 8 8 36 0 44M32 10c-8 8-8 36 0 44M16 20c9 5 23 5 32 0M16 44c9-5 23-5 32 0" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="22" /><path d="M10 32h44M32 10c8 8 8 36 0 44M32 10c-8 8-8 36 0 44M16 20c9 5 23 5 32 0M16 44c9-5 23-5 32 0" /></svg>;
   }
-
   if (name === "studio") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M12 24h40v28H12zM12 24l6-12h40l-6 12" />
-        <path d="M20 12l-6 12M32 12l-6 12M44 12l-6 12" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M12 24h40v28H12zM12 24l6-12h40l-6 12" /><path d="M20 12l-6 12M32 12l-6 12M44 12l-6 12" /></svg>;
   }
-
   if (name === "tree") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M32 54V34" />
-        <path d="M20 48c-8-1-12-8-8-15-5-7 0-17 9-17 4-9 18-9 22 0 9 0 14 10 9 17 4 7 0 14-8 15H20Z" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 54V34" /><path d="M20 48c-8-1-12-8-8-15-5-7 0-17 9-17 4-9 18-9 22 0 9 0 14 10 9 17 4 7 0 14-8 15H20Z" /></svg>;
   }
-
   if (name === "transport") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M12 20h40v24H12zM18 44l-4 8M46 44l4 8" />
-        <path d="M18 26h28M20 34h8M36 34h8" />
-        <circle cx="22" cy="44" r="3" /><circle cx="42" cy="44" r="3" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M12 20h40v24H12zM18 44l-4 8M46 44l4 8" /><path d="M18 26h28M20 34h8M36 34h8" /><circle cx="22" cy="44" r="3" /><circle cx="42" cy="44" r="3" /></svg>;
   }
-
   if (name === "spark") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M32 6l5 18 18 8-18 8-5 18-5-18-18-8 18-8 5-18Z" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6l5 18 18 8-18 8-5 18-5-18-18-8 18-8 5-18Z" /></svg>;
   }
-
   if (name === "search") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <circle cx="27" cy="27" r="16" /><path d="M39 39l14 14" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="27" cy="27" r="16" /><path d="M39 39l14 14" /></svg>;
   }
-
   if (name === "rides") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M10 46c8-18 19-24 34-24h10" />
-        <path d="M16 46h34M20 46a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM46 46a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 46c8-18 19-24 34-24h10" /><path d="M16 46h34M20 46a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM46 46a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z" /></svg>;
   }
-
   if (name === "heat") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M34 8c4 12-8 14 2 25 3-5 8-8 8-16 10 12 8 30-10 35-18-5-21-21-11-32 0 9 5 12 9 13-5-10 1-15 2-25Z" />
-      </svg>
-    );
+    return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M34 8c4 12-8 14 2 25 3-5 8-8 8-16 10 12 8 30-10 35-18-5-21-21-11-32 0 9 5 12 9 13-5-10 1-15 2-25Z" /></svg>;
   }
-
-  if (name === "plan") {
-    return (
-      <svg viewBox="0 0 64 64" aria-hidden="true">
-        <path d="M18 10v8M46 10v8M12 18h40v34H12zM12 28h40" />
-        <path d="M22 38h8M36 38h8M22 46h8" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 64 64" aria-hidden="true">
-      <path d="M10 32h44M40 18l14 14-14 14" />
-    </svg>
-  );
+  return <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M18 10v8M46 10v8M12 18h40v34H12zM12 28h40" /><path d="M22 38h8M36 38h8M22 46h8" /></svg>;
 }
 
 function normalizeParkName(value?: string) {
@@ -231,106 +140,15 @@ function isCoolDownRide(ride: DisplayRide) {
   return COOL_DOWN_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
-function locationName(id: string) {
-  return LOCATIONS.find((location) => location.id === id)?.name || id;
-}
-
-function getRoute(from: string, to: string): RouteResult {
-  const fromName = locationName(from);
-  const toName = locationName(to);
-
-  if (from === to) {
-    return { method: "You are already there", time: "0 min", steps: ["Stay at your current location."] };
+function routeAdvice(from: string, to: string) {
+  if (from === to) return { method: "Already there", time: "0 min", steps: ["Stay at your current location."] };
+  if ((from === "Epcot" && to === "Hollywood Studios") || (from === "Hollywood Studios" && to === "Epcot")) {
+    return { method: "Gondola or boat", time: "20–35 min", steps: ["Use the gondola when operating.", "Boat service is another free option."] };
   }
-
-  if ((from === "epcot" && to === "hs") || (from === "hs" && to === "epcot")) {
-    return {
-      method: "Gondola or boat",
-      time: "20–35 min",
-      steps: [
-        "Use the gondola route between the Epcot resort area and Hollywood Studios when operating.",
-        "A boat route is another free option if you prefer less walking.",
-      ],
-      note: "Gondola service can pause for weather.",
-    };
+  if (from.includes("Resort") || to.includes("Resort") || from.includes("Lodge") || to.includes("Lodge")) {
+    return { method: "Bus, boat, rail, or walking path", time: "20–60 min", steps: ["Use the posted free transportation option.", "For resort-to-resort travel, transfer at a park or major hub if needed."] };
   }
-
-  if ((from === "mk" && to === "ttc") || (from === "ttc" && to === "mk")) {
-    return {
-      method: "Rail or ferryboat",
-      time: "10–20 min",
-      steps: ["Use rail or ferryboat transportation between Magic Kingdom and the main transportation hub."],
-    };
-  }
-
-  if (from === "mk" && MK_RESORTS.has(to)) {
-    const method = to === "contemporary" ? "Walk or resort rail" : "Resort rail or boat";
-    return { method, time: to === "contemporary" ? "10–20 min" : "15–30 min", steps: [`Exit Magic Kingdom and use ${method.toLowerCase()} to ${toName}.`] };
-  }
-
-  if (MK_RESORTS.has(from) && to === "mk") {
-    const method = from === "contemporary" ? "Walk or resort rail" : "Resort rail or boat";
-    return { method, time: from === "contemporary" ? "10–20 min" : "15–30 min", steps: [`Use ${method.toLowerCase()} from ${fromName} to Magic Kingdom.`] };
-  }
-
-  if ((from === "epcot" && EPCOT_RESORTS.has(to)) || (EPCOT_RESORTS.has(from) && to === "epcot")) {
-    return { method: "Walk or boat", time: "10–20 min", steps: [`Walk or take a boat between ${fromName} and ${toName}.`] };
-  }
-
-  if ((from === "hs" && EPCOT_RESORTS.has(to)) || (EPCOT_RESORTS.has(from) && to === "hs")) {
-    return { method: "Boat or gondola", time: "20–35 min", steps: [`Use a boat route or gondola connection between ${fromName} and ${toName}.`] };
-  }
-
-  if (((from === "epcot" || from === "hs") && SKYLINER_RESORTS.has(to)) || (SKYLINER_RESORTS.has(from) && (to === "epcot" || to === "hs"))) {
-    return {
-      method: "Gondola",
-      time: "15–35 min",
-      steps: [`Use the gondola route between ${fromName} and ${toName}.`, "Transfer at the central gondola station if needed."],
-      note: "Gondola service can pause for weather.",
-    };
-  }
-
-  if ((from === "epcot" && to === "mk") || (from === "mk" && to === "epcot")) {
-    return {
-      method: "Rail via transportation hub",
-      time: "35–55 min",
-      steps: [
-        from === "epcot" ? "Take rail transportation to the main transportation hub." : "Take rail or ferryboat transportation to the main transportation hub.",
-        from === "epcot" ? "Transfer toward Magic Kingdom." : "Transfer toward Epcot.",
-      ],
-    };
-  }
-
-  if (from === "ds" || to === "ds") {
-    return {
-      method: "Bus via resort transfer",
-      time: "45–75+ min",
-      steps: ["Use bus transportation between Disney Springs and a resort.", `Transfer through a nearby resort or your resort to continue to ${toName}.`],
-      note: "Direct park-to-Disney Springs routes are limited. A rideshare may be faster, but this shows the free transportation option.",
-    };
-  }
-
-  if (from === "akl" || to === "akl" || from === "ak" || to === "ak") {
-    return {
-      method: "Bus",
-      time: "20–50 min",
-      steps: [`Use bus transportation from ${fromName} toward ${toName}.`, "For resort-to-resort trips, transfer at a park or shopping/dining hub if no direct route is posted."],
-    };
-  }
-
-  if (PARK_LOCATION_IDS.has(from) && PARK_LOCATION_IDS.has(to)) {
-    return {
-      method: "Bus or park-specific transport",
-      time: "30–60 min",
-      steps: [`Look for transportation from ${fromName} to ${toName}.`, "If a direct bus is not posted, transfer through a nearby hub or resort."],
-    };
-  }
-
-  return {
-    method: "Bus with possible transfer",
-    time: "35–70 min",
-    steps: [`Use transportation from ${fromName} toward ${toName}.`, "For resort-to-resort travel, transfer at a park, shopping/dining hub, or major transportation hub."],
-  };
+  return { method: "Bus or park transport", time: "30–60 min", steps: ["Use posted free transportation between these locations.", "Confirm route signs before boarding."] };
 }
 
 export default function SexyCastleWatch() {
@@ -338,18 +156,16 @@ export default function SexyCastleWatch() {
   const [activeSection, setActiveSection] = useState<Section>("park");
   const [activeTab, setActiveTab] = useState<Tab>("rides");
   const [mode, setMode] = useState<Mode>("lowStress");
-  const [from, setFrom] = useState("mk");
-  const [to, setTo] = useState("epcot");
+  const [from, setFrom] = useState("Magic Kingdom");
+  const [to, setTo] = useState("Epcot");
+  const [selectedHeatLand, setSelectedHeatLand] = useState<string | null>(null);
   const [ridesResult, setRidesResult] = useState<ApiResult<Ride[]> | null>(null);
   const [insightsResult, setInsightsResult] = useState<ApiResult<HistoricalInsights> | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function loadData(park = selectedPark) {
     setLoading(true);
-    const [rides, insights] = await Promise.all([
-      fetchRideData(),
-      fetchPlanningInsights(park),
-    ]);
+    const [rides, insights] = await Promise.all([fetchRideData(), fetchPlanningInsights(park)]);
     setRidesResult(rides);
     setInsightsResult(insights as ApiResult<HistoricalInsights>);
     setLoading(false);
@@ -357,6 +173,7 @@ export default function SexyCastleWatch() {
 
   useEffect(() => {
     loadData(selectedPark);
+    setSelectedHeatLand(null);
   }, [selectedPark]);
 
   const rides = useMemo<DisplayRide[]>(() => {
@@ -375,9 +192,7 @@ export default function SexyCastleWatch() {
   }, [ridesResult]);
 
   const parkRides = useMemo(() => {
-    return rides
-      .filter((ride) => ride.displayPark === selectedPark)
-      .sort((a, b) => b.displayWait - a.displayWait);
+    return rides.filter((ride) => ride.displayPark === selectedPark).sort((a, b) => b.displayWait - a.displayWait);
   }, [rides, selectedPark]);
 
   const openRides = parkRides.filter((ride) => ride.is_open !== false);
@@ -394,91 +209,56 @@ export default function SexyCastleWatch() {
         const waits = open.map((ride) => ride.displayWait);
         const peak = waits.length ? Math.max(...waits) : 0;
         const avg = waits.length ? Math.round(waits.reduce((sum, wait) => sum + wait, 0) / waits.length) : 0;
-        return {
-          land,
-          avg,
-          peak,
-          pressure: pressure(avg, peak),
-          rides: landRides.sort((a, b) => b.displayWait - a.displayWait),
-        };
+        return { land, avg, peak, pressure: pressure(avg, peak), rides: landRides.sort((a, b) => b.displayWait - a.displayWait) };
       })
       .sort((a, b) => b.peak - a.peak || b.avg - a.avg);
   }, [parkRides]);
 
+  const hottestZone = zones[0];
+  const selectedZone = zones.find((zone) => zone.land === selectedHeatLand) || hottestZone;
   const insights = insightsResult?.ok ? insightsResult.data : null;
   const bestInsight = insights?.best_now?.[0] || insights?.reliable_low_wait?.[0];
-  const liveLowStress = openRides.filter((ride) => ride.displayLand !== zones[0]?.land).sort((a, b) => a.displayWait - b.displayWait)[0];
+  const liveLowStress = openRides.filter((ride) => ride.displayLand !== hottestZone?.land).sort((a, b) => a.displayWait - b.displayWait)[0];
   const liveCoolDown = openRides.filter(isCoolDownRide).sort((a, b) => a.displayWait - b.displayWait)[0];
   const liveAggressive = openRides.sort((a, b) => a.displayWait - b.displayWait)[0];
   const fallbackPlan = mode === "aggressive" ? liveAggressive : mode === "coolDown" ? liveCoolDown || liveLowStress || liveAggressive : liveLowStress || liveAggressive;
   const planTitle = bestInsight?.name || fallbackPlan?.displayName || "Refresh park data";
   const planLand = bestInsight?.land || fallbackPlan?.displayLand || "CastleWatch";
   const planWait = typeof bestInsight?.current_wait === "number" ? bestInsight.current_wait : fallbackPlan?.displayWait || 0;
-  const planReason = bestInsight
-    ? `${planWait} min now vs ${bestInsight.typical_wait ?? "?"} min typical. Historical data says this is a good window.`
-    : "Using live data while historical recommendations warm up.";
-
-  const hottestZone = zones[0];
-  const selectedZone = zones[0];
   const averageWait = openRides.length ? Math.round(openRides.reduce((sum, ride) => sum + ride.displayWait, 0) / openRides.length) : 0;
-  const route = useMemo(() => getRoute(from, to), [from, to]);
-  const currentLocation = LOCATIONS.find((location) => location.id === from);
-  const destinationLocation = LOCATIONS.find((location) => location.id === to);
+  const route = routeAdvice(from, to);
 
   function choosePark(park: string) {
     setSelectedPark(park);
+    setSelectedHeatLand(null);
     setActiveSection("park");
   }
 
   return (
     <main className={`sexy-page ${styles.scope}`}>
       <section className="sexy-phone">
-        <div className="sexy-statusbar">
-          <span>9:41</span>
-          <span className="sexy-island" />
-          <span>▴ ︎▰</span>
-        </div>
+        <div className="sexy-statusbar"><span>9:41</span><span className="sexy-island" /><span>▴ ︎▰</span></div>
 
         <header className="sexy-topbar">
           <span className="sexy-sparkle"><Icon name="spark" /></span>
           <h1>CastleWatch</h1>
-          <button className="sexy-icon-button" type="button" onClick={() => loadData(selectedPark)} aria-label="Refresh data">
-            {loading ? "…" : <Icon name="search" />}
-          </button>
+          <button className="sexy-icon-button" type="button" onClick={() => loadData(selectedPark)} aria-label="Refresh data">{loading ? "…" : <Icon name="search" />}</button>
         </header>
 
         <nav className="sexy-park-row" aria-label="Choose park or transportation">
           {PARKS.map((park) => (
-            <button
-              key={park.name}
-              className={`sexy-park ${activeSection === "park" && selectedPark === park.name ? "active" : ""}`}
-              onClick={() => choosePark(park.name)}
-              type="button"
-            >
-              <Icon name={park.icon} />
-              <strong>{park.label}</strong>
+            <button key={park.name} className={`sexy-park ${activeSection === "park" && selectedPark === park.name ? "active" : ""}`} onClick={() => choosePark(park.name)} type="button">
+              <Icon name={park.icon} /><strong>{park.label}</strong>
             </button>
           ))}
-          <button
-            className={`sexy-park ${activeSection === "transport" ? "active" : ""}`}
-            onClick={() => setActiveSection("transport")}
-            type="button"
-          >
-            <Icon name="transport" />
-            <strong>Transport</strong>
+          <button className={`sexy-park ${activeSection === "transport" ? "active" : ""}`} onClick={() => setActiveSection("transport")} type="button">
+            <Icon name="transport" /><strong>Transport</strong>
           </button>
         </nav>
 
         <section className="sexy-hero">
-          <div>
-            <h2>{activeSection === "transport" ? "Transport" : selectedPark}</h2>
-            <p>{activeSection === "transport" ? "Free Route Planner" : activeTab === "heat" ? "Heat Map" : "Park Command Center"}</p>
-          </div>
-          <div className="sexy-skyline" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
+          <div><h2>{activeSection === "transport" ? "Transport" : selectedPark}</h2><p>{activeSection === "transport" ? "Free Route Planner" : activeTab === "heat" ? "Heat Map" : "Park Command Center"}</p></div>
+          <div className="sexy-skyline" aria-hidden="true"><span /><span /><span /></div>
         </section>
 
         {activeSection === "transport" ? (
@@ -486,163 +266,48 @@ export default function SexyCastleWatch() {
             <article className="sexy-next-move">
               <span><Icon name="transport" /> Free Transportation</span>
               <div className="sexy-picker-grid">
-                <label>
-                  <small>Current location</small>
-                  <select value={from} onChange={(event) => setFrom(event.target.value)}>
-                    {LOCATIONS.map((location) => (
-                      <option key={location.id} value={location.id}>{location.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <small>Destination</small>
-                  <select value={to} onChange={(event) => setTo(event.target.value)}>
-                    {LOCATIONS.map((location) => (
-                      <option key={location.id} value={location.id}>{location.name}</option>
-                    ))}
-                  </select>
-                </label>
+                <label><small>Current location</small><select value={from} onChange={(event) => setFrom(event.target.value)}>{TRANSPORT_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
+                <label><small>Destination</small><select value={to} onChange={(event) => setTo(event.target.value)}>{TRANSPORT_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
               </div>
-
-              <div className="sexy-route">
-                <strong>{currentLocation?.name}</strong>
-                <b>→</b>
-                <strong>{destinationLocation?.name}</strong>
-              </div>
+              <div className="sexy-route"><strong>{from}</strong><b>→</b><strong>{to}</strong></div>
             </article>
-
             <article className="sexy-transport-card">
               <span>Recommended free route</span>
-              <div className="sexy-plan-main">
-                <div className="sexy-thumb thumb-2" />
-                <div>
-                  <h3>{route.method}</h3>
-                  <p>{route.note || "Estimated planning route. Confirm posted transportation signs in person."}</p>
-                </div>
-                <strong>{route.time}</strong>
-              </div>
-
-              {route.steps.map((step, index) => (
-                <div className="sexy-step" key={step}>
-                  <b>{index + 1}</b>
-                  <p>{step}</p>
-                </div>
-              ))}
+              <div className="sexy-plan-main"><div className="sexy-thumb thumb-2" /><div><h3>{route.method}</h3><p>Estimated planning route. Confirm posted signs in person.</p></div><strong>{route.time}</strong></div>
+              {route.steps.map((step, index) => <div className="sexy-step" key={step}><b>{index + 1}</b><p>{step}</p></div>)}
             </article>
           </section>
         ) : (
           <>
             {activeTab === "heat" ? (
-              <section className="sexy-stats compact">
-                <div><span>Average Wait</span><strong>{averageWait}<small> min</small></strong></div>
-                <div><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
-                <div><span>Crowd Pressure</span><strong>{pressure(averageWait, peakWait)}</strong></div>
-              </section>
+              <section className="sexy-stats compact"><div><span>Average Wait</span><strong>{averageWait}<small> min</small></strong></div><div><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div><div><span>Crowd Pressure</span><strong>{pressure(averageWait, peakWait)}</strong></div></section>
             ) : (
-              <section className="sexy-stats">
-                <div><Icon name="rides" /><span>Open Rides</span><strong>{openRides.length}</strong></div>
-                <div><Icon name="heat" /><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
-                <div><Icon name="spark" /><span>Hottest Area</span><strong>{hottestZone?.land || "—"}</strong></div>
-                <div><Icon name="plan" /><span>Historical Samples</span><strong>{insights?.historical_entries_analyzed || 0}</strong></div>
-              </section>
+              <section className="sexy-stats"><div><Icon name="rides" /><span>Open Rides</span><strong>{openRides.length}</strong></div><div><Icon name="heat" /><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div><div><Icon name="spark" /><span>Hottest Area</span><strong>{hottestZone?.land || "—"}</strong></div></section>
             )}
 
-            <section className="sexy-tabs" aria-label="Dashboard tabs">
-              <button className={activeTab === "rides" ? "active" : ""} onClick={() => setActiveTab("rides")} type="button"><Icon name="rides" />Rides</button>
-              <button className={activeTab === "heat" ? "active" : ""} onClick={() => setActiveTab("heat")} type="button"><Icon name="heat" />Heat</button>
-              <button className={activeTab === "plan" ? "active" : ""} onClick={() => setActiveTab("plan")} type="button"><Icon name="plan" />Plan</button>
-            </section>
+            <section className="sexy-tabs" aria-label="Dashboard tabs"><button className={activeTab === "rides" ? "active" : ""} onClick={() => setActiveTab("rides")} type="button"><Icon name="rides" />Rides</button><button className={activeTab === "heat" ? "active" : ""} onClick={() => setActiveTab("heat")} type="button"><Icon name="heat" />Heat</button><button className={activeTab === "plan" ? "active" : ""} onClick={() => setActiveTab("plan")} type="button"><Icon name="plan" />Plan</button></section>
 
-            {activeTab === "rides" && (
-              <section className="sexy-list">
-                {parkRides.slice(0, 7).map((ride, index) => (
-                  <article className="sexy-ride" key={`${ride.displayName}-${index}`}>
-                    <div className={`sexy-thumb thumb-${index % 6}`} />
-                    <div>
-                      <h3>{ride.displayName}</h3>
-                      <p>{ride.displayLand}</p>
-                    </div>
-                    <span className={waitClass(ride.displayWait)}>{ride.displayWait}<small>min</small></span>
-                    <span className="sexy-chevron">›</span>
-                  </article>
-                ))}
-              </section>
-            )}
+            {activeTab === "rides" && <section className="sexy-list">{parkRides.slice(0, 7).map((ride, index) => <article className="sexy-ride" key={`${ride.displayName}-${index}`}><div className={`sexy-thumb thumb-${index % 6}`} /><div><h3>{ride.displayName}</h3><p>{ride.displayLand}</p></div><span className={waitClass(ride.displayWait)}>{ride.displayWait}<small>min</small></span><span className="sexy-chevron">›</span></article>)}</section>}
 
             {activeTab === "heat" && (
               <section className="sexy-heat">
                 <div className="sexy-map-card">
                   {zones.slice(0, 5).map((zone, index) => (
-                    <article className={`${pressureClass(zone.pressure)} map-zone map-zone-${index}`} key={zone.land}>
-                      <h3>{zone.land}</h3>
-                      <strong>{zone.pressure}</strong>
-                      <span>Avg {zone.avg} min</span>
-                      <span>Peak {zone.peak} min</span>
-                      <small>{zone.pressure}</small>
-                    </article>
+                    <button key={zone.land} className={`${pressureClass(zone.pressure)} map-zone map-zone-${index} ${selectedZone?.land === zone.land ? "selected" : ""}`} onClick={() => setSelectedHeatLand(zone.land)} type="button" aria-pressed={selectedZone?.land === zone.land}>
+                      <h3>{zone.land}</h3><strong>{zone.pressure}</strong><span>Avg {zone.avg} min</span><span>Peak {zone.peak} min</span><small>{zone.pressure}</small>
+                    </button>
                   ))}
                 </div>
-                {selectedZone && (
-                  <article className="sexy-detail-card hot-detail">
-                    <div className="sexy-thumb thumb-0" />
-                    <div>
-                      <span>Hottest Area</span>
-                      <h3>{selectedZone.land}</h3>
-                      <p>Peak {selectedZone.peak} min · {selectedZone.pressure}</p>
-                    </div>
-                    {selectedZone.rides.slice(0, 3).map((ride) => (
-                      <div className="sexy-mini-row" key={ride.displayName}>
-                        <strong>{ride.displayName}</strong>
-                        <span>{ride.displayWait} min</span>
-                      </div>
-                    ))}
-                  </article>
-                )}
+                {selectedZone && <article className="sexy-detail-card hot-detail"><div className="sexy-thumb thumb-0" /><div><span>{selectedZone.land === hottestZone?.land ? "Hottest Area" : "Selected Area"}</span><h3>{selectedZone.land}</h3><p>Avg {selectedZone.avg} min · Peak {selectedZone.peak} min · {selectedZone.pressure}</p></div>{selectedZone.rides.slice(0, 8).map((ride) => <div className="sexy-mini-row" key={ride.displayName}><strong>{ride.displayName}</strong><span>{ride.displayWait} min</span></div>)}</article>}
               </section>
             )}
 
-            {activeTab === "plan" && (
-              <section className="sexy-plan">
-                <article className="sexy-next-move">
-                  <span>✦ Next Best Move</span>
-                  <div className="sexy-plan-main">
-                    <div className="sexy-thumb thumb-1" />
-                    <div>
-                      <h3>{planTitle}</h3>
-                      <p>{planLand}</p>
-                    </div>
-                    <strong>{planWait}<small>min</small></strong>
-                  </div>
-                  <p>{planReason}</p>
-                  <div className="sexy-mode-row">
-                    <button className={mode === "aggressive" ? "active" : ""} onClick={() => setMode("aggressive")} type="button">↗ Max Rides</button>
-                    <button className={mode === "lowStress" ? "active" : ""} onClick={() => setMode("lowStress")} type="button">◆ Low-Stress</button>
-                    <button className={mode === "coolDown" ? "active" : ""} onClick={() => setMode("coolDown")} type="button">✦ Cool Down</button>
-                  </div>
-                </article>
-
-                <article className="sexy-transport-card">
-                  <span><Icon name="transport" /> Free Transportation</span>
-                  <div className="sexy-route">
-                    <strong>{hottestZone?.land || "Current Area"}</strong>
-                    <b>→</b>
-                    <strong>{planLand}</strong>
-                  </div>
-                  <p>Best free option shown when transport rules are available. Current estimate: plan around 10–25 min.</p>
-                  <div className="sexy-step"><b>1</b><p>Go to {planTitle}.</p></div>
-                  <div className="sexy-step"><b>2</b><p>Refresh CastleWatch after the ride.</p></div>
-                  <div className="sexy-step"><b>3</b><p>Avoid {hottestZone?.land || "the hottest area"} if pressure stays high.</p></div>
-                </article>
-              </section>
-            )}
+            {activeTab === "plan" && <section className="sexy-plan"><article className="sexy-next-move"><span>✦ Next Best Move</span><div className="sexy-plan-main"><div className="sexy-thumb thumb-1" /><div><h3>{planTitle}</h3><p>{planLand}</p></div><strong>{planWait}<small>min</small></strong></div><p>{bestInsight ? `${planWait} min now vs ${bestInsight.typical_wait ?? "?"} min typical. Historical data says this is a good window.` : "Using live data while historical recommendations warm up."}</p><div className="sexy-mode-row"><button className={mode === "aggressive" ? "active" : ""} onClick={() => setMode("aggressive")} type="button">↗ Max Rides</button><button className={mode === "lowStress" ? "active" : ""} onClick={() => setMode("lowStress")} type="button">◆ Low-Stress</button><button className={mode === "coolDown" ? "active" : ""} onClick={() => setMode("coolDown")} type="button">✦ Cool Down</button></div></article><article className="sexy-transport-card"><span><Icon name="transport" /> Free Transportation</span><div className="sexy-route"><strong>{hottestZone?.land || "Current Area"}</strong><b>→</b><strong>{planLand}</strong></div><p>Best free option shown when transport rules are available. Current estimate: plan around 10–25 min.</p><div className="sexy-step"><b>1</b><p>Go to {planTitle}.</p></div><div className="sexy-step"><b>2</b><p>Refresh CastleWatch after the ride.</p></div><div className="sexy-step"><b>3</b><p>Avoid {hottestZone?.land || "the hottest area"} if pressure stays high.</p></div></article></section>}
           </>
         )}
 
-        <footer className="sexy-footer">
-          <strong>CastleWatch</strong>
-          <span>Premium data. Built for planners, not waiters.</span>
-        </footer>
-        <p className="sexy-disclaimer">Unofficial personal planning tool. Not affiliated with, endorsed by, or sponsored by Disney. Estimates may be delayed or inaccurate.</p>
+        <footer className="sexy-footer"><strong>CastleWatch</strong><span>Premium data. Built for planners, not waiters.</span></footer>
+        <p className="sexy-disclaimer">Unofficial personal planning tool. Not affiliated with, endorsed by, or sponsored by any theme park. Estimates may be delayed or inaccurate.</p>
       </section>
     </main>
   );

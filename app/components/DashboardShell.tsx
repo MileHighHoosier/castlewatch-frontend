@@ -59,6 +59,9 @@ export default function DashboardShell() {
       <p className="footer">
         CastleWatch · Frontend on Vercel · Backend on Railway
       </p>
+      <p className="disclaimer">
+        Unofficial personal planning tool. Not affiliated with, endorsed by, or sponsored by Disney. Estimates may be delayed or inaccurate.
+      </p>
     </main>
   );
 }

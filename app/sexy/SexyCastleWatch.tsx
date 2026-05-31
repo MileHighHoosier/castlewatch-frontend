@@ -108,6 +108,47 @@ function normalizeParkName(value?: string) {
   return value.trim() || "Unknown Park";
 }
 
+function normalizeLand(park: string, land: string | undefined, rideName: string) {
+  const area = (land || "").toLowerCase();
+  const name = rideName.toLowerCase();
+  const combined = `${area} ${name}`;
+
+  if (park === "Magic Kingdom") {
+    if (combined.includes("tomorrow") || combined.includes("tron") || combined.includes("space mountain") || combined.includes("buzz") || combined.includes("speedway") || combined.includes("peoplemover") || combined.includes("carousel of progress")) return "Tomorrowland";
+    if (combined.includes("fantasy") || combined.includes("small world") || combined.includes("peter pan") || combined.includes("pooh") || combined.includes("seven dwarfs") || combined.includes("barnstormer") || combined.includes("little mermaid") || combined.includes("philhar")) return "Fantasyland";
+    if (combined.includes("adventure") || combined.includes("frontier") || combined.includes("pirates") || combined.includes("jungle") || combined.includes("thunder") || combined.includes("tiana") || combined.includes("aladdin")) return "Adventureland / Frontierland";
+    if (combined.includes("liberty") || combined.includes("haunted mansion") || combined.includes("presidents")) return "Liberty Square";
+    return "Main Street / Hub";
+  }
+
+  if (park === "Epcot") {
+    if (combined.includes("world showcase") || combined.includes("frozen") || combined.includes("ratatouille") || combined.includes("gran fiesta") || combined.includes("american adventure")) return "World Showcase";
+    if (combined.includes("world discovery") || combined.includes("test track") || combined.includes("mission") || combined.includes("guardians")) return "World Discovery";
+    if (combined.includes("world nature") || combined.includes("soarin") || combined.includes("living with the land") || combined.includes("seas") || combined.includes("journey of water")) return "World Nature";
+    if (combined.includes("spaceship earth") || combined.includes("imagination") || combined.includes("figment") || combined.includes("journey into imagination")) return "World Celebration";
+    return "World Celebration";
+  }
+
+  if (park === "Hollywood Studios") {
+    if (combined.includes("star tours") || combined.includes("echo lake") || combined.includes("hollywood boulevard") || combined.includes("mickey & minnies") || combined.includes("mickey and minnie") || combined.includes("vacation fun")) return "Hollywood Blvd / Echo Lake";
+    if (combined.includes("galaxy") || combined.includes("rise of the resistance") || combined.includes("millennium falcon") || combined.includes("smugglers")) return "Galaxy's Edge";
+    if (combined.includes("toy story") || combined.includes("slinky") || combined.includes("alien swirling") || combined.includes("toy story mania")) return "Toy Story Land";
+    if (combined.includes("sunset") || combined.includes("tower of terror") || combined.includes("rock 'n") || combined.includes("rock n") || combined.includes("beauty and the beast")) return "Sunset Boulevard";
+    if (combined.includes("grand avenue") || combined.includes("muppet")) return "Grand Avenue";
+    return "Hollywood Blvd / Echo Lake";
+  }
+
+  if (park === "Animal Kingdom") {
+    if (combined.includes("pandora") || combined.includes("avatar") || combined.includes("flight of passage") || combined.includes("navi") || combined.includes("na'vi")) return "Pandora";
+    if (combined.includes("africa") || combined.includes("safari") || combined.includes("gorilla") || combined.includes("festival of the lion")) return "Africa";
+    if (combined.includes("asia") || combined.includes("everest") || combined.includes("kali") || combined.includes("maharajah") || combined.includes("feathered")) return "Asia";
+    if (combined.includes("dinoland") || combined.includes("dinosaur") || combined.includes("triceratop") || combined.includes("finding nemo")) return "DinoLand / Theater";
+    return "Discovery Island / Oasis";
+  }
+
+  return land || "Unassigned Area";
+}
+
 function waitClass(wait: number) {
   if (wait >= 60) return "sexy-wait hot";
   if (wait >= 35) return "sexy-wait warm";
@@ -201,7 +242,8 @@ export default function SexyCastleWatch() {
     return raw.map((ride, index) => {
       const wait = ride.wait_time ?? ride.wait;
       const name = ride.name || ride.ride_name || ride.attraction || `Ride ${index + 1}`;
-      return { ...ride, displayName: name, displayPark: normalizeParkName(ride.park), displayWait: typeof wait === "number" ? wait : 0, displayLand: ride.land || "Unassigned Area" };
+      const displayPark = normalizeParkName(ride.park);
+      return { ...ride, displayName: name, displayPark, displayWait: typeof wait === "number" ? wait : 0, displayLand: normalizeLand(displayPark, ride.land, name) };
     }).filter((ride) => !isSingleRiderEntry(ride));
   }, [ridesResult]);
 

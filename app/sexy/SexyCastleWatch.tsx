@@ -39,14 +39,46 @@ type HistoricalInsights = {
 };
 
 type Tab = "rides" | "heat" | "plan";
+type Section = "park" | "transport";
 type Mode = "aggressive" | "lowStress" | "coolDown";
 type IconName = "castle" | "globe" | "studio" | "tree" | "transport" | "spark" | "search" | "rides" | "heat" | "plan" | "route";
 
-const PARKS: Array<{ name: string; short: string; label: string; icon: IconName }> = [
-  { name: "Magic Kingdom", short: "Magic Kingdom", label: "Magic Kingdom", icon: "castle" },
-  { name: "Epcot", short: "Epcot", label: "Epcot", icon: "globe" },
-  { name: "Hollywood Studios", short: "Hollywood Studios", label: "Hollywood Studios", icon: "studio" },
-  { name: "Animal Kingdom", short: "Animal Kingdom", label: "Animal Kingdom", icon: "tree" },
+type Location = {
+  id: string;
+  name: string;
+  area: string;
+};
+
+type RouteResult = {
+  method: string;
+  time: string;
+  steps: string[];
+  note?: string;
+};
+
+const PARKS: Array<{ name: string; label: string; icon: IconName }> = [
+  { name: "Magic Kingdom", label: "Magic Kingdom", icon: "castle" },
+  { name: "Epcot", label: "Epcot", icon: "globe" },
+  { name: "Hollywood Studios", label: "Hollywood Studios", icon: "studio" },
+  { name: "Animal Kingdom", label: "Animal Kingdom", icon: "tree" },
+];
+
+const LOCATIONS: Location[] = [
+  { id: "mk", name: "Magic Kingdom", area: "Park" },
+  { id: "epcot", name: "Epcot", area: "Park" },
+  { id: "hs", name: "Hollywood Studios", area: "Park" },
+  { id: "ak", name: "Animal Kingdom", area: "Park" },
+  { id: "ttc", name: "Transportation and Ticket Center", area: "Hub" },
+  { id: "ds", name: "Disney Springs", area: "Shopping/Dining" },
+  { id: "contemporary", name: "Contemporary Resort", area: "Magic Kingdom Resort" },
+  { id: "poly", name: "Polynesian Village Resort", area: "Magic Kingdom Resort" },
+  { id: "grand", name: "Grand Floridian Resort", area: "Magic Kingdom Resort" },
+  { id: "beach", name: "Beach Club Resort", area: "Epcot Resort" },
+  { id: "boardwalk", name: "BoardWalk Inn", area: "Epcot Resort" },
+  { id: "riviera", name: "Riviera Resort", area: "Skyliner Resort" },
+  { id: "pop", name: "Pop Century Resort", area: "Skyliner Resort" },
+  { id: "art", name: "Art of Animation Resort", area: "Skyliner Resort" },
+  { id: "akl", name: "Animal Kingdom Lodge", area: "Animal Kingdom Resort" },
 ];
 
 const COOL_DOWN_KEYWORDS = [
@@ -62,6 +94,11 @@ const COOL_DOWN_KEYWORDS = [
   "pirates",
   "haunted mansion",
 ];
+
+const MK_RESORTS = new Set(["contemporary", "poly", "grand"]);
+const EPCOT_RESORTS = new Set(["beach", "boardwalk"]);
+const SKYLINER_RESORTS = new Set(["riviera", "pop", "art"]);
+const PARK_LOCATION_IDS = new Set(["mk", "epcot", "hs", "ak"]);
 
 function Icon({ name }: { name: IconName }) {
   if (name === "castle") {
@@ -194,10 +231,115 @@ function isCoolDownRide(ride: DisplayRide) {
   return COOL_DOWN_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
+function locationName(id: string) {
+  return LOCATIONS.find((location) => location.id === id)?.name || id;
+}
+
+function getRoute(from: string, to: string): RouteResult {
+  const fromName = locationName(from);
+  const toName = locationName(to);
+
+  if (from === to) {
+    return { method: "You are already there", time: "0 min", steps: ["Stay at your current location."] };
+  }
+
+  if ((from === "epcot" && to === "hs") || (from === "hs" && to === "epcot")) {
+    return {
+      method: "Gondola or boat",
+      time: "20–35 min",
+      steps: [
+        "Use the gondola route between the Epcot resort area and Hollywood Studios when operating.",
+        "A boat route is another free option if you prefer less walking.",
+      ],
+      note: "Gondola service can pause for weather.",
+    };
+  }
+
+  if ((from === "mk" && to === "ttc") || (from === "ttc" && to === "mk")) {
+    return {
+      method: "Rail or ferryboat",
+      time: "10–20 min",
+      steps: ["Use rail or ferryboat transportation between Magic Kingdom and the main transportation hub."],
+    };
+  }
+
+  if (from === "mk" && MK_RESORTS.has(to)) {
+    const method = to === "contemporary" ? "Walk or resort rail" : "Resort rail or boat";
+    return { method, time: to === "contemporary" ? "10–20 min" : "15–30 min", steps: [`Exit Magic Kingdom and use ${method.toLowerCase()} to ${toName}.`] };
+  }
+
+  if (MK_RESORTS.has(from) && to === "mk") {
+    const method = from === "contemporary" ? "Walk or resort rail" : "Resort rail or boat";
+    return { method, time: from === "contemporary" ? "10–20 min" : "15–30 min", steps: [`Use ${method.toLowerCase()} from ${fromName} to Magic Kingdom.`] };
+  }
+
+  if ((from === "epcot" && EPCOT_RESORTS.has(to)) || (EPCOT_RESORTS.has(from) && to === "epcot")) {
+    return { method: "Walk or boat", time: "10–20 min", steps: [`Walk or take a boat between ${fromName} and ${toName}.`] };
+  }
+
+  if ((from === "hs" && EPCOT_RESORTS.has(to)) || (EPCOT_RESORTS.has(from) && to === "hs")) {
+    return { method: "Boat or gondola", time: "20–35 min", steps: [`Use a boat route or gondola connection between ${fromName} and ${toName}.`] };
+  }
+
+  if (((from === "epcot" || from === "hs") && SKYLINER_RESORTS.has(to)) || (SKYLINER_RESORTS.has(from) && (to === "epcot" || to === "hs"))) {
+    return {
+      method: "Gondola",
+      time: "15–35 min",
+      steps: [`Use the gondola route between ${fromName} and ${toName}.`, "Transfer at the central gondola station if needed."],
+      note: "Gondola service can pause for weather.",
+    };
+  }
+
+  if ((from === "epcot" && to === "mk") || (from === "mk" && to === "epcot")) {
+    return {
+      method: "Rail via transportation hub",
+      time: "35–55 min",
+      steps: [
+        from === "epcot" ? "Take rail transportation to the main transportation hub." : "Take rail or ferryboat transportation to the main transportation hub.",
+        from === "epcot" ? "Transfer toward Magic Kingdom." : "Transfer toward Epcot.",
+      ],
+    };
+  }
+
+  if (from === "ds" || to === "ds") {
+    return {
+      method: "Bus via resort transfer",
+      time: "45–75+ min",
+      steps: ["Use bus transportation between Disney Springs and a resort.", `Transfer through a nearby resort or your resort to continue to ${toName}.`],
+      note: "Direct park-to-Disney Springs routes are limited. A rideshare may be faster, but this shows the free transportation option.",
+    };
+  }
+
+  if (from === "akl" || to === "akl" || from === "ak" || to === "ak") {
+    return {
+      method: "Bus",
+      time: "20–50 min",
+      steps: [`Use bus transportation from ${fromName} toward ${toName}.`, "For resort-to-resort trips, transfer at a park or shopping/dining hub if no direct route is posted."],
+    };
+  }
+
+  if (PARK_LOCATION_IDS.has(from) && PARK_LOCATION_IDS.has(to)) {
+    return {
+      method: "Bus or park-specific transport",
+      time: "30–60 min",
+      steps: [`Look for transportation from ${fromName} to ${toName}.`, "If a direct bus is not posted, transfer through a nearby hub or resort."],
+    };
+  }
+
+  return {
+    method: "Bus with possible transfer",
+    time: "35–70 min",
+    steps: [`Use transportation from ${fromName} toward ${toName}.`, "For resort-to-resort travel, transfer at a park, shopping/dining hub, or major transportation hub."],
+  };
+}
+
 export default function SexyCastleWatch() {
   const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
+  const [activeSection, setActiveSection] = useState<Section>("park");
   const [activeTab, setActiveTab] = useState<Tab>("rides");
   const [mode, setMode] = useState<Mode>("lowStress");
+  const [from, setFrom] = useState("mk");
+  const [to, setTo] = useState("epcot");
   const [ridesResult, setRidesResult] = useState<ApiResult<Ride[]> | null>(null);
   const [insightsResult, setInsightsResult] = useState<ApiResult<HistoricalInsights> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -279,6 +421,14 @@ export default function SexyCastleWatch() {
   const hottestZone = zones[0];
   const selectedZone = zones[0];
   const averageWait = openRides.length ? Math.round(openRides.reduce((sum, ride) => sum + ride.displayWait, 0) / openRides.length) : 0;
+  const route = useMemo(() => getRoute(from, to), [from, to]);
+  const currentLocation = LOCATIONS.find((location) => location.id === from);
+  const destinationLocation = LOCATIONS.find((location) => location.id === to);
+
+  function choosePark(park: string) {
+    setSelectedPark(park);
+    setActiveSection("park");
+  }
 
   return (
     <main className={`sexy-page ${styles.scope}`}>
@@ -297,19 +447,23 @@ export default function SexyCastleWatch() {
           </button>
         </header>
 
-        <nav className="sexy-park-row" aria-label="Choose park">
+        <nav className="sexy-park-row" aria-label="Choose park or transportation">
           {PARKS.map((park) => (
             <button
               key={park.name}
-              className={`sexy-park ${selectedPark === park.name ? "active" : ""}`}
-              onClick={() => setSelectedPark(park.name)}
+              className={`sexy-park ${activeSection === "park" && selectedPark === park.name ? "active" : ""}`}
+              onClick={() => choosePark(park.name)}
               type="button"
             >
               <Icon name={park.icon} />
               <strong>{park.label}</strong>
             </button>
           ))}
-          <button className="sexy-park" type="button">
+          <button
+            className={`sexy-park ${activeSection === "transport" ? "active" : ""}`}
+            onClick={() => setActiveSection("transport")}
+            type="button"
+          >
             <Icon name="transport" />
             <strong>Transport</strong>
           </button>
@@ -317,8 +471,8 @@ export default function SexyCastleWatch() {
 
         <section className="sexy-hero">
           <div>
-            <h2>{selectedPark}</h2>
-            <p>{activeTab === "heat" ? "Heat Map" : "Park Command Center"}</p>
+            <h2>{activeSection === "transport" ? "Transport" : selectedPark}</h2>
+            <p>{activeSection === "transport" ? "Free Route Planner" : activeTab === "heat" ? "Heat Map" : "Park Command Center"}</p>
           </div>
           <div className="sexy-skyline" aria-hidden="true">
             <span />
@@ -327,108 +481,161 @@ export default function SexyCastleWatch() {
           </div>
         </section>
 
-        {activeTab === "heat" ? (
-          <section className="sexy-stats compact">
-            <div><span>Average Wait</span><strong>{averageWait}<small> min</small></strong></div>
-            <div><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
-            <div><span>Crowd Pressure</span><strong>{pressure(averageWait, peakWait)}</strong></div>
-          </section>
-        ) : (
-          <section className="sexy-stats">
-            <div><Icon name="rides" /><span>Open Rides</span><strong>{openRides.length}</strong></div>
-            <div><Icon name="heat" /><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
-            <div><Icon name="spark" /><span>Hottest Area</span><strong>{hottestZone?.land || "—"}</strong></div>
-            <div><Icon name="plan" /><span>Historical Samples</span><strong>{insights?.historical_entries_analyzed || 0}</strong></div>
-          </section>
-        )}
-
-        <section className="sexy-tabs" aria-label="Dashboard tabs">
-          <button className={activeTab === "rides" ? "active" : ""} onClick={() => setActiveTab("rides")} type="button"><Icon name="rides" />Rides</button>
-          <button className={activeTab === "heat" ? "active" : ""} onClick={() => setActiveTab("heat")} type="button"><Icon name="heat" />Heat</button>
-          <button className={activeTab === "plan" ? "active" : ""} onClick={() => setActiveTab("plan")} type="button"><Icon name="plan" />Plan</button>
-        </section>
-
-        {activeTab === "rides" && (
-          <section className="sexy-list">
-            {parkRides.slice(0, 7).map((ride, index) => (
-              <article className="sexy-ride" key={`${ride.displayName}-${index}`}>
-                <div className={`sexy-thumb thumb-${index % 6}`} />
-                <div>
-                  <h3>{ride.displayName}</h3>
-                  <p>{ride.displayLand}</p>
-                </div>
-                <span className={waitClass(ride.displayWait)}>{ride.displayWait}<small>min</small></span>
-                <span className="sexy-chevron">›</span>
-              </article>
-            ))}
-          </section>
-        )}
-
-        {activeTab === "heat" && (
-          <section className="sexy-heat">
-            <div className="sexy-map-card">
-              {zones.slice(0, 5).map((zone, index) => (
-                <article className={`${pressureClass(zone.pressure)} map-zone map-zone-${index}`} key={zone.land}>
-                  <h3>{zone.land}</h3>
-                  <strong>{zone.pressure}</strong>
-                  <span>Avg {zone.avg} min</span>
-                  <span>Peak {zone.peak} min</span>
-                  <small>{zone.pressure}</small>
-                </article>
-              ))}
-            </div>
-            {selectedZone && (
-              <article className="sexy-detail-card hot-detail">
-                <div className="sexy-thumb thumb-0" />
-                <div>
-                  <span>Hottest Area</span>
-                  <h3>{selectedZone.land}</h3>
-                  <p>Peak {selectedZone.peak} min · {selectedZone.pressure}</p>
-                </div>
-                {selectedZone.rides.slice(0, 3).map((ride) => (
-                  <div className="sexy-mini-row" key={ride.displayName}>
-                    <strong>{ride.displayName}</strong>
-                    <span>{ride.displayWait} min</span>
-                  </div>
-                ))}
-              </article>
-            )}
-          </section>
-        )}
-
-        {activeTab === "plan" && (
-          <section className="sexy-plan">
+        {activeSection === "transport" ? (
+          <section className="sexy-transport-screen">
             <article className="sexy-next-move">
-              <span>✦ Next Best Move</span>
-              <div className="sexy-plan-main">
-                <div className="sexy-thumb thumb-1" />
-                <div>
-                  <h3>{planTitle}</h3>
-                  <p>{planLand}</p>
-                </div>
-                <strong>{planWait}<small>min</small></strong>
+              <span><Icon name="transport" /> Free Transportation</span>
+              <div className="sexy-picker-grid">
+                <label>
+                  <small>Current location</small>
+                  <select value={from} onChange={(event) => setFrom(event.target.value)}>
+                    {LOCATIONS.map((location) => (
+                      <option key={location.id} value={location.id}>{location.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <small>Destination</small>
+                  <select value={to} onChange={(event) => setTo(event.target.value)}>
+                    {LOCATIONS.map((location) => (
+                      <option key={location.id} value={location.id}>{location.name}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
-              <p>{planReason}</p>
-              <div className="sexy-mode-row">
-                <button className={mode === "aggressive" ? "active" : ""} onClick={() => setMode("aggressive")} type="button">↗ Max Rides</button>
-                <button className={mode === "lowStress" ? "active" : ""} onClick={() => setMode("lowStress")} type="button">◆ Low-Stress</button>
-                <button className={mode === "coolDown" ? "active" : ""} onClick={() => setMode("coolDown")} type="button">✦ Cool Down</button>
+
+              <div className="sexy-route">
+                <strong>{currentLocation?.name}</strong>
+                <b>→</b>
+                <strong>{destinationLocation?.name}</strong>
               </div>
             </article>
 
             <article className="sexy-transport-card">
-              <span><Icon name="transport" /> Free Transportation</span>
-              <div className="sexy-route">
-                <strong>{hottestZone?.land || "Current Area"}</strong>
-                <b>→</b>
-                <strong>{planLand}</strong>
+              <span>Recommended free route</span>
+              <div className="sexy-plan-main">
+                <div className="sexy-thumb thumb-2" />
+                <div>
+                  <h3>{route.method}</h3>
+                  <p>{route.note || "Estimated planning route. Confirm posted transportation signs in person."}</p>
+                </div>
+                <strong>{route.time}</strong>
               </div>
-              <p>Best free option shown when transport rules are available. Current estimate: plan around 10–25 min.</p>
-              <div className="sexy-step"><b>1</b><p>Go to {planTitle}.</p></div>
-              <div className="sexy-step"><b>2</b><p>Refresh CastleWatch after the ride.</p></div>
-              <div className="sexy-step"><b>3</b><p>Avoid {hottestZone?.land || "the hottest area"} if pressure stays high.</p></div>
+
+              {route.steps.map((step, index) => (
+                <div className="sexy-step" key={step}>
+                  <b>{index + 1}</b>
+                  <p>{step}</p>
+                </div>
+              ))}
             </article>
           </section>
+        ) : (
+          <>
+            {activeTab === "heat" ? (
+              <section className="sexy-stats compact">
+                <div><span>Average Wait</span><strong>{averageWait}<small> min</small></strong></div>
+                <div><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
+                <div><span>Crowd Pressure</span><strong>{pressure(averageWait, peakWait)}</strong></div>
+              </section>
+            ) : (
+              <section className="sexy-stats">
+                <div><Icon name="rides" /><span>Open Rides</span><strong>{openRides.length}</strong></div>
+                <div><Icon name="heat" /><span>Peak Wait</span><strong>{peakWait}<small> min</small></strong></div>
+                <div><Icon name="spark" /><span>Hottest Area</span><strong>{hottestZone?.land || "—"}</strong></div>
+                <div><Icon name="plan" /><span>Historical Samples</span><strong>{insights?.historical_entries_analyzed || 0}</strong></div>
+              </section>
+            )}
+
+            <section className="sexy-tabs" aria-label="Dashboard tabs">
+              <button className={activeTab === "rides" ? "active" : ""} onClick={() => setActiveTab("rides")} type="button"><Icon name="rides" />Rides</button>
+              <button className={activeTab === "heat" ? "active" : ""} onClick={() => setActiveTab("heat")} type="button"><Icon name="heat" />Heat</button>
+              <button className={activeTab === "plan" ? "active" : ""} onClick={() => setActiveTab("plan")} type="button"><Icon name="plan" />Plan</button>
+            </section>
+
+            {activeTab === "rides" && (
+              <section className="sexy-list">
+                {parkRides.slice(0, 7).map((ride, index) => (
+                  <article className="sexy-ride" key={`${ride.displayName}-${index}`}>
+                    <div className={`sexy-thumb thumb-${index % 6}`} />
+                    <div>
+                      <h3>{ride.displayName}</h3>
+                      <p>{ride.displayLand}</p>
+                    </div>
+                    <span className={waitClass(ride.displayWait)}>{ride.displayWait}<small>min</small></span>
+                    <span className="sexy-chevron">›</span>
+                  </article>
+                ))}
+              </section>
+            )}
+
+            {activeTab === "heat" && (
+              <section className="sexy-heat">
+                <div className="sexy-map-card">
+                  {zones.slice(0, 5).map((zone, index) => (
+                    <article className={`${pressureClass(zone.pressure)} map-zone map-zone-${index}`} key={zone.land}>
+                      <h3>{zone.land}</h3>
+                      <strong>{zone.pressure}</strong>
+                      <span>Avg {zone.avg} min</span>
+                      <span>Peak {zone.peak} min</span>
+                      <small>{zone.pressure}</small>
+                    </article>
+                  ))}
+                </div>
+                {selectedZone && (
+                  <article className="sexy-detail-card hot-detail">
+                    <div className="sexy-thumb thumb-0" />
+                    <div>
+                      <span>Hottest Area</span>
+                      <h3>{selectedZone.land}</h3>
+                      <p>Peak {selectedZone.peak} min · {selectedZone.pressure}</p>
+                    </div>
+                    {selectedZone.rides.slice(0, 3).map((ride) => (
+                      <div className="sexy-mini-row" key={ride.displayName}>
+                        <strong>{ride.displayName}</strong>
+                        <span>{ride.displayWait} min</span>
+                      </div>
+                    ))}
+                  </article>
+                )}
+              </section>
+            )}
+
+            {activeTab === "plan" && (
+              <section className="sexy-plan">
+                <article className="sexy-next-move">
+                  <span>✦ Next Best Move</span>
+                  <div className="sexy-plan-main">
+                    <div className="sexy-thumb thumb-1" />
+                    <div>
+                      <h3>{planTitle}</h3>
+                      <p>{planLand}</p>
+                    </div>
+                    <strong>{planWait}<small>min</small></strong>
+                  </div>
+                  <p>{planReason}</p>
+                  <div className="sexy-mode-row">
+                    <button className={mode === "aggressive" ? "active" : ""} onClick={() => setMode("aggressive")} type="button">↗ Max Rides</button>
+                    <button className={mode === "lowStress" ? "active" : ""} onClick={() => setMode("lowStress")} type="button">◆ Low-Stress</button>
+                    <button className={mode === "coolDown" ? "active" : ""} onClick={() => setMode("coolDown")} type="button">✦ Cool Down</button>
+                  </div>
+                </article>
+
+                <article className="sexy-transport-card">
+                  <span><Icon name="transport" /> Free Transportation</span>
+                  <div className="sexy-route">
+                    <strong>{hottestZone?.land || "Current Area"}</strong>
+                    <b>→</b>
+                    <strong>{planLand}</strong>
+                  </div>
+                  <p>Best free option shown when transport rules are available. Current estimate: plan around 10–25 min.</p>
+                  <div className="sexy-step"><b>1</b><p>Go to {planTitle}.</p></div>
+                  <div className="sexy-step"><b>2</b><p>Refresh CastleWatch after the ride.</p></div>
+                  <div className="sexy-step"><b>3</b><p>Avoid {hottestZone?.land || "the hottest area"} if pressure stays high.</p></div>
+                </article>
+              </section>
+            )}
+          </>
         )}
 
         <footer className="sexy-footer">

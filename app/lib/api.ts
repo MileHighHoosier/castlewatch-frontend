@@ -88,3 +88,15 @@ export async function fetchRideData(): Promise<ApiResult<any[]>> {
     error: "Backend connected, but no ride-data endpoint returned an array yet.",
   };
 }
+
+export async function fetchPlanningInsights(park: string): Promise<ApiResult<any>> {
+  if (!API_BASE_URL) {
+    return {
+      ok: false,
+      url: "NEXT_PUBLIC_API_BASE_URL is missing",
+      error: "Add NEXT_PUBLIC_API_BASE_URL in Vercel.",
+    };
+  }
+
+  return tryFetch<any>(`/api/planning-insights?park=${encodeURIComponent(park)}`);
+}

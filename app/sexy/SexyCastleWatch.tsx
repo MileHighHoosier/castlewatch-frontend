@@ -128,6 +128,11 @@ function isCoolDownRide(ride: DisplayRide) {
   return COOL_DOWN_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
+function isSingleRiderEntry(ride: Partial<Ride & DisplayRide>) {
+  const combined = `${ride.displayName || ""} ${ride.name || ""} ${ride.ride_name || ""} ${ride.attraction || ""} ${ride.displayLand || ""} ${ride.land || ""}`.toLowerCase();
+  return combined.includes("single rider") || combined.includes("single-rider") || combined.includes("single rider lane");
+}
+
 function uniqueRides(rides: DisplayRide[]) {
   const seen = new Set<string>();
   return rides.filter((ride) => {
@@ -185,7 +190,7 @@ export default function SexyCastleWatch() {
       const wait = ride.wait_time ?? ride.wait;
       const name = ride.name || ride.ride_name || ride.attraction || `Ride ${index + 1}`;
       return { ...ride, displayName: name, displayPark: normalizeParkName(ride.park), displayWait: typeof wait === "number" ? wait : 0, displayLand: ride.land || "Unassigned Area" };
-    });
+    }).filter((ride) => !isSingleRiderEntry(ride));
   }, [ridesResult]);
 
   const parkRides = useMemo(() => rides.filter((ride) => ride.displayPark === selectedPark).sort((a, b) => b.displayWait - a.displayWait), [rides, selectedPark]);

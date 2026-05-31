@@ -1,6 +1,6 @@
 "use client";
 
-import "./SexyCastleWatch.module.css";
+import styles from "./SexyCastleWatch.module.css";
 import { useEffect, useMemo, useState } from "react";
 import { fetchPlanningInsights, fetchRideData, type ApiResult } from "../lib/api";
 
@@ -281,7 +281,7 @@ export default function SexyCastleWatch() {
   const averageWait = openRides.length ? Math.round(openRides.reduce((sum, ride) => sum + ride.displayWait, 0) / openRides.length) : 0;
 
   return (
-    <main className="sexy-page">
+    <main className={`sexy-page ${styles.scope}`}>
       <section className="sexy-phone">
         <div className="sexy-statusbar">
           <span>9:41</span>
@@ -369,7 +369,8 @@ export default function SexyCastleWatch() {
             <div className="sexy-map-card">
               {zones.slice(0, 5).map((zone, index) => (
                 <article className={`${pressureClass(zone.pressure)} map-zone map-zone-${index}`} key={zone.land}>
-                  <strong>{zone.land}</strong>
+                  <h3>{zone.land}</h3>
+                  <strong>{zone.pressure}</strong>
                   <span>Avg {zone.avg} min</span>
                   <span>Peak {zone.peak} min</span>
                   <small>{zone.pressure}</small>

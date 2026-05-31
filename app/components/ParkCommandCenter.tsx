@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchRideData, type ApiResult } from "../lib/api";
+import { fetchPlanningInsights, fetchRideData, type ApiResult } from "../lib/api";
 
 type Ride = {
   id?: string | number;
@@ -22,6 +22,36 @@ type DisplayRide = Ride & {
   displayWait: number;
   displayLand: string;
   displayUpdated?: string;
+};
+
+type RideInsight = {
+  name: string;
+  land?: string;
+  current_wait?: number;
+  typical_wait?: number;
+  average_wait?: number;
+  peak_wait?: number;
+  opportunity_score?: number;
+  pressure_score?: number;
+  samples?: number;
+  is_open?: boolean;
+};
+
+type HistoricalInsights = {
+  park: string;
+  summary?: string;
+  historical_entries_analyzed?: number;
+  rides_analyzed?: number;
+  best_now?: RideInsight[];
+  unusually_high?: RideInsight[];
+  reliable_low_wait?: RideInsight[];
+  land_trends?: Array<{
+    land: string;
+    open_rides: number;
+    average_current_wait: number;
+    average_typical_wait: number;
+    trend: string;
+  }>;
 };
 
 type ParkCommandCenterProps = {
@@ -47,6 +77,7 @@ type PlanRecommendation = {
   reason: string;
   steps: string[];
   avoid?: string;
+  source: "historical" | "live";
 };
 
 const PARK_ORDER = [
@@ -126,18 +157,70 @@ function waitLevel(wait: number) {
   return "ride-unknown";
 }
 
-function isCoolDownRide(ride: DisplayRide) {
-  const name = ride.displayName.toLowerCase();
-  const land = ride.displayLand.toLowerCase();
+function isCoolDownName(name?: string, land?: string) {
+  const combined = `${name || ""} ${land || ""}`.toLowerCase();
+  return COOL_DOWN_KEYWORDS.some((keyword) => combined.includes(keyword));
+}
 
-  return COOL_DOWN_KEYWORDS.some((keyword) => name.includes(keyword) || land.includes(keyword));
+function isCoolDownRide(ride: DisplayRide) {
+  return isCoolDownName(ride.displayName, ride.displayLand);
+}
+
+function formatInsightWait(ride: RideInsight) {
+  const current = typeof ride.current_wait === "number" ? `${ride.current_wait} min now` : "current wait unknown";
+  const typical = typeof ride.typical_wait === "number" ? `${ride.typical_wait} min typical` : "typical wait unknown";
+  return `${current} vs ${typical}`;
+}
+
+function insightToRecommendation(
+  ride: RideInsight,
+  mode: PlanMode,
+  hottestZone?: HeatZone,
+  insights?: HistoricalInsights | null,
+): PlanRecommendation {
+  const modeLabel = mode === "aggressive" ? "Max rides" : mode === "coolDown" ? "Cool down" : "Low-stress";
+  const opportunity = typeof ride.opportunity_score === "number" && ride.opportunity_score > 0
+    ? ` It is ${ride.opportunity_score} minutes better than its usual pattern.`
+    : "";
+
+  return {
+    title: ride.name,
+    subtitle: `Next best move · ${modeLabel} · Historical AI`,
+    reason: `${formatInsightWait(ride)} in ${ride.land || "this area"}.${opportunity} ${insights?.summary || "CastleWatch is comparing current waits against stored historical wait patterns."}`,
+    steps: [
+      `Go to ${ride.name}.`,
+      "Use this recommendation because it compares current wait time against CastleWatch history, not just the live wait list.",
+      hottestZone ? `Afterward, check whether ${hottestZone.land} is still the hottest area before walking that way.` : "Afterward, refresh and compare the next recommendation.",
+    ],
+    avoid: hottestZone ? hottestZone.land : undefined,
+    source: "historical",
+  };
 }
 
 function pickPlanRecommendation(
   mode: PlanMode,
   parkRides: DisplayRide[],
   hottestZone?: HeatZone,
+  insights?: HistoricalInsights | null,
 ): PlanRecommendation {
+  const historicalReady = insights && (insights.rides_analyzed || 0) > 0;
+
+  if (historicalReady) {
+    const bestNow = insights?.best_now || [];
+    const reliableLowWait = insights?.reliable_low_wait || [];
+    const historicalPool = mode === "aggressive"
+      ? bestNow
+      : mode === "coolDown"
+        ? [...bestNow, ...reliableLowWait].filter((ride) => isCoolDownName(ride.name, ride.land))
+        : reliableLowWait.filter((ride) => ride.land !== hottestZone?.land);
+
+    const historicalPick = historicalPool[0] || bestNow[0] || reliableLowWait[0];
+
+    if (historicalPick) {
+      return insightToRecommendation(historicalPick, mode, hottestZone, insights);
+    }
+  }
+
   const openRides = parkRides
     .filter((ride) => ride.is_open !== false)
     .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
@@ -154,6 +237,7 @@ function pickPlanRecommendation(
         "Check the Rides tab for available attractions.",
         "Use the Heat tab to avoid crowded areas.",
       ],
+      source: "live",
     };
   }
 
@@ -172,56 +256,64 @@ function pickPlanRecommendation(
   if (mode === "aggressive") {
     return {
       title: aggressivePick.displayName,
-      subtitle: "Next best move · Max rides",
-      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. This mode prioritizes getting on something efficiently now.`,
+      subtitle: "Next best move · Max rides · Live data",
+      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. Historical analysis will improve as CastleWatch collects more samples.`,
       steps: [
         `Go to ${aggressivePick.displayName}.`,
         "After riding, refresh CastleWatch before choosing the next attraction.",
         hottestZone ? `Avoid lingering in ${hottestZone.land} if it remains the hottest area.` : "Use the Heat tab before crossing the park.",
       ],
       avoid: hottestZone ? hottestZone.land : undefined,
+      source: "live",
     };
   }
 
   if (mode === "coolDown") {
     return {
       title: coolDownPick.displayName,
-      subtitle: "Next best move · Cool down",
-      reason: `${coolDownPick.displayName} is a better cooling/reset choice than simply chasing the lowest wait.`,
+      subtitle: "Next best move · Cool down · Live data",
+      reason: `${coolDownPick.displayName} is a better cooling/reset choice than simply chasing the lowest wait. Historical analysis will improve as more refreshes are stored.`,
       steps: [
         `Head to ${coolDownPick.displayName}.`,
         "Use this stop as an A/C, shade, or seated reset if available.",
         "Afterward, switch back to Low-stress or Max rides depending on energy.",
       ],
       avoid: hottestZone ? hottestZone.land : undefined,
+      source: "live",
     };
   }
 
   return {
     title: lowStressPick.displayName,
-    subtitle: "Next best move · Low-stress",
-    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. This mode balances waits, crowds, and walking stress.`,
+    subtitle: "Next best move · Low-stress · Live data",
+    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. Historical analysis will improve as more refreshes are stored.`,
     steps: [
       `Go to ${lowStressPick.displayName}.`,
       "Keep the group moving without crossing into the hottest area unless necessary.",
       "Plan a snack, bathroom, or shade break after this ride.",
     ],
     avoid: hottestZone ? hottestZone.land : undefined,
+    source: "live",
   };
 }
 
 export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCommandCenterProps) {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
+  const [insightsResult, setInsightsResult] = useState<ApiResult<HistoricalInsights> | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState("");
   const [activeTab, setActiveTab] = useState<"rides" | "heat" | "plan">("rides");
   const [selectedLand, setSelectedLand] = useState<string>("");
   const [planMode, setPlanMode] = useState<PlanMode>("lowStress");
 
-  async function loadData() {
+  async function loadData(park = selectedPark) {
     setLoading(true);
-    const next = await fetchRideData();
-    setResult(next);
+    const [nextRides, nextInsights] = await Promise.all([
+      fetchRideData(),
+      fetchPlanningInsights(park),
+    ]);
+    setResult(nextRides);
+    setInsightsResult(nextInsights as ApiResult<HistoricalInsights>);
     setLastRefreshed(new Date().toLocaleTimeString([], {
       hour: "numeric",
       minute: "2-digit",
@@ -231,8 +323,8 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(selectedPark);
+  }, [selectedPark]);
 
   const rides = useMemo<DisplayRide[]>(() => {
     const raw = Array.isArray(result?.data) ? result.data : [];
@@ -329,7 +421,8 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const hottestZone = zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
   const priorityRides = parkRides.slice(0, 8);
-  const planRecommendation = pickPlanRecommendation(planMode, parkRides, hottestZone);
+  const insights = insightsResult?.ok ? insightsResult.data : null;
+  const planRecommendation = pickPlanRecommendation(planMode, parkRides, hottestZone, insights);
 
   return (
     <div className="card command-center">
@@ -337,11 +430,11 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
         <div>
           <h2>{activePark}</h2>
           <p className="muted">
-            {loading ? "Loading live park data..." : result?.ok ? "Live park snapshot" : "Ride data not ready"}
+            {loading ? "Loading live + historical data..." : result?.ok ? "Live park snapshot" : "Ride data not ready"}
           </p>
         </div>
 
-        <button className="button" onClick={loadData} type="button">
+        <button className="button" onClick={() => loadData(activePark)} type="button">
           Refresh
         </button>
       </div>
@@ -356,8 +449,8 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           <strong>{peakWait}m</strong>
         </div>
         <div className="stat-box compact-stat">
-          <span className="stat-label">Hot Area</span>
-          <strong>{hottestZone?.land || "—"}</strong>
+          <span className="stat-label">History</span>
+          <strong>{insights?.historical_entries_analyzed || 0}</strong>
         </div>
       </div>
 
@@ -464,9 +557,21 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
             <h3>{planRecommendation.title}</h3>
             <p className="muted">{planRecommendation.reason}</p>
 
+            {insights && (
+              <div className="history-summary">
+                <strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed
+              </div>
+            )}
+
+            {!insights && (
+              <div className="history-summary">
+                Historical analysis is warming up. Refresh `/api/refresh-rides` over time to build a stronger dataset.
+              </div>
+            )}
+
             <div className="next-move-actions">
               <button className="button" type="button">Start route</button>
-              <button className="button secondary-button" type="button" onClick={loadData}>Recalculate</button>
+              <button className="button secondary-button" type="button" onClick={() => loadData(activePark)}>Recalculate</button>
             </div>
           </div>
 
@@ -482,6 +587,12 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           {planRecommendation.avoid && (
             <div className="plan-note">
               <strong>Avoid for now:</strong> {planRecommendation.avoid}
+            </div>
+          )}
+
+          {insights?.unusually_high && insights.unusually_high.length > 0 && (
+            <div className="plan-note">
+              <strong>Busier than usual:</strong> {insights.unusually_high.slice(0, 3).map((ride) => ride.name).join(", ")}
             </div>
           )}
         </div>

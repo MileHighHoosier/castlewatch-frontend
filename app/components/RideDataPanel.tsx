@@ -16,6 +16,11 @@ type Ride = {
   created_at?: string;
 };
 
+type RideDataPanelProps = {
+  selectedPark: string;
+  onSelectPark: (park: string) => void;
+};
+
 const PARK_ORDER = [
   "Magic Kingdom",
   "Epcot",
@@ -23,14 +28,6 @@ const PARK_ORDER = [
   "Animal Kingdom",
   "Unknown Park",
 ];
-
-const PARK_ICONS: Record<string, string> = {
-  "Magic Kingdom": "🏰",
-  Epcot: "🌐",
-  "Hollywood Studios": "🎬",
-  "Animal Kingdom": "🌳",
-  "Unknown Park": "✨",
-};
 
 function formatDateTime(value?: string) {
   if (!value) return "Unknown";
@@ -66,11 +63,10 @@ function getWaitLevel(wait?: number) {
   return "low";
 }
 
-export default function RideDataPanel() {
+export default function RideDataPanel({ selectedPark, onSelectPark }: RideDataPanelProps) {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<string>("");
-  const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
 
   async function loadRides() {
     setLoading(true);
@@ -139,6 +135,13 @@ export default function RideDataPanel() {
   const activeGroup = groupedByPark.find((group) => group.park === activePark);
   const visibleRides = activeGroup?.rides || [];
 
+  useEffect(() => {
+    if (!availableParks.length) return;
+    if (!availableParks.includes(selectedPark)) {
+      onSelectPark(availableParks[0]);
+    }
+  }, [availableParks, onSelectPark, selectedPark]);
+
   const highWaitCount = visibleRides.filter((ride) => ride.displayWait >= 60).length;
   const longestWait = visibleRides.length > 0 ? visibleRides[0] : null;
   const openRideCount = visibleRides.filter((ride) => ride.is_open !== false).length;
@@ -159,29 +162,8 @@ export default function RideDataPanel() {
       </div>
 
       <p className="muted">
-        Tap a park to focus on ride-demand attractions only. Character meets and non-ride experiences are filtered out.
+        Use the park banner at the top of the page to switch parks. Character meets and non-ride experiences are filtered out.
       </p>
-
-      {groupedByPark.length > 0 && (
-        <div className="park-tabs" role="tablist" aria-label="Choose a Walt Disney World park">
-          {groupedByPark.map((group) => (
-            <button
-              className={`park-tab ${group.park === activePark ? "park-tab-active" : ""}`}
-              key={group.park}
-              onClick={() => setSelectedPark(group.park)}
-              role="tab"
-              aria-selected={group.park === activePark}
-              type="button"
-            >
-              <span className="park-tab-icon" aria-hidden="true">
-                {PARK_ICONS[group.park] || "✨"}
-              </span>
-              <span className="park-tab-label">{group.park}</span>
-              <span className="park-tab-count">{group.rides.length}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {result?.ok && (
         <div className="dashboard-stats">

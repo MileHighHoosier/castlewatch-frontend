@@ -168,6 +168,51 @@ const NON_RIDE_PRIORITY_KEYWORDS = [
   "zootopia: better zoogether",
 ];
 
+const ROPE_DROP_PRIORITY: Record<string, string[]> = {
+  "Magic Kingdom": [
+    "seven dwarfs",
+    "tron",
+    "big thunder",
+    "jungle cruise",
+    "haunted mansion",
+    "buzz lightyear",
+    "pirates",
+    "small world",
+    "dumbo",
+    "mad tea party",
+    "astro orbiter",
+  ],
+  Epcot: [
+    "frozen ever after",
+    "remy",
+    "guardians",
+    "soarin",
+    "living with the land",
+    "gran fiesta",
+    "mission: space",
+    "figment",
+  ],
+  "Hollywood Studios": [
+    "slinky dog",
+    "rise of the resistance",
+    "millennium falcon",
+    "runaway railway",
+    "toy story mania",
+    "alien swirling",
+    "rock 'n' roller",
+    "tower of terror",
+    "star tours",
+  ],
+  "Animal Kingdom": [
+    "avatar flight of passage",
+    "na'vi river journey",
+    "kilimanjaro safaris",
+    "expedition everest",
+    "kali river rapids",
+    "dinosaur",
+  ],
+};
+
 function normalizeParkName(value?: string) {
   if (!value) return "Unknown Park";
 
@@ -216,6 +261,23 @@ function isOpenRide(ride: Pick<DisplayRide, "is_open" | "displayWait">) {
 function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
   const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
   return !NON_RIDE_PRIORITY_KEYWORDS.some((keyword) => combined.includes(keyword));
+}
+
+function getRopeDropRank(ride: DisplayRide) {
+  const parkPriorities = ROPE_DROP_PRIORITY[ride.displayPark] || [];
+  const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
+  const priorityIndex = parkPriorities.findIndex((keyword) => combined.includes(keyword));
+  return priorityIndex === -1 ? 999 : priorityIndex;
+}
+
+function compareRopeDropPriority(a: DisplayRide, b: DisplayRide) {
+  const rankDifference = getRopeDropRank(a) - getRopeDropRank(b);
+  if (rankDifference !== 0) return rankDifference;
+
+  const waitDifference = Math.max(b.displayWait, 0) - Math.max(a.displayWait, 0);
+  if (waitDifference !== 0) return waitDifference;
+
+  return a.displayName.localeCompare(b.displayName);
 }
 
 function isPlanCandidate(ride: DisplayRide) {
@@ -525,7 +587,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const hottestZone = zones.find((zone) => zone.openRides.length > 0) || zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
   const priorityRides = priorityParkRides.slice(0, 8);
-  const tomorrowTargets = priorityParkRides.slice(0, 3);
+  const tomorrowTargets = [...priorityParkRides].sort(compareRopeDropPriority).slice(0, 3);
   const hiddenNonPriorityCount = parkRides.length - priorityParkRides.length;
   const insights = insightsResult?.ok ? insightsResult.data : null;
   const planRecommendation = pickPlanRecommendation(planMode, priorityParkRides, hottestZone, insights);
@@ -656,7 +718,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
                 <span className="stat-label">Tomorrow planning · Closed park</span>
                 <h3>Tomorrow rope-drop / watch targets</h3>
                 <p className="muted">
-                  The park appears closed, so these are not live “go now” instructions. Treat them as tomorrow morning targets to watch first after the next refresh.
+                  The park appears closed, so these are not live “go now” instructions. These targets are sorted by family rope-drop priority, then should be verified after the next refresh.
                 </p>
 
                 {insights && (
@@ -672,7 +734,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
                     <span>{index + 1}</span>
                     <p>
                       <strong>{ride.displayName}</strong><br />
-                      Watch this first tomorrow. It is currently closed, so refresh after park opening before committing to it.
+                      Family rope-drop target. It is currently closed, so refresh after park opening before committing to it.
                     </p>
                   </div>
                 )) : (

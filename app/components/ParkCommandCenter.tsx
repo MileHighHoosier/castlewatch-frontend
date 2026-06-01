@@ -525,6 +525,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const hottestZone = zones.find((zone) => zone.openRides.length > 0) || zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
   const priorityRides = priorityParkRides.slice(0, 8);
+  const tomorrowTargets = priorityParkRides.slice(0, 3);
   const hiddenNonPriorityCount = parkRides.length - priorityParkRides.length;
   const insights = insightsResult?.ok ? insightsResult.data : null;
   const planRecommendation = pickPlanRecommendation(planMode, priorityParkRides, hottestZone, insights);
@@ -649,63 +650,104 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "plan" && (
         <div className="compact-panel">
-          <div className="plan-mode-tabs" role="tablist" aria-label="Choose planning style">
-            <button className={`plan-mode ${planMode === "aggressive" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("aggressive")} type="button">
-              <span>⚡</span>
-              <strong>Max rides</strong>
-            </button>
-            <button className={`plan-mode ${planMode === "lowStress" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("lowStress")} type="button">
-              <span>😌</span>
-              <strong>Low-stress</strong>
-            </button>
-            <button className={`plan-mode ${planMode === "coolDown" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("coolDown")} type="button">
-              <span>❄️</span>
-              <strong>Cool down</strong>
-            </button>
-          </div>
+          {parkAppearsClosed ? (
+            <>
+              <div className="next-move-card">
+                <span className="stat-label">Tomorrow planning · Closed park</span>
+                <h3>Tomorrow rope-drop / watch targets</h3>
+                <p className="muted">
+                  The park appears closed, so these are not live “go now” instructions. Treat them as tomorrow morning targets to watch first after the next refresh.
+                </p>
 
-          <div className="next-move-card">
-            <span className="stat-label">{planRecommendation.subtitle}</span>
-            <h3>{planRecommendation.title}</h3>
-            <p className="muted">{planRecommendation.reason}</p>
-
-            {insights && (
-              <div className="history-summary">
-                <strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed
+                {insights && (
+                  <div className="history-summary">
+                    <strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed
+                  </div>
+                )}
               </div>
-            )}
 
-            {!insights && (
-              <div className="history-summary">
-                Historical analysis is warming up. Refresh `/api/refresh-rides` over time to build a stronger dataset.
+              <div className="plan-steps">
+                {tomorrowTargets.length > 0 ? tomorrowTargets.map((ride, index) => (
+                  <div className="plan-step" key={`${ride.displayName}-tomorrow-${index}`}>
+                    <span>{index + 1}</span>
+                    <p>
+                      <strong>{ride.displayName}</strong><br />
+                      Watch this first tomorrow. It is currently closed, so refresh after park opening before committing to it.
+                    </p>
+                  </div>
+                )) : (
+                  <div className="plan-step">
+                    <span>1</span>
+                    <p>Refresh tomorrow after park opening to build the first live route.</p>
+                  </div>
+                )}
               </div>
-            )}
 
-            <div className="next-move-actions">
-              <button className="button" type="button">Start route</button>
-              <button className="button secondary-button" type="button" onClick={() => loadData(activePark)}>Recalculate</button>
-            </div>
-          </div>
-
-          <div className="plan-steps">
-            {planRecommendation.steps.map((step, index) => (
-              <div className="plan-step" key={step}>
-                <span>{index + 1}</span>
-                <p>{step}</p>
+              <div className="plan-note">
+                <strong>Night rule:</strong> Do not treat closed rides as current recommendations. Use this tab for tomorrow planning only.
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="plan-mode-tabs" role="tablist" aria-label="Choose planning style">
+                <button className={`plan-mode ${planMode === "aggressive" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("aggressive")} type="button">
+                  <span>⚡</span>
+                  <strong>Max rides</strong>
+                </button>
+                <button className={`plan-mode ${planMode === "lowStress" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("lowStress")} type="button">
+                  <span>😌</span>
+                  <strong>Low-stress</strong>
+                </button>
+                <button className={`plan-mode ${planMode === "coolDown" ? "plan-mode-active" : ""}`} onClick={() => setPlanMode("coolDown")} type="button">
+                  <span>❄️</span>
+                  <strong>Cool down</strong>
+                </button>
+              </div>
 
-          {planRecommendation.avoid && (
-            <div className="plan-note">
-              <strong>Avoid for now:</strong> {planRecommendation.avoid}
-            </div>
-          )}
+              <div className="next-move-card">
+                <span className="stat-label">{planRecommendation.subtitle}</span>
+                <h3>{planRecommendation.title}</h3>
+                <p className="muted">{planRecommendation.reason}</p>
 
-          {insights?.unusually_high && insights.unusually_high.length > 0 && (
-            <div className="plan-note">
-              <strong>Busier than usual:</strong> {insights.unusually_high.slice(0, 3).map((ride) => ride.name).join(", ")}
-            </div>
+                {insights && (
+                  <div className="history-summary">
+                    <strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed
+                  </div>
+                )}
+
+                {!insights && (
+                  <div className="history-summary">
+                    Historical analysis is warming up. Refresh `/api/refresh-rides` over time to build a stronger dataset.
+                  </div>
+                )}
+
+                <div className="next-move-actions">
+                  <button className="button" type="button">Start route</button>
+                  <button className="button secondary-button" type="button" onClick={() => loadData(activePark)}>Recalculate</button>
+                </div>
+              </div>
+
+              <div className="plan-steps">
+                {planRecommendation.steps.map((step, index) => (
+                  <div className="plan-step" key={step}>
+                    <span>{index + 1}</span>
+                    <p>{step}</p>
+                  </div>
+                ))}
+              </div>
+
+              {planRecommendation.avoid && (
+                <div className="plan-note">
+                  <strong>Avoid for now:</strong> {planRecommendation.avoid}
+                </div>
+              )}
+
+              {insights?.unusually_high && insights.unusually_high.length > 0 && (
+                <div className="plan-note">
+                  <strong>Busier than usual:</strong> {insights.unusually_high.slice(0, 3).map((ride) => ride.name).join(", ")}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

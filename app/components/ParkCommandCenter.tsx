@@ -149,6 +149,7 @@ const NON_RIDE_PRIORITY_KEYWORDS = [
   "seabase aquarium",
   "sea base aquarium",
   "short film festival",
+  "single rider",
   "sing-along",
   "splash 'n' soak",
   "splash n soak",
@@ -577,7 +578,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
         <div className="compact-panel">
           <h3>Highest priority ride-demand attractions</h3>
           {hiddenNonPriorityCount > 0 && (
-            <p className="muted">Filtered out {hiddenNonPriorityCount} walkthroughs, exhibits, play areas, or scenery-only entries.</p>
+            <p className="muted">Filtered out {hiddenNonPriorityCount} walkthroughs, exhibits, play areas, single-rider lines, or scenery-only entries.</p>
           )}
           {priorityRides.length > 0 ? (
             <div className="ride-list compact-ride-list">
@@ -604,7 +605,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
       {activeTab === "heat" && (
         <div className="compact-panel">
           <h3>Ride-area heat map</h3>
-          <p className="muted">Heat pressure ignores walkthroughs, exhibits, play areas, and scenery-only entries.</p>
+          <p className="muted">Heat pressure ignores walkthroughs, exhibits, play areas, single-rider lines, and scenery-only entries.</p>
           <div className="area-tile-grid">
             {zones.map((zone) => (
               <button
@@ -623,7 +624,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           {selectedZone && (
             <div className="area-detail-panel">
               <h3>{selectedZone.land} details</h3>
-              <p className="muted">Open ride-demand attractions are listed first. Closed 0-minute and non-ride entries are not treated as good options.</p>
+              <p className="muted">Open ride-demand attractions are listed first. Closed 0-minute, single-rider, and non-ride entries are not treated as good family options.</p>
               <div className="ride-list compact-ride-list">
                 {selectedZone.rides.slice(0, 5).map((ride, index) => (
                   <div className={`ride ${waitLevel(ride)}`} key={`${selectedZone.land}-${ride.displayName}-${index}`}>

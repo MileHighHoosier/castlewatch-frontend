@@ -168,6 +168,11 @@ const NON_RIDE_PRIORITY_KEYWORDS = [
   "zootopia: better zoogether",
 ];
 
+const SPECIAL_ACCESS_KEYWORDS = [
+  "tron",
+  "guardians",
+];
+
 const ROPE_DROP_PRIORITY: Record<string, string[]> = {
   "Magic Kingdom": [
     "seven dwarfs",
@@ -261,6 +266,11 @@ function isOpenRide(ride: Pick<DisplayRide, "is_open" | "displayWait">) {
 function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
   const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
   return !NON_RIDE_PRIORITY_KEYWORDS.some((keyword) => combined.includes(keyword));
+}
+
+function isSpecialAccessRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
+  const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
+  return SPECIAL_ACCESS_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
 function getRopeDropRank(ride: DisplayRide) {
@@ -729,15 +739,21 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
               </div>
 
               <div className="plan-steps">
-                {tomorrowTargets.length > 0 ? tomorrowTargets.map((ride, index) => (
-                  <div className="plan-step" key={`${ride.displayName}-tomorrow-${index}`}>
-                    <span>{index + 1}</span>
-                    <p>
-                      <strong>{ride.displayName}</strong><br />
-                      Family rope-drop target. It is currently closed, so refresh after park opening before committing to it.
-                    </p>
-                  </div>
-                )) : (
+                {tomorrowTargets.length > 0 ? tomorrowTargets.map((ride, index) => {
+                  const specialAccess = isSpecialAccessRide(ride);
+
+                  return (
+                    <div className="plan-step" key={`${ride.displayName}-tomorrow-${index}`}>
+                      <span>{index + 1}</span>
+                      <p>
+                        <strong>{ride.displayName}</strong><br />
+                        {specialAccess
+                          ? "High-value target — check access rules first. It is currently closed, so verify availability after park opening before committing to it."
+                          : "Family rope-drop target. It is currently closed, so refresh after park opening before committing to it."}
+                      </p>
+                    </div>
+                  );
+                }) : (
                   <div className="plan-step">
                     <span>1</span>
                     <p>Refresh tomorrow after park opening to build the first live route.</p>

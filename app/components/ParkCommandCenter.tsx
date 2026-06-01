@@ -110,6 +110,7 @@ const COOL_DOWN_KEYWORDS = [
 ];
 
 const NON_RIDE_PRIORITY_KEYWORDS = [
+  "a pirate's adventure",
   "advanced training lab",
   "adventureland treehouse",
   "american heritage gallery",
@@ -122,7 +123,9 @@ const NON_RIDE_PRIORITY_KEYWORDS = [
   "cinéma",
   "circle-vision",
   "cinderella castle",
+  "country bear",
   "discovery island trails",
+  "enchanted tales with belle",
   "exhibit",
   "gallery",
   "gorilla falls",

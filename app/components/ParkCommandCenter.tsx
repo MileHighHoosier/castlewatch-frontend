@@ -109,6 +109,31 @@ const COOL_DOWN_KEYWORDS = [
   "haunted mansion",
 ];
 
+const NON_RIDE_PRIORITY_KEYWORDS = [
+  "advanced training lab",
+  "adventureland treehouse",
+  "american heritage gallery",
+  "casey jr",
+  "cinderella castle",
+  "discovery island trails",
+  "exhibit",
+  "gallery",
+  "gorilla falls",
+  "journey of water",
+  "play area",
+  "playground",
+  "splash 'n' soak",
+  "splash n soak",
+  "swiss family treehouse",
+  "the boneyard",
+  "the oasis",
+  "tom sawyer island",
+  "trail",
+  "tree of life",
+  "wilderness explorers",
+  "zootopia: better zoogether",
+];
+
 function normalizeParkName(value?: string) {
   if (!value) return "Unknown Park";
 
@@ -154,8 +179,13 @@ function isOpenRide(ride: Pick<DisplayRide, "is_open" | "displayWait">) {
   return ride.is_open !== false;
 }
 
+function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
+  const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
+  return !NON_RIDE_PRIORITY_KEYWORDS.some((keyword) => combined.includes(keyword));
+}
+
 function isPlanCandidate(ride: DisplayRide) {
-  return isOpenRide(ride) && ride.displayWait >= 0;
+  return isOpenRide(ride) && isPriorityRide(ride) && ride.displayWait >= 0;
 }
 
 function compareOpenThenWaitDesc(a: DisplayRide, b: DisplayRide) {
@@ -194,7 +224,8 @@ function isCoolDownRide(ride: DisplayRide) {
 function isUsableInsight(ride: RideInsight) {
   if (ride.is_open === false) return false;
   if (typeof ride.current_wait === "number" && ride.current_wait < 0) return false;
-  return true;
+  const combined = `${ride.name || ""} ${ride.land || ""}`.toLowerCase();
+  return !NON_RIDE_PRIORITY_KEYWORDS.some((keyword) => combined.includes(keyword));
 }
 
 function formatInsightWait(ride: RideInsight) {
@@ -221,7 +252,7 @@ function insightToRecommendation(
     steps: [
       `Go to ${ride.name}.`,
       "Use this recommendation because it compares current wait time against CastleWatch history, not just the live wait list.",
-      hottestZone ? `Afterward, check whether ${hottestZone.land} is still the hottest area before walking that way.` : "Afterward, refresh and compare the next recommendation.",
+      hottestZone ? `Afterward, check whether ${hottestZone.land} is still the hottest ride area before walking that way.` : "Afterward, refresh and compare the next recommendation.",
     ],
     avoid: hottestZone ? hottestZone.land : undefined,
     source: "historical",
@@ -230,13 +261,13 @@ function insightToRecommendation(
 
 function emptyPlanRecommendation(): PlanRecommendation {
   return {
-    title: "No open ride to prioritize yet",
+    title: "No priority ride to recommend yet",
     subtitle: "No plan yet",
-    reason: "CastleWatch found ride data, but every ride for this park is currently marked closed or unavailable. Closed 0-minute rides are intentionally ignored as recommendations.",
+    reason: "CastleWatch found data, but the currently open items are mostly walkthroughs, play areas, exhibits, or non-ride attractions. They are intentionally ignored as priority recommendations.",
     steps: [
       "Tap Refresh after the park opens or after the next data update.",
-      "Check the Rides tab; open rides will appear above closed rides.",
-      "Use the Heat tab once open rides appear to avoid crowded areas.",
+      "Check the Rides tab; true ride-demand attractions will appear above closed rides and non-ride items.",
+      "Use the Heat tab once ride-demand attractions appear to avoid crowded areas.",
     ],
     source: "live",
   };
@@ -290,11 +321,11 @@ function pickPlanRecommendation(
     return {
       title: aggressivePick.displayName,
       subtitle: "Next best move · Max rides · Live data",
-      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. Closed rides are excluded from recommendations.` ,
+      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. Walkthroughs, play areas, exhibits, and closed rides are excluded from recommendations.`,
       steps: [
         `Go to ${aggressivePick.displayName}.`,
         "After riding, refresh CastleWatch before choosing the next attraction.",
-        hottestZone ? `Avoid lingering in ${hottestZone.land} if it remains the hottest area.` : "Use the Heat tab before crossing the park.",
+        hottestZone ? `Avoid lingering in ${hottestZone.land} if it remains the hottest ride area.` : "Use the Heat tab before crossing the park.",
       ],
       avoid: hottestZone ? hottestZone.land : undefined,
       source: "live",
@@ -305,7 +336,7 @@ function pickPlanRecommendation(
     return {
       title: coolDownPick.displayName,
       subtitle: "Next best move · Cool down · Live data",
-      reason: `${coolDownPick.displayName} is open and a better cooling/reset choice than chasing a closed 0-minute listing.`,
+      reason: `${coolDownPick.displayName} is an open ride-demand attraction and a better cooling/reset choice than chasing an open walkthrough or a closed 0-minute listing.`,
       steps: [
         `Head to ${coolDownPick.displayName}.`,
         "Use this stop as an A/C, shade, or seated reset if available.",
@@ -319,7 +350,7 @@ function pickPlanRecommendation(
   return {
     title: lowStressPick.displayName,
     subtitle: "Next best move · Low-stress · Live data",
-    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. Closed rides are excluded from recommendations.`,
+    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest ride area. Walkthroughs, play areas, exhibits, and closed rides are excluded from recommendations.`,
     steps: [
       `Go to ${lowStressPick.displayName}.`,
       "Keep the group moving without crossing into the hottest area unless necessary.",
@@ -407,13 +438,17 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
       .sort(compareOpenThenWaitDesc);
   }, [activePark, rides]);
 
-  const openRides = parkRides.filter(isOpenRide);
+  const priorityParkRides = useMemo(() => {
+    return parkRides.filter(isPriorityRide);
+  }, [parkRides]);
+
+  const openRides = priorityParkRides.filter(isOpenRide);
   const peakWait = openRides.length > 0 ? Math.max(...openRides.map((ride) => Math.max(ride.displayWait, 0))) : 0;
 
   const zones = useMemo<HeatZone[]>(() => {
     const groups = new Map<string, DisplayRide[]>();
 
-    for (const ride of parkRides) {
+    for (const ride of priorityParkRides) {
       groups.set(ride.displayLand, [...(groups.get(ride.displayLand) || []), ride]);
     }
 
@@ -439,7 +474,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
         };
       })
       .sort((a, b) => b.openRides.length - a.openRides.length || b.longestWait - a.longestWait || b.averageWait - a.averageWait);
-  }, [parkRides]);
+  }, [priorityParkRides]);
 
   useEffect(() => {
     if (!zones.length) {
@@ -454,9 +489,10 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
   const hottestZone = zones.find((zone) => zone.openRides.length > 0) || zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
-  const priorityRides = parkRides.slice(0, 8);
+  const priorityRides = priorityParkRides.slice(0, 8);
+  const hiddenNonPriorityCount = parkRides.length - priorityParkRides.length;
   const insights = insightsResult?.ok ? insightsResult.data : null;
-  const planRecommendation = pickPlanRecommendation(planMode, parkRides, hottestZone, insights);
+  const planRecommendation = pickPlanRecommendation(planMode, priorityParkRides, hottestZone, insights);
 
   return (
     <div className="card command-center">
@@ -464,7 +500,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
         <div>
           <h2>{activePark}</h2>
           <p className="muted">
-            {loading ? "Loading live + historical data..." : result?.ok ? "Live park snapshot" : "Ride data not ready"}
+            {loading ? "Loading live + historical data..." : result?.ok ? "Live ride-demand snapshot" : "Ride data not ready"}
           </p>
         </div>
 
@@ -475,7 +511,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       <div className="command-stats">
         <div className="stat-box compact-stat">
-          <span className="stat-label">Open</span>
+          <span className="stat-label">Open rides</span>
           <strong>{openRides.length}</strong>
         </div>
         <div className="stat-box compact-stat">
@@ -506,7 +542,10 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "rides" && (
         <div className="compact-panel">
-          <h3>Highest priority open rides</h3>
+          <h3>Highest priority ride-demand attractions</h3>
+          {hiddenNonPriorityCount > 0 && (
+            <p className="muted">Filtered out {hiddenNonPriorityCount} walkthroughs, exhibits, play areas, or scenery-only entries.</p>
+          )}
           {priorityRides.length > 0 ? (
             <div className="ride-list compact-ride-list">
               {priorityRides.map((ride, index) => (
@@ -531,7 +570,8 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "heat" && (
         <div className="compact-panel">
-          <h3>Area heat map</h3>
+          <h3>Ride-area heat map</h3>
+          <p className="muted">Heat pressure ignores walkthroughs, exhibits, play areas, and scenery-only entries.</p>
           <div className="area-tile-grid">
             {zones.map((zone) => (
               <button
@@ -550,7 +590,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           {selectedZone && (
             <div className="area-detail-panel">
               <h3>{selectedZone.land} details</h3>
-              <p className="muted">Open rides are listed first. Closed 0-minute rides are not treated as good options.</p>
+              <p className="muted">Open ride-demand attractions are listed first. Closed 0-minute and non-ride entries are not treated as good options.</p>
               <div className="ride-list compact-ride-list">
                 {selectedZone.rides.slice(0, 5).map((ride, index) => (
                   <div className={`ride ${waitLevel(ride)}`} key={`${selectedZone.land}-${ride.displayName}-${index}`}>

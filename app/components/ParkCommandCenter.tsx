@@ -478,6 +478,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
   const openRides = priorityParkRides.filter(isOpenRide);
   const peakWait = openRides.length > 0 ? Math.max(...openRides.map((ride) => Math.max(ride.displayWait, 0))) : 0;
+  const parkAppearsClosed = priorityParkRides.length > 0 && openRides.length === 0;
 
   const zones = useMemo<HeatZone[]>(() => {
     const groups = new Map<string, DisplayRide[]>();
@@ -534,7 +535,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
         <div>
           <h2>{activePark}</h2>
           <p className="muted">
-            {loading ? "Loading live + historical data..." : result?.ok ? "Live ride-demand snapshot" : "Ride data not ready"}
+            {loading ? "Loading live + historical data..." : result?.ok ? parkAppearsClosed ? "Park appears closed — showing tomorrow's ride targets" : "Live ride-demand snapshot" : "Ride data not ready"}
           </p>
         </div>
 
@@ -576,7 +577,10 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "rides" && (
         <div className="compact-panel">
-          <h3>Highest priority ride-demand attractions</h3>
+          <h3>{parkAppearsClosed ? "Ride-demand attractions" : "Highest priority ride-demand attractions"}</h3>
+          {parkAppearsClosed && (
+            <p className="muted">Park appears closed — showing tomorrow's targets.</p>
+          )}
           {hiddenNonPriorityCount > 0 && (
             <p className="muted">Filtered out {hiddenNonPriorityCount} walkthroughs, exhibits, play areas, single-rider lines, or scenery-only entries.</p>
           )}
@@ -587,7 +591,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
                   <div>
                     <strong>{ride.displayName}</strong>
                     <p className="muted">
-                      {ride.displayLand} · {isOpenRide(ride) ? "Open" : "Closed - shown below open rides"} · {formatDateTime(ride.displayUpdated)}
+                      {ride.displayLand} · {isOpenRide(ride) ? "Open" : "Closed - tomorrow target"} · {formatDateTime(ride.displayUpdated)}
                     </p>
                   </div>
                   <div className="wait-pill">

@@ -150,10 +150,35 @@ function pressureClass(pressure: HeatZone["pressure"]) {
   return "zone-low";
 }
 
-function waitLevel(wait: number) {
-  if (wait >= 60) return "ride-high";
-  if (wait >= 35) return "ride-medium";
-  if (wait >= 0) return "ride-low";
+function isOpenRide(ride: Pick<DisplayRide, "is_open" | "displayWait">) {
+  return ride.is_open !== false;
+}
+
+function isPlanCandidate(ride: DisplayRide) {
+  return isOpenRide(ride) && ride.displayWait >= 0;
+}
+
+function compareOpenThenWaitDesc(a: DisplayRide, b: DisplayRide) {
+  const aOpen = isOpenRide(a) ? 1 : 0;
+  const bOpen = isOpenRide(b) ? 1 : 0;
+
+  if (aOpen !== bOpen) return bOpen - aOpen;
+  return Math.max(b.displayWait, 0) - Math.max(a.displayWait, 0);
+}
+
+function compareOpenThenWaitAsc(a: DisplayRide, b: DisplayRide) {
+  const aOpen = isOpenRide(a) ? 1 : 0;
+  const bOpen = isOpenRide(b) ? 1 : 0;
+
+  if (aOpen !== bOpen) return bOpen - aOpen;
+  return Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0);
+}
+
+function waitLevel(ride: DisplayRide) {
+  if (!isOpenRide(ride)) return "ride-unknown";
+  if (ride.displayWait >= 60) return "ride-high";
+  if (ride.displayWait >= 35) return "ride-medium";
+  if (ride.displayWait >= 0) return "ride-low";
   return "ride-unknown";
 }
 
@@ -164,6 +189,12 @@ function isCoolDownName(name?: string, land?: string) {
 
 function isCoolDownRide(ride: DisplayRide) {
   return isCoolDownName(ride.displayName, ride.displayLand);
+}
+
+function isUsableInsight(ride: RideInsight) {
+  if (ride.is_open === false) return false;
+  if (typeof ride.current_wait === "number" && ride.current_wait < 0) return false;
+  return true;
 }
 
 function formatInsightWait(ride: RideInsight) {
@@ -197,6 +228,20 @@ function insightToRecommendation(
   };
 }
 
+function emptyPlanRecommendation(): PlanRecommendation {
+  return {
+    title: "No open ride to prioritize yet",
+    subtitle: "No plan yet",
+    reason: "CastleWatch found ride data, but every ride for this park is currently marked closed or unavailable. Closed 0-minute rides are intentionally ignored as recommendations.",
+    steps: [
+      "Tap Refresh after the park opens or after the next data update.",
+      "Check the Rides tab; open rides will appear above closed rides.",
+      "Use the Heat tab once open rides appear to avoid crowded areas.",
+    ],
+    source: "live",
+  };
+}
+
 function pickPlanRecommendation(
   mode: PlanMode,
   parkRides: DisplayRide[],
@@ -206,8 +251,8 @@ function pickPlanRecommendation(
   const historicalReady = insights && (insights.rides_analyzed || 0) > 0;
 
   if (historicalReady) {
-    const bestNow = insights?.best_now || [];
-    const reliableLowWait = insights?.reliable_low_wait || [];
+    const bestNow = (insights?.best_now || []).filter(isUsableInsight);
+    const reliableLowWait = (insights?.reliable_low_wait || []).filter(isUsableInsight);
     const historicalPool = mode === "aggressive"
       ? bestNow
       : mode === "coolDown"
@@ -221,35 +266,23 @@ function pickPlanRecommendation(
     }
   }
 
-  const openRides = parkRides
-    .filter((ride) => ride.is_open !== false)
-    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
+  const openCandidates = parkRides
+    .filter(isPlanCandidate)
+    .sort(compareOpenThenWaitAsc);
 
-  const allCandidates = openRides.length > 0 ? openRides : parkRides;
-
-  if (allCandidates.length === 0) {
-    return {
-      title: "Refresh park data",
-      subtitle: "No plan yet",
-      reason: "CastleWatch needs current ride data before it can make a recommendation.",
-      steps: [
-        "Tap Refresh.",
-        "Check the Rides tab for available attractions.",
-        "Use the Heat tab to avoid crowded areas.",
-      ],
-      source: "live",
-    };
+  if (openCandidates.length === 0) {
+    return emptyPlanRecommendation();
   }
 
   const hottestLand = hottestZone?.land;
-  const lowStressCandidates = allCandidates
+  const lowStressCandidates = openCandidates
     .filter((ride) => !hottestLand || ride.displayLand !== hottestLand)
-    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
-  const coolDownCandidates = allCandidates
+    .sort(compareOpenThenWaitAsc);
+  const coolDownCandidates = openCandidates
     .filter(isCoolDownRide)
-    .sort((a, b) => Math.max(a.displayWait, 0) - Math.max(b.displayWait, 0));
+    .sort(compareOpenThenWaitAsc);
 
-  const aggressivePick = allCandidates[0];
+  const aggressivePick = openCandidates[0];
   const lowStressPick = lowStressCandidates[0] || aggressivePick;
   const coolDownPick = coolDownCandidates[0] || lowStressPick || aggressivePick;
 
@@ -257,7 +290,7 @@ function pickPlanRecommendation(
     return {
       title: aggressivePick.displayName,
       subtitle: "Next best move · Max rides · Live data",
-      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. Historical analysis will improve as CastleWatch collects more samples.`,
+      reason: `${aggressivePick.displayWait >= 0 ? `${aggressivePick.displayWait} min wait` : "Current wait unknown"} in ${aggressivePick.displayLand}. Closed rides are excluded from recommendations.` ,
       steps: [
         `Go to ${aggressivePick.displayName}.`,
         "After riding, refresh CastleWatch before choosing the next attraction.",
@@ -272,7 +305,7 @@ function pickPlanRecommendation(
     return {
       title: coolDownPick.displayName,
       subtitle: "Next best move · Cool down · Live data",
-      reason: `${coolDownPick.displayName} is a better cooling/reset choice than simply chasing the lowest wait. Historical analysis will improve as more refreshes are stored.`,
+      reason: `${coolDownPick.displayName} is open and a better cooling/reset choice than chasing a closed 0-minute listing.`,
       steps: [
         `Head to ${coolDownPick.displayName}.`,
         "Use this stop as an A/C, shade, or seated reset if available.",
@@ -286,7 +319,7 @@ function pickPlanRecommendation(
   return {
     title: lowStressPick.displayName,
     subtitle: "Next best move · Low-stress · Live data",
-    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. Historical analysis will improve as more refreshes are stored.`,
+    reason: `${lowStressPick.displayWait >= 0 ? `${lowStressPick.displayWait} min wait` : "Current wait unknown"} and not in the current hottest area. Closed rides are excluded from recommendations.`,
     steps: [
       `Go to ${lowStressPick.displayName}.`,
       "Keep the group moving without crossing into the hottest area unless necessary.",
@@ -371,10 +404,10 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const parkRides = useMemo(() => {
     return rides
       .filter((ride) => ride.displayPark === activePark)
-      .sort((a, b) => b.displayWait - a.displayWait);
+      .sort(compareOpenThenWaitDesc);
   }, [activePark, rides]);
 
-  const openRides = parkRides.filter((ride) => ride.is_open !== false);
+  const openRides = parkRides.filter(isOpenRide);
   const peakWait = openRides.length > 0 ? Math.max(...openRides.map((ride) => Math.max(ride.displayWait, 0))) : 0;
 
   const zones = useMemo<HeatZone[]>(() => {
@@ -386,17 +419,18 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
     return Array.from(groups.entries())
       .map(([land, landRides]) => {
-        const landOpenRides = landRides.filter((ride) => ride.is_open !== false);
+        const sortedLandRides = [...landRides].sort(compareOpenThenWaitDesc);
+        const landOpenRides = sortedLandRides.filter(isOpenRide);
         const waits = landOpenRides.map((ride) => Math.max(ride.displayWait, 0));
         const longestWait = waits.length ? Math.max(...waits) : 0;
         const averageWait = waits.length
           ? Math.round(waits.reduce((sum, wait) => sum + wait, 0) / waits.length)
           : 0;
-        const topRide = landRides.find((ride) => Math.max(ride.displayWait, 0) === longestWait)?.displayName || "No open rides";
+        const topRide = landOpenRides.find((ride) => Math.max(ride.displayWait, 0) === longestWait)?.displayName || "No open rides";
 
         return {
           land,
-          rides: landRides,
+          rides: sortedLandRides,
           openRides: landOpenRides,
           averageWait,
           longestWait,
@@ -404,7 +438,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           pressure: getPressure(averageWait, longestWait),
         };
       })
-      .sort((a, b) => b.longestWait - a.longestWait || b.averageWait - a.averageWait);
+      .sort((a, b) => b.openRides.length - a.openRides.length || b.longestWait - a.longestWait || b.averageWait - a.averageWait);
   }, [parkRides]);
 
   useEffect(() => {
@@ -418,7 +452,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
     }
   }, [selectedLand, zones]);
 
-  const hottestZone = zones[0];
+  const hottestZone = zones.find((zone) => zone.openRides.length > 0) || zones[0];
   const selectedZone = zones.find((zone) => zone.land === selectedLand) || hottestZone;
   const priorityRides = parkRides.slice(0, 8);
   const insights = insightsResult?.ok ? insightsResult.data : null;
@@ -472,19 +506,19 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
 
       {activeTab === "rides" && (
         <div className="compact-panel">
-          <h3>Highest priority rides</h3>
+          <h3>Highest priority open rides</h3>
           {priorityRides.length > 0 ? (
             <div className="ride-list compact-ride-list">
               {priorityRides.map((ride, index) => (
-                <div className={`ride ${waitLevel(ride.displayWait)}`} key={ride.id || `${ride.displayName}-${index}`}>
+                <div className={`ride ${waitLevel(ride)}`} key={ride.id || `${ride.displayName}-${index}`}>
                   <div>
                     <strong>{ride.displayName}</strong>
                     <p className="muted">
-                      {ride.displayLand} · {ride.is_open === false ? "Closed" : "Open"} · {formatDateTime(ride.displayUpdated)}
+                      {ride.displayLand} · {isOpenRide(ride) ? "Open" : "Closed - shown below open rides"} · {formatDateTime(ride.displayUpdated)}
                     </p>
                   </div>
                   <div className="wait-pill">
-                    {ride.displayWait >= 0 ? `${ride.displayWait} min` : "—"}
+                    {isOpenRide(ride) && ride.displayWait >= 0 ? `${ride.displayWait} min` : "Closed"}
                   </div>
                 </div>
               ))}
@@ -507,8 +541,8 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
                 type="button"
               >
                 <strong>{zone.land}</strong>
-                <span>{zone.pressure}</span>
-                <small>Peak {zone.longestWait}m · Avg {zone.averageWait}m</small>
+                <span>{zone.openRides.length ? zone.pressure : "Closed"}</span>
+                <small>{zone.openRides.length} open · Peak {zone.longestWait}m · Avg {zone.averageWait}m</small>
               </button>
             ))}
           </div>
@@ -516,16 +550,16 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
           {selectedZone && (
             <div className="area-detail-panel">
               <h3>{selectedZone.land} details</h3>
-              <p className="muted">Tap an area above to focus only on that part of the park.</p>
+              <p className="muted">Open rides are listed first. Closed 0-minute rides are not treated as good options.</p>
               <div className="ride-list compact-ride-list">
                 {selectedZone.rides.slice(0, 5).map((ride, index) => (
-                  <div className={`ride ${waitLevel(ride.displayWait)}`} key={`${selectedZone.land}-${ride.displayName}-${index}`}>
+                  <div className={`ride ${waitLevel(ride)}`} key={`${selectedZone.land}-${ride.displayName}-${index}`}>
                     <div>
                       <strong>{ride.displayName}</strong>
-                      <p className="muted">{ride.is_open === false ? "Closed" : "Open"}</p>
+                      <p className="muted">{isOpenRide(ride) ? "Open" : "Closed"}</p>
                     </div>
                     <div className="wait-pill">
-                      {ride.displayWait >= 0 ? `${ride.displayWait} min` : "—"}
+                      {isOpenRide(ride) && ride.displayWait >= 0 ? `${ride.displayWait} min` : "Closed"}
                     </div>
                   </div>
                 ))}

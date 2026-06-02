@@ -67,6 +67,16 @@ type PlanRecommendation = {
   avoid?: string;
 };
 
+type BadgeInput = {
+  name: string;
+  land?: string;
+  wait?: number;
+  mode?: PlanMode;
+  specialAccess?: boolean;
+  closedPark?: boolean;
+  avoidsHotZone?: boolean;
+};
+
 const PARK_ORDER = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"];
 
 const COOL_DOWN_KEYWORDS = [
@@ -215,6 +225,23 @@ function isSpecialAccessRide(ride: Pick<DisplayRide, "displayName" | "displayLan
   return includesAny(`${ride.displayName} ${ride.displayLand}`, SPECIAL_ACCESS_KEYWORDS);
 }
 
+function getRecommendationBadges(input: BadgeInput) {
+  const badges: string[] = [];
+  const combined = `${input.name} ${input.land || ""}`;
+
+  if (input.specialAccess) badges.push("Check access");
+  if (input.closedPark) badges.push("Tomorrow target");
+  if (input.mode === "aggressive") badges.push("Max rides");
+  if (input.mode === "lowStress") badges.push("Low-stress");
+  if (input.mode === "coolDown" || includesAny(combined, COOL_DOWN_KEYWORDS)) badges.push("Cool-down");
+  if (input.avoidsHotZone) badges.push("Avoids hot zone");
+  if (typeof input.wait === "number" && input.wait >= 0 && input.wait <= 15) badges.push("Low wait");
+  if (typeof input.wait === "number" && input.wait >= 45) badges.push("High demand");
+  if (!input.specialAccess) badges.push("Family target");
+
+  return Array.from(new Set(badges)).slice(0, 4);
+}
+
 function getRopeDropRank(ride: DisplayRide) {
   const priorities = ROPE_DROP_PRIORITY[ride.displayPark] || [];
   const combined = `${ride.displayName} ${ride.displayLand}`.toLowerCase();
@@ -323,6 +350,15 @@ function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottes
   };
 }
 
+function BadgeRow({ badges }: { badges: string[] }) {
+  if (!badges.length) return null;
+  return (
+    <div className="badge-row">
+      {badges.map((badge) => <span className="recommendation-badge" key={badge}>{badge}</span>)}
+    </div>
+  );
+}
+
 export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCommandCenterProps) {
   const [result, setResult] = useState<ApiResult<Ride[]> | null>(null);
   const [insightsResult, setInsightsResult] = useState<ApiResult<HistoricalInsights> | null>(null);
@@ -427,6 +463,15 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const hiddenNonPriorityCount = parkRides.length - priorityParkRides.length;
   const insights = insightsResult?.ok ? insightsResult.data : null;
   const planRecommendation = pickPlanRecommendation(planMode, priorityParkRides, hottestZone, insights);
+  const recommendedRide = priorityParkRides.find((ride) => ride.displayName === planRecommendation.title);
+  const planBadges = getRecommendationBadges({
+    name: planRecommendation.title,
+    land: recommendedRide?.displayLand,
+    wait: recommendedRide?.displayWait,
+    mode: planMode,
+    specialAccess: recommendedRide ? isSpecialAccessRide(recommendedRide) : includesAny(planRecommendation.title, SPECIAL_ACCESS_KEYWORDS),
+    avoidsHotZone: Boolean(planRecommendation.avoid),
+  });
 
   return (
     <div className="card command-center">
@@ -520,11 +565,19 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
               <div className="plan-steps">
                 {tomorrowTargets.length ? tomorrowTargets.map((ride, index) => {
                   const specialAccess = isSpecialAccessRide(ride);
+                  const badges = getRecommendationBadges({
+                    name: ride.displayName,
+                    land: ride.displayLand,
+                    wait: ride.displayWait,
+                    specialAccess,
+                    closedPark: true,
+                  });
                   return (
                     <div className="plan-step" key={`${ride.displayName}-tomorrow-${index}`}>
                       <span>{index + 1}</span>
                       <p>
                         <strong>{ride.displayName}</strong><br />
+                        <BadgeRow badges={badges} />
                         <strong>{specialAccess ? "High-value target" : "Family rope-drop target"}</strong><br />
                         {specialAccess ? "Check access rules first. Refresh after park opening." : "Refresh after park opening before committing."}
                       </p>
@@ -548,6 +601,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
               <div className="next-move-card">
                 <span className="stat-label">{planRecommendation.subtitle}</span>
                 <h3>{planRecommendation.title}</h3>
+                <BadgeRow badges={planBadges} />
                 <p className="muted">{planRecommendation.reason}</p>
                 {insights ? <div className="history-summary"><strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed</div> : <div className="history-summary">Historical analysis is warming up. Refresh `/api/refresh-rides` over time to build a stronger dataset.</div>}
                 <div className="next-move-actions"><button className="button" type="button">Start route</button><button className="button secondary-button" type="button" onClick={() => loadData(activePark)}>Recalculate</button></div>

@@ -78,6 +78,13 @@ type BadgeInput = {
   headliner?: boolean;
 };
 
+type ScoredRide = {
+  ride: DisplayRide;
+  score: number;
+  opportunity: number;
+  reasons: string[];
+};
+
 const PARK_ORDER = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"];
 
 const MODE_WAIT_LIMITS: Record<PlanMode, number> = {
@@ -260,6 +267,10 @@ function isHeadlinerRide(value: Pick<DisplayRide, "displayName" | "displayLand">
   return includesAny(`${name} ${value.land || ""}`, HEADLINER_KEYWORDS);
 }
 
+function isCoolDownRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
+  return includesAny(`${ride.displayName} ${ride.displayLand}`, COOL_DOWN_KEYWORDS);
+}
+
 function getRecommendationBadges(input: BadgeInput) {
   const badges: string[] = [];
   const combined = `${input.name} ${input.land || ""}`;
@@ -343,30 +354,94 @@ function findMatchingRide(insight: RideInsight, parkRides: DisplayRide[]) {
     || parkRides.find((ride) => ride.displayName.toLowerCase().includes(insightName) || insightName.includes(ride.displayName.toLowerCase()));
 }
 
+function historicalOpportunityForRide(ride: DisplayRide, insights?: HistoricalInsights | null) {
+  if (!insights) return 0;
+  const allInsights = [...(insights.best_now || []), ...(insights.reliable_low_wait || [])].filter(isUsableInsight);
+  const match = allInsights.find((insight) => findMatchingRide(insight, [ride]));
+  if (!match) return 0;
+
+  if (typeof match.opportunity_score === "number" && match.opportunity_score > 0) {
+    return Math.min(match.opportunity_score, 20);
+  }
+
+  if (typeof match.typical_wait === "number" && ride.displayWait >= 0) {
+    return Math.max(0, Math.min(match.typical_wait - ride.displayWait, 20));
+  }
+
+  return 0;
+}
+
 function isWithinModeWaitLimit(wait: number | undefined, mode: PlanMode) {
   return typeof wait === "number" && wait >= 0 && wait <= MODE_WAIT_LIMITS[mode];
 }
 
-function getModeCandidates(openCandidates: DisplayRide[], mode: PlanMode, hottestZone?: HeatZone) {
-  const withinLimit = openCandidates.filter((ride) => isWithinModeWaitLimit(ride.displayWait, mode));
+function scoreRideForMode(ride: DisplayRide, mode: PlanMode, hottestZone?: HeatZone, insights?: HistoricalInsights | null): ScoredRide {
+  const wait = Math.max(ride.displayWait, 0);
+  const waitLimit = MODE_WAIT_LIMITS[mode];
+  const headliner = isHeadlinerRide(ride);
+  const specialAccess = isSpecialAccessRide(ride);
+  const coolDown = isCoolDownRide(ride);
+  const inHotZone = hottestZone?.land === ride.displayLand;
+  const opportunity = historicalOpportunityForRide(ride, insights);
+  const ropeRank = getRopeDropRank(ride);
+  const reasons: string[] = [];
+  let score = 100;
+
+  score += opportunity;
+  if (opportunity > 0) reasons.push("better than usual");
 
   if (mode === "aggressive") {
-    return withinLimit.sort((a, b) => compareRopeDropPriority(a, b) || compareOpenThenWaitAsc(a, b));
+    score += headliner ? 22 : 8;
+    score += ropeRank < 999 ? Math.max(0, 16 - ropeRank * 2) : 0;
+    score -= wait * 1.25;
+    if (wait > waitLimit) {
+      score -= (wait - waitLimit) * 4;
+      reasons.push("over max-rides wait cap");
+    }
+    if (specialAccess) score -= 10;
+  }
+
+  if (mode === "lowStress") {
+    score -= wait * 2.2;
+    if (headliner) score -= 12;
+    if (specialAccess) score -= 25;
+    if (inHotZone) score -= 20;
+    if (coolDown) score += 8;
+    if (wait > waitLimit) {
+      score -= 180 + (wait - waitLimit) * 4;
+      reasons.push("over low-stress wait cap");
+    }
   }
 
   if (mode === "coolDown") {
-    const coolDown = withinLimit.filter((ride) => includesAny(`${ride.displayName} ${ride.displayLand}`, COOL_DOWN_KEYWORDS));
-    return (coolDown.length ? coolDown : withinLimit).sort(compareOpenThenWaitAsc);
+    score -= wait * 2;
+    score += coolDown ? 35 : -25;
+    if (headliner) score -= 18;
+    if (specialAccess) score -= 25;
+    if (inHotZone) score -= 10;
+    if (wait > waitLimit) {
+      score -= 140 + (wait - waitLimit) * 3;
+      reasons.push("over cool-down wait cap");
+    }
   }
 
-  const hottestLand = hottestZone?.land;
-  const lowStress = withinLimit.filter((ride) => !hottestLand || ride.displayLand !== hottestLand);
-  return (lowStress.length ? lowStress : withinLimit).sort(compareOpenThenWaitAsc);
+  if (wait <= 15) reasons.push("low wait");
+  if (headliner) reasons.push("high-value ride");
+  if (coolDown) reasons.push("cool-down friendly");
+  if (inHotZone) reasons.push("hot-zone penalty");
+  if (specialAccess) reasons.push("access rules needed");
+
+  return { ride, score, opportunity, reasons };
+}
+
+function getScoredCandidates(openCandidates: DisplayRide[], mode: PlanMode, hottestZone?: HeatZone, insights?: HistoricalInsights | null) {
+  return openCandidates
+    .map((ride) => scoreRideForMode(ride, mode, hottestZone, insights))
+    .sort((a, b) => b.score - a.score || compareOpenThenWaitAsc(a.ride, b.ride));
 }
 
 function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottestZone?: HeatZone, insights?: HistoricalInsights | null): PlanRecommendation {
   const openCandidates = parkRides.filter((ride) => isOpenRide(ride) && ride.displayWait >= 0).sort(compareOpenThenWaitAsc);
-  const modeCandidates = getModeCandidates(openCandidates, mode, hottestZone);
   const label = modeLabel(mode);
   const waitLimit = MODE_WAIT_LIMITS[mode];
 
@@ -379,62 +454,30 @@ function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottes
     };
   }
 
-  if (insights && (insights.rides_analyzed || 0) > 0) {
-    const bestNow = (insights.best_now || []).filter(isUsableInsight);
-    const reliableLowWait = (insights.reliable_low_wait || []).filter(isUsableInsight);
-    const pool = mode === "aggressive"
-      ? bestNow
-      : mode === "coolDown"
-        ? [...bestNow, ...reliableLowWait].filter((ride) => includesAny(`${ride.name} ${ride.land || ""}`, COOL_DOWN_KEYWORDS))
-        : reliableLowWait.filter((ride) => ride.land !== hottestZone?.land);
+  const scoredCandidates = getScoredCandidates(openCandidates, mode, hottestZone, insights);
+  const preferred = scoredCandidates.find((candidate) => isWithinModeWaitLimit(candidate.ride.displayWait, mode));
+  const fallback = preferred || scoredCandidates[0];
+  const pick = fallback.ride;
+  const overLimit = !isWithinModeWaitLimit(pick.displayWait, mode);
+  const reasonDetails = fallback.reasons.slice(0, 3).join(" · ");
 
-    const historicalPick = pool.find((insight) => {
-      const matched = findMatchingRide(insight, openCandidates);
-      const wait = matched?.displayWait ?? insight.current_wait;
-      return isWithinModeWaitLimit(wait, mode);
-    });
-
-    if (historicalPick) {
-      const matched = findMatchingRide(historicalPick, openCandidates);
-      const currentWait = matched?.displayWait ?? historicalPick.current_wait;
-      const current = typeof currentWait === "number" ? `${currentWait} min now` : "wait unknown";
-      const typical = typeof historicalPick.typical_wait === "number" ? `${historicalPick.typical_wait} min typical` : "typical unknown";
-      return {
-        title: matched?.displayName || historicalPick.name,
-        subtitle: `Next move · ${label}`,
-        reason: `${current} vs ${typical}. Under the ${label} wait cap of ${waitLimit} min.`,
-        steps: [
-          `Go to ${matched?.displayName || historicalPick.name}.`,
-          "Refresh after this attraction.",
-          hottestZone ? `Avoid lingering in ${hottestZone.land} if it stays hot.` : "Check Heat before crossing the park.",
-        ],
-        avoid: hottestZone?.land,
-      };
-    }
-  }
-
-  const pick = modeCandidates[0];
-  if (pick) {
+  if (!overLimit) {
     return {
       title: pick.displayName,
       subtitle: `Next move · ${label}`,
-      reason: `${pick.displayWait} min wait in ${pick.displayLand}. Under the ${label} wait cap of ${waitLimit} min.`,
+      reason: `${pick.displayWait} min wait in ${pick.displayLand}. Live score ${Math.round(fallback.score)}. ${reasonDetails || `Under the ${label} wait cap of ${waitLimit} min.`}`,
       steps: [`Go to ${pick.displayName}.`, "Refresh after riding.", "Recalculate before crossing the park."],
       avoid: hottestZone?.land,
     };
   }
 
-  const lowestWait = openCandidates[0];
-  const headliner = openCandidates.find((ride) => isHeadlinerRide(ride));
-  const fallback = mode === "aggressive" && headliner ? headliner : lowestWait;
-  const isHeadlinerFallback = isHeadlinerRide(fallback);
-
+  const isHeadlinerFallback = isHeadlinerRide(pick);
   return {
-    title: fallback.displayName,
+    title: pick.displayName,
     subtitle: isHeadlinerFallback ? `Headliner exception · ${label}` : `Threshold exceeded · ${label}`,
-    reason: `No ${label} option is under the ${waitLimit} min cap. This is a fallback, not an ideal ${label} recommendation.`,
+    reason: `No ${label} option is under the ${waitLimit} min cap. Live score ${Math.round(fallback.score)}. This is a fallback, not an ideal ${label} recommendation.`,
     steps: [
-      mode === "lowStress" ? `Skip ${fallback.displayName} for now unless your group really wants it.` : `Consider ${fallback.displayName} only if your group accepts the long wait.`,
+      mode === "lowStress" ? `Skip ${pick.displayName} for now unless your group really wants it.` : `Consider ${pick.displayName} only if your group accepts the long wait.`,
       "Refresh before committing.",
       "Check the Rides tab for a shorter option.",
     ],

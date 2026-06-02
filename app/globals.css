@@ -256,6 +256,26 @@ a {
   line-height: 1.4;
 }
 
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.recommendation-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(142, 197, 255, 0.32);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(142, 197, 255, 0.12);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .plan-mode-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -518,69 +538,4 @@ a {
 
 .transport-result li {
   margin: 8px 0;
-}
-
-.stat-label {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-
-.footer {
-  color: var(--muted);
-  text-align: center;
-  margin: 28px 0 0;
-  font-size: 13px;
-}
-
-.disclaimer {
-  max-width: 760px;
-  margin: 8px auto 0;
-  color: rgba(169, 182, 202, 0.58);
-  text-align: center;
-  font-size: 10px;
-  line-height: 1.35;
-}
-
-@media (min-width: 520px) {
-  .page {
-    padding: 24px;
-  }
-
-  .top-park-banner {
-    gap: 10px;
-    padding: 10px;
-  }
-
-  .top-park-button {
-    min-height: 72px;
-    padding: 8px;
-  }
-
-  .top-park-icon {
-    font-size: 28px;
-  }
-
-  .top-park-label {
-    font-size: 12px;
-  }
-
-  .transport-summary,
-  .transport-picker-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 760px) {
-  .area-tile-grid,
-  .live-heat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 780px) {
-  .card.half {
-    grid-column: span 6;
-  }
 }

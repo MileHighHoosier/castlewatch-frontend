@@ -264,7 +264,8 @@ function isSpecialAccessRide(ride: Pick<DisplayRide, "displayName" | "displayLan
 
 function isHeadlinerRide(value: Pick<DisplayRide, "displayName" | "displayLand"> | Pick<RideInsight, "name" | "land">) {
   const name = "displayName" in value ? value.displayName : value.name;
-  return includesAny(`${name} ${value.land || ""}`, HEADLINER_KEYWORDS);
+  const land = "displayLand" in value ? value.displayLand : value.land || "";
+  return includesAny(`${name} ${land}`, HEADLINER_KEYWORDS);
 }
 
 function isCoolDownRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
@@ -292,6 +293,40 @@ function getRecommendationBadges(input: BadgeInput) {
   if (!input.specialAccess && !input.headliner) badges.push("Family target");
 
   return Array.from(new Set(badges)).slice(0, 4);
+}
+
+function getWhyChosenSentence(input: BadgeInput) {
+  const wait = input.wait;
+  const hasWait = typeof wait === "number" && wait >= 0;
+  const mode = input.mode || "lowStress";
+  const combined = `${input.name} ${input.land || ""}`;
+  const coolDown = includesAny(combined, COOL_DOWN_KEYWORDS);
+  const overLimit = hasWait && wait > MODE_WAIT_LIMITS[mode];
+
+  if (overLimit && input.headliner) {
+    return "Chosen only as a fallback because all better mode-fit options are above the wait cap.";
+  }
+
+  if (mode === "lowStress") {
+    if (hasWait && wait <= 15) return "Chosen because it is a short-wait family option that keeps the day easier.";
+    if (input.avoidsHotZone) return "Chosen because it fits low-stress mode and avoids the hottest ride area.";
+    return "Chosen because it is the best low-stress option available right now.";
+  }
+
+  if (mode === "coolDown") {
+    if (coolDown) return "Chosen because it works as a lower-effort reset option for the family.";
+    return "Chosen because better cool-down options are limited right now.";
+  }
+
+  if (hasWait && wait <= 20 && input.headliner) {
+    return "Chosen because it is a high-value family ride with a very short wait.";
+  }
+
+  if (input.headliner) {
+    return "Chosen because it has strong ride value for the current wait and plan mode.";
+  }
+
+  return "Chosen because it has the best mix of wait time, family fit, and current park conditions.";
 }
 
 function getRopeDropRank(ride: DisplayRide) {
@@ -599,7 +634,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const insights = insightsResult?.ok ? insightsResult.data : null;
   const planRecommendation = pickPlanRecommendation(planMode, priorityParkRides, hottestZone, insights);
   const recommendedRide = priorityParkRides.find((ride) => ride.displayName === planRecommendation.title);
-  const planBadges = getRecommendationBadges({
+  const planBadgeInput = {
     name: planRecommendation.title,
     land: recommendedRide?.displayLand,
     wait: recommendedRide?.displayWait,
@@ -607,7 +642,9 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
     specialAccess: recommendedRide ? isSpecialAccessRide(recommendedRide) : includesAny(planRecommendation.title, SPECIAL_ACCESS_KEYWORDS),
     avoidsHotZone: Boolean(planRecommendation.avoid),
     headliner: recommendedRide ? isHeadlinerRide(recommendedRide) : includesAny(planRecommendation.title, HEADLINER_KEYWORDS),
-  });
+  };
+  const planBadges = getRecommendationBadges(planBadgeInput);
+  const planWhyChosen = getWhyChosenSentence(planBadgeInput);
 
   return (
     <div className="card command-center">
@@ -739,6 +776,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
                 <span className="stat-label">{planRecommendation.subtitle}</span>
                 <h3>{planRecommendation.title}</h3>
                 <BadgeRow badges={planBadges} />
+                <p className="muted"><strong>Why chosen:</strong> {planWhyChosen}</p>
                 <p className="muted">{planRecommendation.reason}</p>
                 {insights ? <div className="history-summary"><strong>Historical data used:</strong> {insights.historical_entries_analyzed || 0} samples · {insights.rides_analyzed || 0} rides analyzed</div> : <div className="history-summary">Historical analysis is warming up. Refresh `/api/refresh-rides` over time to build a stronger dataset.</div>}
                 <div className="next-move-actions"><button className="button" type="button">Start route</button><button className="button secondary-button" type="button" onClick={() => loadData(activePark)}>Recalculate</button></div>

@@ -393,13 +393,13 @@ function getActivityBadges(ride: DisplayRide) {
 
 function getActivityUseCase(ride: DisplayRide) {
   const combined = `${ride.displayName} ${ride.displayLand}`;
-  if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) return "Use when you want a character moment and have enough buffer before dining or Lightning Lane.";
-  if (includesAny(combined, PHOTO_STOP_KEYWORDS)) return "Use as a quick photo stop or scenery moment when you are already nearby.";
-  if (includesAny(combined, KID_RESET_KEYWORDS)) return "Use when the kids need movement, play time, or a low-pressure reset.";
-  if (includesAny(combined, SHOW_KEYWORDS)) return "Use as a seated show or A/C break between higher-priority rides.";
-  if (includesAny(combined, WALKTHROUGH_KEYWORDS)) return "Use only if nearby, during rain/heat, or when you need a low-commitment filler.";
-  if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) return "Use only if nearby; this is scenery, not a reason to cross the park.";
-  return "Use as a flexible filler activity, not as a ride-demand priority.";
+  if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) return "Character moment. Check timing buffer.";
+  if (includesAny(combined, PHOTO_STOP_KEYWORDS)) return "Quick photo stop if nearby.";
+  if (includesAny(combined, KID_RESET_KEYWORDS)) return "Kid reset: movement or play.";
+  if (includesAny(combined, SHOW_KEYWORDS)) return "Seated show / A/C break.";
+  if (includesAny(combined, WALKTHROUGH_KEYWORDS)) return "Nearby filler for heat or rain.";
+  if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) return "Scenery only. Don’t cross the park.";
+  return "Flexible filler, not a ride priority.";
 }
 
 function getActivityScore(ride: DisplayRide) {

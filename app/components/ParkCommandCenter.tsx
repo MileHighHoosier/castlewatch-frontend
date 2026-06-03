@@ -370,6 +370,26 @@ function getActivityUseCase(ride: DisplayRide) {
   return "Use as a flexible filler activity, not as a ride-demand priority.";
 }
 
+function getActivityScore(ride: DisplayRide) {
+  const combined = `${ride.displayName} ${ride.displayLand}`;
+  let score = 0;
+
+  if (isOpenRide(ride)) score += 100;
+  if (includesAny(combined, SHOW_KEYWORDS)) score += 45;
+  if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) score += 35;
+  if (includesAny(combined, KID_RESET_KEYWORDS)) score += 32;
+  if (includesAny(combined, WALKTHROUGH_KEYWORDS)) score += 18;
+  if (ride.displayWait >= 0 && ride.displayWait <= 10) score += 25;
+  if (ride.displayWait > 10 && ride.displayWait <= 25) score += 8;
+  if (ride.displayWait > 25) score -= 20;
+
+  return score;
+}
+
+function compareActivityPriority(a: DisplayRide, b: DisplayRide) {
+  return getActivityScore(b) - getActivityScore(a) || compareOpenThenWaitAsc(a, b) || a.displayName.localeCompare(b.displayName);
+}
+
 function getWhyChosenSentence(input: BadgeInput) {
   const wait = input.wait;
   const hasWait = typeof wait === "number" && wait >= 0;
@@ -664,7 +684,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const activePark = availableParks.includes(selectedPark) ? selectedPark : availableParks[0] || selectedPark;
   const parkRides = useMemo(() => rides.filter((ride) => ride.displayPark === activePark).sort(compareOpenThenWaitDesc), [activePark, rides]);
   const priorityParkRides = useMemo(() => parkRides.filter(isPriorityRide), [parkRides]);
-  const activityItems = useMemo(() => parkRides.filter(isActivityCandidate).slice(0, 12), [parkRides]);
+  const activityItems = useMemo(() => parkRides.filter(isActivityCandidate).sort(compareActivityPriority).slice(0, 12), [parkRides]);
   const openRides = priorityParkRides.filter(isOpenRide);
   const peakWait = openRides.length ? Math.max(...openRides.map((ride) => Math.max(ride.displayWait, 0))) : 0;
   const parkAppearsClosed = priorityParkRides.length > 0 && openRides.length === 0;
@@ -804,7 +824,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
       {activeTab === "activities" && (
         <div className="compact-panel">
           <h3>Shows & family activities</h3>
-          <p className="muted">These are planning tools for A/C breaks, kid resets, shows, walkthroughs, and nearby filler — not ride-demand priorities.</p>
+          <p className="muted">Sorted for family usefulness: A/C resets, seated shows, kid resets, low waits, then nearby filler — not ride-demand priorities.</p>
           {activityItems.length ? (
             <div className="ride-list compact-ride-list">
               {activityItems.map((activity, index) => {

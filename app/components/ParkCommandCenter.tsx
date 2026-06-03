@@ -178,6 +178,32 @@ const KID_RESET_KEYWORDS = [
   "kidcot",
 ];
 
+const PHOTO_STOP_KEYWORDS = [
+  "cinderella castle",
+  "tree of life",
+  "the oasis",
+  "american heritage gallery",
+  "gallery",
+];
+
+const CHARACTER_EXPERIENCE_KEYWORDS = [
+  "enchanted tales with belle",
+  "princess",
+  "meet",
+  "mickey",
+  "minnie",
+  "character",
+];
+
+const SCENERY_ONLY_KEYWORDS = [
+  "cinderella castle",
+  "the oasis",
+  "tree of life",
+  "discovery island trails",
+  "trail",
+  "gallery",
+];
+
 const EXCLUDE_FROM_ACTIVITIES_KEYWORDS = ["single rider"];
 
 const NON_RIDE_PRIORITY_KEYWORDS = [
@@ -353,20 +379,26 @@ function getActivityBadges(ride: DisplayRide) {
   const badges: string[] = [];
 
   if (includesAny(combined, SHOW_KEYWORDS)) badges.push("Show");
+  if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) badges.push("Character");
+  if (includesAny(combined, PHOTO_STOP_KEYWORDS)) badges.push("Photo stop");
+  if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) badges.push("Scenery");
   if (includesAny(combined, WALKTHROUGH_KEYWORDS)) badges.push("Walkthrough");
   if (includesAny(combined, KID_RESET_KEYWORDS)) badges.push("Kid reset");
   if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) badges.push("A/C reset");
   if (ride.displayWait >= 0 && ride.displayWait <= 10) badges.push("Low wait");
-  badges.push("Filler option");
+  if (!badges.length || !badges.some((badge) => ["Show", "Character", "Photo stop", "Scenery", "Kid reset", "A/C reset"].includes(badge))) badges.push("Filler option");
 
   return Array.from(new Set(badges)).slice(0, 4);
 }
 
 function getActivityUseCase(ride: DisplayRide) {
   const combined = `${ride.displayName} ${ride.displayLand}`;
+  if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) return "Use when you want a character moment and have enough buffer before dining or Lightning Lane.";
+  if (includesAny(combined, PHOTO_STOP_KEYWORDS)) return "Use as a quick photo stop or scenery moment when you are already nearby.";
   if (includesAny(combined, KID_RESET_KEYWORDS)) return "Use when the kids need movement, play time, or a low-pressure reset.";
   if (includesAny(combined, SHOW_KEYWORDS)) return "Use as a seated show or A/C break between higher-priority rides.";
   if (includesAny(combined, WALKTHROUGH_KEYWORDS)) return "Use only if nearby, during rain/heat, or when you need a low-commitment filler.";
+  if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) return "Use only if nearby; this is scenery, not a reason to cross the park.";
   return "Use as a flexible filler activity, not as a ride-demand priority.";
 }
 
@@ -378,7 +410,10 @@ function getActivityScore(ride: DisplayRide) {
   if (includesAny(combined, SHOW_KEYWORDS)) score += 45;
   if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) score += 35;
   if (includesAny(combined, KID_RESET_KEYWORDS)) score += 32;
+  if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) score += 26;
+  if (includesAny(combined, PHOTO_STOP_KEYWORDS)) score += 12;
   if (includesAny(combined, WALKTHROUGH_KEYWORDS)) score += 18;
+  if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) score -= 8;
   if (ride.displayWait >= 0 && ride.displayWait <= 10) score += 25;
   if (ride.displayWait > 10 && ride.displayWait <= 25) score += 8;
   if (ride.displayWait > 25) score -= 20;

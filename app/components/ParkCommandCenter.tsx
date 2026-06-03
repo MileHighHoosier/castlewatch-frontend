@@ -501,7 +501,7 @@ function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottes
       title: pick.displayName,
       subtitle: `Next move · ${label}`,
       reason: `${pick.displayWait} min wait in ${pick.displayLand}. Live score ${Math.round(fallback.score)}. ${reasonDetails || `Under the ${label} wait cap of ${waitLimit} min.`}`,
-      steps: [`Go to ${pick.displayName}.`, "Refresh after riding.", "Recalculate before crossing the park."],
+      steps: [`Go to ${pick.displayName}.`, "Refresh after this attraction.", "Recalculate before crossing the park."],
       avoid: hottestZone?.land,
     };
   }

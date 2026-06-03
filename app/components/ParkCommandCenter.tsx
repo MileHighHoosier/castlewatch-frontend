@@ -58,6 +58,7 @@ type HeatZone = {
 };
 
 type PlanMode = "aggressive" | "lowStress" | "coolDown";
+type DashboardTab = "rides" | "heat" | "activities" | "plan";
 
 type PlanRecommendation = {
   title: string;
@@ -131,6 +132,53 @@ const HEADLINER_KEYWORDS = [
   "kilimanjaro safaris",
   "expedition everest",
 ];
+
+const SHOW_KEYWORDS = [
+  "philharmagic",
+  "carousel of progress",
+  "laugh floor",
+  "country bear",
+  "american adventure",
+  "beauty and the beast live",
+  "festival",
+  "finding nemo",
+  "indiana jones",
+  "little mermaid - a musical adventure",
+  "muppet",
+  "short film",
+  "sing-along",
+  "stage",
+  "vacation fun",
+];
+
+const WALKTHROUGH_KEYWORDS = [
+  "adventureland treehouse",
+  "american heritage gallery",
+  "gallery",
+  "gorilla falls",
+  "journey of water",
+  "trail",
+  "tree of life",
+  "wilderness explorers",
+  "exhibit",
+  "impressions",
+  "reflections of china",
+  "canada far and wide",
+  "circle-vision",
+];
+
+const KID_RESET_KEYWORDS = [
+  "casey jr",
+  "play area",
+  "playground",
+  "splash 'n' soak",
+  "splash n soak",
+  "the boneyard",
+  "tom sawyer island",
+  "kidcot",
+];
+
+const EXCLUDE_FROM_ACTIVITIES_KEYWORDS = ["single rider"];
 
 const NON_RIDE_PRIORITY_KEYWORDS = [
   "a pirate's adventure",
@@ -258,6 +306,11 @@ function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) 
   return !includesAny(`${ride.displayName} ${ride.displayLand}`, NON_RIDE_PRIORITY_KEYWORDS);
 }
 
+function isActivityCandidate(ride: DisplayRide) {
+  const combined = `${ride.displayName} ${ride.displayLand}`;
+  return !isPriorityRide(ride) && !includesAny(combined, EXCLUDE_FROM_ACTIVITIES_KEYWORDS);
+}
+
 function isSpecialAccessRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
   return includesAny(`${ride.displayName} ${ride.displayLand}`, SPECIAL_ACCESS_KEYWORDS);
 }
@@ -293,6 +346,28 @@ function getRecommendationBadges(input: BadgeInput) {
   if (!input.specialAccess && !input.headliner) badges.push("Family target");
 
   return Array.from(new Set(badges)).slice(0, 4);
+}
+
+function getActivityBadges(ride: DisplayRide) {
+  const combined = `${ride.displayName} ${ride.displayLand}`;
+  const badges: string[] = [];
+
+  if (includesAny(combined, SHOW_KEYWORDS)) badges.push("Show");
+  if (includesAny(combined, WALKTHROUGH_KEYWORDS)) badges.push("Walkthrough");
+  if (includesAny(combined, KID_RESET_KEYWORDS)) badges.push("Kid reset");
+  if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) badges.push("A/C reset");
+  if (ride.displayWait >= 0 && ride.displayWait <= 10) badges.push("Low wait");
+  badges.push("Filler option");
+
+  return Array.from(new Set(badges)).slice(0, 4);
+}
+
+function getActivityUseCase(ride: DisplayRide) {
+  const combined = `${ride.displayName} ${ride.displayLand}`;
+  if (includesAny(combined, KID_RESET_KEYWORDS)) return "Use when the kids need movement, play time, or a low-pressure reset.";
+  if (includesAny(combined, SHOW_KEYWORDS)) return "Use as a seated show or A/C break between higher-priority rides.";
+  if (includesAny(combined, WALKTHROUGH_KEYWORDS)) return "Use only if nearby, during rain/heat, or when you need a low-commitment filler.";
+  return "Use as a flexible filler activity, not as a ride-demand priority.";
 }
 
 function getWhyChosenSentence(input: BadgeInput) {
@@ -534,7 +609,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const [insightsResult, setInsightsResult] = useState<ApiResult<HistoricalInsights> | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState("");
-  const [activeTab, setActiveTab] = useState<"rides" | "heat" | "plan">("rides");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("rides");
   const [selectedLand, setSelectedLand] = useState("");
   const [planMode, setPlanMode] = useState<PlanMode>("lowStress");
 
@@ -589,6 +664,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
   const activePark = availableParks.includes(selectedPark) ? selectedPark : availableParks[0] || selectedPark;
   const parkRides = useMemo(() => rides.filter((ride) => ride.displayPark === activePark).sort(compareOpenThenWaitDesc), [activePark, rides]);
   const priorityParkRides = useMemo(() => parkRides.filter(isPriorityRide), [parkRides]);
+  const activityItems = useMemo(() => parkRides.filter(isActivityCandidate).slice(0, 12), [parkRides]);
   const openRides = priorityParkRides.filter(isOpenRide);
   const peakWait = openRides.length ? Math.max(...openRides.map((ride) => Math.max(ride.displayWait, 0))) : 0;
   const parkAppearsClosed = priorityParkRides.length > 0 && openRides.length === 0;
@@ -667,6 +743,7 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
       <div className="section-tabs" role="tablist" aria-label="Park dashboard sections">
         <button className={`section-tab ${activeTab === "rides" ? "section-tab-active" : ""}`} onClick={() => setActiveTab("rides")} type="button">Rides</button>
         <button className={`section-tab ${activeTab === "heat" ? "section-tab-active" : ""}`} onClick={() => setActiveTab("heat")} type="button">Heat</button>
+        <button className={`section-tab ${activeTab === "activities" ? "section-tab-active" : ""}`} onClick={() => setActiveTab("activities")} type="button">Activities</button>
         <button className={`section-tab ${activeTab === "plan" ? "section-tab-active" : ""}`} onClick={() => setActiveTab("plan")} type="button">Plan</button>
       </div>
 
@@ -721,6 +798,30 @@ export default function ParkCommandCenter({ selectedPark, onSelectPark }: ParkCo
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === "activities" && (
+        <div className="compact-panel">
+          <h3>Shows & family activities</h3>
+          <p className="muted">These are planning tools for A/C breaks, kid resets, shows, walkthroughs, and nearby filler — not ride-demand priorities.</p>
+          {activityItems.length ? (
+            <div className="ride-list compact-ride-list">
+              {activityItems.map((activity, index) => {
+                const badges = getActivityBadges(activity);
+                return (
+                  <div className="ride ride-unknown" key={activity.id || `${activity.displayName}-activity-${index}`}>
+                    <div>
+                      <strong>{activity.displayName}</strong>
+                      <BadgeRow badges={badges} />
+                      <p className="muted">{activity.displayLand} · {isOpenRide(activity) ? "Open" : "Closed"} · {getActivityUseCase(activity)}</p>
+                    </div>
+                    <div className="wait-pill">Activity</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <p className="muted">No shows or family activities are separated for this park yet.</p>}
         </div>
       )}
 

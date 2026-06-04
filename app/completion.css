@@ -1,0 +1,31 @@
+.complete-ride-button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border: 1px solid rgba(142, 197, 255, 0.32);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(142, 197, 255, 0.12);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ride:not(.ride-unknown) {
+  position: relative;
+  padding-bottom: 42px;
+}
+
+.ride-completed {
+  opacity: 0.55;
+  border-left-color: var(--good) !important;
+}
+
+.ride-completed strong {
+  text-decoration: line-through;
+}
+
+.complete-ride-button-done {
+  background: rgba(56, 217, 150, 0.16);
+  border-color: rgba(56, 217, 150, 0.45);
+}

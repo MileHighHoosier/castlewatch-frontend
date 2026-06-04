@@ -56,6 +56,24 @@ function missingApiBaseResult<T>(): ApiResult<T> {
   };
 }
 
+function normalizeRideRows<T>(rows: T[]): T[] {
+  return rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+
+    const ride = row as Record<string, unknown>;
+    const name = String(ride.name || ride.ride_name || ride.attraction || "").toLowerCase();
+
+    if (!name.includes("main street vehicles")) return row;
+
+    return {
+      ...ride,
+      park: "Transport",
+      land: "Transportation filler",
+      castlewatch_category: "transportation filler",
+    } as T;
+  });
+}
+
 export async function checkBackendStatus(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
@@ -101,7 +119,12 @@ export async function fetchRideData(): Promise<ApiResult<any[]>> {
 
   for (const path of paths) {
     const result = await tryFetch<any[]>(path);
-    if (result.ok && Array.isArray(result.data)) return result;
+    if (result.ok && Array.isArray(result.data)) {
+      return {
+        ...result,
+        data: normalizeRideRows(result.data),
+      };
+    }
   }
 
   return {

@@ -71,6 +71,7 @@ function enhanceRideCards() {
 
         saveCompletedRides(nextCompleted);
         document.querySelectorAll(".ride").forEach((nextCard) => applyCompletedState(nextCard, nextCompleted));
+        updatePlanCompletedNote();
       });
 
       card.appendChild(button);
@@ -80,17 +81,54 @@ function enhanceRideCards() {
   });
 }
 
+function updatePlanCompletedNote() {
+  const completed = getCompletedRides();
+  const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
+  if (!planPanel) return;
+
+  const existingNote = planPanel.querySelector(".completed-plan-note");
+  existingNote?.remove();
+
+  const completedCount = completed.size;
+  if (!completedCount) return;
+
+  const nextMoveCard = planPanel.querySelector(".next-move-card");
+  const planTitle = nextMoveCard?.querySelector("h3")?.textContent?.trim() || "";
+  const planAlreadyCompleted = planTitle && completed.has(planTitle);
+
+  if (planAlreadyCompleted) {
+    nextMoveCard?.classList.add("plan-completed-warning");
+  } else {
+    nextMoveCard?.classList.remove("plan-completed-warning");
+  }
+
+  const note = document.createElement("div");
+  note.className = "plan-note completed-plan-note";
+  note.innerHTML = planAlreadyCompleted
+    ? `<strong>Completed rides skipped:</strong> ${completedCount}. Current recommendation is already done — tap Recalculate or switch modes.`
+    : `<strong>Completed rides skipped:</strong> ${completedCount}.`;
+
+  const steps = planPanel.querySelector(".plan-steps");
+  if (steps) {
+    planPanel.insertBefore(note, steps);
+  } else {
+    planPanel.appendChild(note);
+  }
+}
+
 export default function RideCompletionTracker() {
   useEffect(() => {
     let intervalId: number | null = null;
 
     function scheduleEnhance() {
       enhanceRideCards();
+      updatePlanCompletedNote();
 
       if (intervalId) window.clearInterval(intervalId);
       let runs = 0;
       intervalId = window.setInterval(() => {
         enhanceRideCards();
+        updatePlanCompletedNote();
         runs += 1;
 
         if (runs >= 8 && intervalId) {

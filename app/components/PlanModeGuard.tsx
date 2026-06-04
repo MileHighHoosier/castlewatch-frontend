@@ -208,9 +208,9 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
   }
 
   const steps = document.querySelectorAll(".plan-step p");
-  if (steps[0]) steps[0].textContent = gentleFiller ? `Use ${name} if you are already nearby.` : `Go to ${name}.`;
-  if (steps[1]) steps[1].textContent = "Refresh after this attraction.";
-  if (steps[2]) steps[2].textContent = "Recalculate before crossing the park.";
+  if (steps[0]) steps[0].textContent = gentleFiller ? `Use ${name} if nearby.` : `Go to ${name}.`;
+  if (steps[1]) steps[1].textContent = "Refresh after ride.";
+  if (steps[2]) steps[2].textContent = "Recalculate before moving on.";
 }
 
 function showNoReplacementFallback(mode: "aggressive" | "lowStress") {

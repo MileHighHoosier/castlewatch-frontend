@@ -19,6 +19,8 @@ const PLAN_EXCLUDED_KEYWORDS = [
   "tom sawyer island",
 ];
 const HEADLINER_KEYWORDS = ["seven dwarfs", "tron", "big thunder", "jungle cruise", "space mountain", "tiana", "haunted mansion", "pirates"];
+const STRONG_LOW_STRESS_KEYWORDS = ["haunted mansion", "pirates", "buzz lightyear", "small world", "dumbo", "under the sea", "winnie the pooh", "mad tea party", "barnstormer"];
+const GENTLE_FILLER_KEYWORDS = ["prince charming", "regal carrousel", "carousel", "peoplemover", "magic carpets", "liberty square riverboat"];
 const MODE_WAIT_LIMITS = { aggressive: 60, lowStress: 35 } as const;
 const COMPLETED_STORAGE_KEY = "castlewatch.completedRides.v1";
 
@@ -65,6 +67,14 @@ function isCoolDownOnly(title: string) {
   return COOL_DOWN_ONLY_RECOMMENDATIONS.some((name) => normalized.includes(name));
 }
 
+function isGentleFillerRide(ride: RawRide) {
+  return includesAny(normalizedName(ride), GENTLE_FILLER_KEYWORDS);
+}
+
+function isStrongLowStressRide(ride: RawRide) {
+  return includesAny(normalizedName(ride), STRONG_LOW_STRESS_KEYWORDS);
+}
+
 function getCompletedRides() {
   try {
     return new Set<string>(JSON.parse(window.localStorage.getItem(COMPLETED_STORAGE_KEY) || "[]"));
@@ -89,13 +99,22 @@ function scoreCandidate(ride: RawRide, mode: "aggressive" | "lowStress") {
   const name = normalizedName(ride);
   const wait = waitTime(ride);
   const headliner = includesAny(name, HEADLINER_KEYWORDS);
+  const gentleFiller = isGentleFillerRide(ride);
+  const strongLowStress = isStrongLowStressRide(ride);
   const underCap = wait <= MODE_WAIT_LIMITS[mode];
 
   if (mode === "lowStress") {
-    return (underCap ? 1000 : 200) - wait * 8 + (headliner ? -90 : 30);
+    return (underCap ? 1000 : 200)
+      - wait * 8
+      + (strongLowStress ? 110 : 0)
+      + (headliner ? -90 : 30)
+      + (gentleFiller ? -140 : 0);
   }
 
-  return (underCap ? 1000 : 200) - wait * 3 + (headliner ? 140 : 20);
+  return (underCap ? 1000 : 200)
+    - wait * 3
+    + (headliner ? 140 : 20)
+    + (gentleFiller ? -120 : 0);
 }
 
 async function findReplacementRide(mode: "aggressive" | "lowStress") {
@@ -129,6 +148,8 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
   const land = ride.land || "nearby area";
   const label = mode === "aggressive" ? "Max rides" : "Low-stress";
   const headliner = includesAny(name, HEADLINER_KEYWORDS);
+  const gentleFiller = isGentleFillerRide(ride);
+  const strongLowStress = isStrongLowStressRide(ride);
 
   nextMoveCard.classList.remove("plan-mode-guard-warning");
   nextMoveCard.setAttribute("data-plan-guard-replaced", "true");
@@ -136,7 +157,7 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
   setStartRouteActive();
 
   const subtitle = nextMoveCard.querySelector(".stat-label");
-  if (subtitle) subtitle.textContent = `Next move · ${label}`;
+  if (subtitle) subtitle.textContent = gentleFiller ? `Nearby option · ${label}` : `Next move · ${label}`;
 
   const heading = nextMoveCard.querySelector("h3");
   if (heading) heading.textContent = name;
@@ -144,19 +165,29 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
   const badges = Array.from(nextMoveCard.querySelectorAll(".recommendation-badge"));
   if (badges[0]) badges[0].textContent = label;
   if (badges[1]) badges[1].textContent = wait <= 15 ? "Low wait" : `${wait} min`;
-  if (badges[2]) badges[2].textContent = headliner ? "High-value ride" : "Family target";
-  if (badges[3]) badges[3].remove();
+  if (badges[2]) badges[2].textContent = gentleFiller ? "Gentle ride" : headliner ? "High-value ride" : "Family target";
+  if (badges[3]) {
+    if (gentleFiller) {
+      badges[3].textContent = "Nearby filler";
+    } else if (strongLowStress) {
+      badges[3].textContent = "Stronger option";
+    } else {
+      badges[3].remove();
+    }
+  }
 
   const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
   if (mutedParagraphs[0]) {
-    mutedParagraphs[0].innerHTML = `<strong>Why chosen:</strong> Carousel was skipped for this mode, so CastleWatch picked the next eligible ${label} ride.`;
+    mutedParagraphs[0].innerHTML = gentleFiller
+      ? `<strong>Why chosen:</strong> Stronger low-stress rides were limited, so CastleWatch picked a gentle nearby option.`
+      : `<strong>Why chosen:</strong> Carousel was skipped for this mode, so CastleWatch picked the next eligible ${label} ride.`;
   }
   if (mutedParagraphs[1]) {
     mutedParagraphs[1].textContent = `${wait} min wait in ${land}. Recalculate before crossing the park.`;
   }
 
   const steps = document.querySelectorAll(".plan-step p");
-  if (steps[0]) steps[0].textContent = `Go to ${name}.`;
+  if (steps[0]) steps[0].textContent = gentleFiller ? `Use ${name} if you are already nearby.` : `Go to ${name}.`;
   if (steps[1]) steps[1].textContent = "Refresh after this attraction.";
   if (steps[2]) steps[2].textContent = "Recalculate before crossing the park.";
 }

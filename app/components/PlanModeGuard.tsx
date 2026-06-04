@@ -1,10 +1,40 @@
 "use client";
 
 import { useEffect } from "react";
+import { fetchRideData } from "../lib/api";
 
 const COOL_DOWN_ONLY_RECOMMENDATIONS = ["carousel of progress", "use carousel only"];
+const PLAN_EXCLUDED_KEYWORDS = [
+  "carousel of progress",
+  "main street vehicles",
+  "single rider",
+  "cinderella castle",
+  "casey jr",
+  "country bear",
+  "enchanted tales",
+  "a pirate's adventure",
+  "philharmagic",
+  "philarmagic",
+  "laugh floor",
+  "tom sawyer island",
+];
+const HEADLINER_KEYWORDS = ["seven dwarfs", "tron", "big thunder", "jungle cruise", "space mountain", "tiana", "haunted mansion", "pirates"];
+const MODE_WAIT_LIMITS = { aggressive: 60, lowStress: 35 } as const;
+const COMPLETED_STORAGE_KEY = "castlewatch.completedRides.v1";
 
-function activePlanMode() {
+type GuardMode = "aggressive" | "lowStress" | "coolDown" | "unknown";
+type RawRide = {
+  name?: string;
+  ride_name?: string;
+  attraction?: string;
+  park?: string;
+  land?: string;
+  wait?: number;
+  wait_time?: number;
+  is_open?: boolean;
+};
+
+function activePlanMode(): GuardMode {
   const activeMode = document.querySelector(".plan-mode-active strong")?.textContent?.trim().toLowerCase() || "";
   if (activeMode.includes("cool")) return "coolDown";
   if (activeMode.includes("max")) return "aggressive";
@@ -12,43 +42,155 @@ function activePlanMode() {
   return "unknown";
 }
 
+function activeParkName() {
+  return document.querySelector(".command-header h2")?.textContent?.trim() || "Magic Kingdom";
+}
+
+function normalizedName(ride: RawRide) {
+  return String(ride.name || ride.ride_name || ride.attraction || "").trim();
+}
+
+function waitTime(ride: RawRide) {
+  const wait = ride.wait_time ?? ride.wait;
+  return typeof wait === "number" ? wait : -1;
+}
+
+function includesAny(value: string, keywords: string[]) {
+  const normalized = value.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
 function isCoolDownOnly(title: string) {
   const normalized = title.toLowerCase();
   return COOL_DOWN_ONLY_RECOMMENDATIONS.some((name) => normalized.includes(name));
 }
 
-function resetBlockedControls() {
-  const startButton = document.querySelector<HTMLButtonElement>(".next-move-actions .button:first-child");
-  if (!startButton) return;
-
-  if (startButton.dataset.planGuardBlocked === "true") {
-    startButton.disabled = false;
-    startButton.textContent = "Start route";
-    startButton.classList.remove("blocked-start-route");
-    delete startButton.dataset.planGuardBlocked;
+function getCompletedRides() {
+  try {
+    return new Set<string>(JSON.parse(window.localStorage.getItem(COMPLETED_STORAGE_KEY) || "[]"));
+  } catch {
+    return new Set<string>();
   }
 }
 
-function disableBlockedStartRoute() {
+function isEligiblePlanRide(ride: RawRide, park: string) {
+  const name = normalizedName(ride);
+  const combined = `${name} ${ride.land || ""}`;
+  if (!name) return false;
+  if (ride.is_open === false) return false;
+  if (waitTime(ride) < 0) return false;
+  if (String(ride.park || "").toLowerCase() !== park.toLowerCase()) return false;
+  if (includesAny(combined, PLAN_EXCLUDED_KEYWORDS)) return false;
+  if (getCompletedRides().has(name)) return false;
+  return true;
+}
+
+function scoreCandidate(ride: RawRide, mode: "aggressive" | "lowStress") {
+  const name = normalizedName(ride);
+  const wait = waitTime(ride);
+  const headliner = includesAny(name, HEADLINER_KEYWORDS);
+  const underCap = wait <= MODE_WAIT_LIMITS[mode];
+
+  if (mode === "lowStress") {
+    return (underCap ? 1000 : 200) - wait * 8 + (headliner ? -90 : 30);
+  }
+
+  return (underCap ? 1000 : 200) - wait * 3 + (headliner ? 140 : 20);
+}
+
+async function findReplacementRide(mode: "aggressive" | "lowStress") {
+  const result = await fetchRideData();
+  const park = activeParkName();
+  const rows = Array.isArray(result.data) ? result.data as RawRide[] : [];
+
+  const candidates = rows
+    .filter((ride) => isEligiblePlanRide(ride, park))
+    .sort((a, b) => scoreCandidate(b, mode) - scoreCandidate(a, mode));
+
+  return candidates[0] || null;
+}
+
+function setStartRouteActive() {
   const startButton = document.querySelector<HTMLButtonElement>(".next-move-actions .button:first-child");
   if (!startButton) return;
 
-  startButton.disabled = true;
-  startButton.textContent = "Blocked";
-  startButton.classList.add("blocked-start-route");
-  startButton.dataset.planGuardBlocked = "true";
+  startButton.disabled = false;
+  startButton.textContent = "Start route";
+  startButton.classList.remove("blocked-start-route");
+  delete startButton.dataset.planGuardBlocked;
+}
+
+function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress") {
+  const nextMoveCard = document.querySelector(".next-move-card");
+  if (!nextMoveCard) return;
+
+  const name = normalizedName(ride);
+  const wait = waitTime(ride);
+  const land = ride.land || "nearby area";
+  const label = mode === "aggressive" ? "Max rides" : "Low-stress";
+  const headliner = includesAny(name, HEADLINER_KEYWORDS);
+
+  nextMoveCard.classList.remove("plan-mode-guard-warning");
+  nextMoveCard.setAttribute("data-plan-guard-replaced", "true");
+  document.querySelector(".plan-mode-guard-note")?.remove();
+  setStartRouteActive();
+
+  const subtitle = nextMoveCard.querySelector(".stat-label");
+  if (subtitle) subtitle.textContent = `Next move · ${label}`;
+
+  const heading = nextMoveCard.querySelector("h3");
+  if (heading) heading.textContent = name;
+
+  const badges = Array.from(nextMoveCard.querySelectorAll(".recommendation-badge"));
+  if (badges[0]) badges[0].textContent = label;
+  if (badges[1]) badges[1].textContent = wait <= 15 ? "Low wait" : `${wait} min`;
+  if (badges[2]) badges[2].textContent = headliner ? "High-value ride" : "Family target";
+  if (badges[3]) badges[3].remove();
+
+  const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
+  if (mutedParagraphs[0]) {
+    mutedParagraphs[0].innerHTML = `<strong>Why chosen:</strong> Carousel was skipped for this mode, so CastleWatch picked the next eligible ${label} ride.`;
+  }
+  if (mutedParagraphs[1]) {
+    mutedParagraphs[1].textContent = `${wait} min wait in ${land}. Recalculate before crossing the park.`;
+  }
+
+  const steps = document.querySelectorAll(".plan-step p");
+  if (steps[0]) steps[0].textContent = `Go to ${name}.`;
+  if (steps[1]) steps[1].textContent = "Refresh after this attraction.";
+  if (steps[2]) steps[2].textContent = "Recalculate before crossing the park.";
+}
+
+function showNoReplacementFallback(mode: "aggressive" | "lowStress") {
+  const nextMoveCard = document.querySelector(".next-move-card");
+  if (!nextMoveCard) return;
+
+  nextMoveCard.classList.add("plan-mode-guard-warning");
+  const subtitle = nextMoveCard.querySelector(".stat-label");
+  if (subtitle) subtitle.textContent = mode === "aggressive" ? "No eligible target · Max rides" : "No eligible target · Low-stress";
+
+  const heading = nextMoveCard.querySelector("h3");
+  if (heading) heading.textContent = "Use Rides or Heat instead";
+
+  const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
+  if (mutedParagraphs[0]) {
+    mutedParagraphs[0].innerHTML = "<strong>Why:</strong> Carousel was skipped, but no better eligible ride was found under this mode right now.";
+  }
+  if (mutedParagraphs[1]) {
+    mutedParagraphs[1].textContent = "Open the Rides or Heat tab, or switch to Cool down if your family needs an A/C reset.";
+  }
 }
 
 function guardPlanModeRecommendations() {
   const mode = activePlanMode();
   if (mode === "coolDown" || mode === "unknown") {
-    resetBlockedControls();
+    setStartRouteActive();
     return;
   }
 
   const nextMoveCard = document.querySelector(".next-move-card");
   if (!nextMoveCard) {
-    resetBlockedControls();
+    setStartRouteActive();
     return;
   }
 
@@ -56,38 +198,22 @@ function guardPlanModeRecommendations() {
   if (!isCoolDownOnly(title)) {
     nextMoveCard.classList.remove("plan-mode-guard-warning");
     document.querySelector(".plan-mode-guard-note")?.remove();
-    resetBlockedControls();
+    setStartRouteActive();
     return;
   }
 
-  nextMoveCard.classList.add("plan-mode-guard-warning");
-  disableBlockedStartRoute();
+  if (nextMoveCard.getAttribute("data-plan-guard-loading") === "true") return;
+  nextMoveCard.setAttribute("data-plan-guard-loading", "true");
 
-  const subtitle = nextMoveCard.querySelector(".stat-label");
-  if (subtitle) subtitle.textContent = mode === "aggressive" ? "Blocked · Max rides" : "Blocked · Low-stress";
-
-  const heading = nextMoveCard.querySelector("h3");
-  if (heading) heading.textContent = "Use Carousel only for Cool down";
-
-  const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
-  if (mutedParagraphs[0]) {
-    mutedParagraphs[0].innerHTML = "<strong>Why blocked:</strong> Carousel of Progress is a seated A/C reset, not a main ride target for this mode.";
-  }
-  if (mutedParagraphs[1]) {
-    mutedParagraphs[1].textContent = "Switch to Cool down for this option, or use Rides/Heat to choose a true ride-demand target.";
-  }
-
-  const steps = document.querySelectorAll(".plan-step p");
-  if (steps[0]) steps[0].textContent = "Do not use Carousel as the main next move in this mode.";
-  if (steps[1]) steps[1].textContent = "Switch to Cool down if the family needs an A/C break.";
-  if (steps[2]) steps[2].textContent = "Use Rides or Heat for the next true ride target.";
-
-  if (!document.querySelector(".plan-mode-guard-note")) {
-    const note = document.createElement("div");
-    note.className = "plan-note plan-mode-guard-note";
-    note.innerHTML = "<strong>Mode rule:</strong> Carousel of Progress is reserved for Cool down / Activities, not Max rides or Low-stress.";
-    nextMoveCard.insertAdjacentElement("afterend", note);
-  }
+  findReplacementRide(mode).then((replacement) => {
+    if (replacement) {
+      replaceBlockedCardWithRide(replacement, mode);
+    } else {
+      showNoReplacementFallback(mode);
+    }
+  }).finally(() => {
+    nextMoveCard.removeAttribute("data-plan-guard-loading");
+  });
 }
 
 export default function PlanModeGuard() {

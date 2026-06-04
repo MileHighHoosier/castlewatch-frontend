@@ -29,3 +29,13 @@
   background: rgba(56, 217, 150, 0.16);
   border-color: rgba(56, 217, 150, 0.45);
 }
+
+.plan-completed-warning {
+  opacity: 0.7;
+  border-color: rgba(255, 204, 102, 0.55) !important;
+}
+
+.completed-plan-note {
+  background: rgba(56, 217, 150, 0.1);
+  border-color: rgba(56, 217, 150, 0.35);
+}

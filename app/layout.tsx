@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ActivityMetadataPolish from "./components/ActivityMetadataPolish";
+import RideCompletionTracker from "./components/RideCompletionTracker";
 
 export const metadata: Metadata = {
   title: "CastleWatch",
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ActivityMetadataPolish />
+        <RideCompletionTracker />
         {children}
       </body>
     </html>

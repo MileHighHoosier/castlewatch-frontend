@@ -139,6 +139,29 @@ function setStartRouteActive() {
   delete startButton.dataset.planGuardBlocked;
 }
 
+function replacementWhyChosen(ride: RawRide, mode: "aggressive" | "lowStress") {
+  const wait = waitTime(ride);
+  const label = mode === "aggressive" ? "Max rides" : "Low-stress";
+
+  if (isGentleFillerRide(ride)) {
+    return "Stronger low-stress rides were limited, so CastleWatch picked a gentle nearby option.";
+  }
+
+  if (mode === "lowStress" && isStrongLowStressRide(ride) && wait <= 15) {
+    return "Chosen because it is a stronger low-stress ride with a short wait.";
+  }
+
+  if (mode === "lowStress" && wait <= 15) {
+    return "Chosen because it is a short-wait family ride that keeps the day easier.";
+  }
+
+  if (mode === "aggressive" && includesAny(normalizedName(ride), HEADLINER_KEYWORDS)) {
+    return "Chosen because it has strong ride value for the current wait.";
+  }
+
+  return `Chosen because it is the best eligible ${label} ride available right now.`;
+}
+
 function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress") {
   const nextMoveCard = document.querySelector(".next-move-card");
   if (!nextMoveCard) return;
@@ -178,9 +201,7 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
 
   const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
   if (mutedParagraphs[0]) {
-    mutedParagraphs[0].innerHTML = gentleFiller
-      ? `<strong>Why chosen:</strong> Stronger low-stress rides were limited, so CastleWatch picked a gentle nearby option.`
-      : `<strong>Why chosen:</strong> Carousel was skipped for this mode, so CastleWatch picked the next eligible ${label} ride.`;
+    mutedParagraphs[0].innerHTML = `<strong>Why chosen:</strong> ${replacementWhyChosen(ride, mode)}`;
   }
   if (mutedParagraphs[1]) {
     mutedParagraphs[1].textContent = `${wait} min wait in ${land}. Recalculate before crossing the park.`;
@@ -205,7 +226,7 @@ function showNoReplacementFallback(mode: "aggressive" | "lowStress") {
 
   const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
   if (mutedParagraphs[0]) {
-    mutedParagraphs[0].innerHTML = "<strong>Why:</strong> Carousel was skipped, but no better eligible ride was found under this mode right now.";
+    mutedParagraphs[0].innerHTML = "<strong>Why:</strong> No better eligible ride was found under this mode right now.";
   }
   if (mutedParagraphs[1]) {
     mutedParagraphs[1].textContent = "Open the Rides or Heat tab, or switch to Cool down if your family needs an A/C reset.";

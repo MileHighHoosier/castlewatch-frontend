@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ActivityMetadataPolish from "./components/ActivityMetadataPolish";
 
 export const metadata: Metadata = {
   title: "CastleWatch",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ActivityMetadataPolish />
+        {children}
+      </body>
     </html>
   );
 }

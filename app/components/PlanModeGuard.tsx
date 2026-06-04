@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const COOL_DOWN_ONLY_RECOMMENDATIONS = ["carousel of progress"];
+const COOL_DOWN_ONLY_RECOMMENDATIONS = ["carousel of progress", "use carousel only"];
 
 function activePlanMode() {
   const activeMode = document.querySelector(".plan-mode-active strong")?.textContent?.trim().toLowerCase() || "";
@@ -17,21 +17,51 @@ function isCoolDownOnly(title: string) {
   return COOL_DOWN_ONLY_RECOMMENDATIONS.some((name) => normalized.includes(name));
 }
 
+function resetBlockedControls() {
+  const startButton = document.querySelector<HTMLButtonElement>(".next-move-actions .button:first-child");
+  if (!startButton) return;
+
+  if (startButton.dataset.planGuardBlocked === "true") {
+    startButton.disabled = false;
+    startButton.textContent = "Start route";
+    startButton.classList.remove("blocked-start-route");
+    delete startButton.dataset.planGuardBlocked;
+  }
+}
+
+function disableBlockedStartRoute() {
+  const startButton = document.querySelector<HTMLButtonElement>(".next-move-actions .button:first-child");
+  if (!startButton) return;
+
+  startButton.disabled = true;
+  startButton.textContent = "Blocked";
+  startButton.classList.add("blocked-start-route");
+  startButton.dataset.planGuardBlocked = "true";
+}
+
 function guardPlanModeRecommendations() {
   const mode = activePlanMode();
-  if (mode === "coolDown" || mode === "unknown") return;
+  if (mode === "coolDown" || mode === "unknown") {
+    resetBlockedControls();
+    return;
+  }
 
   const nextMoveCard = document.querySelector(".next-move-card");
-  if (!nextMoveCard) return;
+  if (!nextMoveCard) {
+    resetBlockedControls();
+    return;
+  }
 
   const title = nextMoveCard.querySelector("h3")?.textContent?.trim() || "";
   if (!isCoolDownOnly(title)) {
     nextMoveCard.classList.remove("plan-mode-guard-warning");
     document.querySelector(".plan-mode-guard-note")?.remove();
+    resetBlockedControls();
     return;
   }
 
   nextMoveCard.classList.add("plan-mode-guard-warning");
+  disableBlockedStartRoute();
 
   const subtitle = nextMoveCard.querySelector(".stat-label");
   if (subtitle) subtitle.textContent = mode === "aggressive" ? "Blocked · Max rides" : "Blocked · Low-stress";

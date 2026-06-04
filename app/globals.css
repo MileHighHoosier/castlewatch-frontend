@@ -440,6 +440,20 @@ a {
   opacity: 0.82;
 }
 
+.command-center:has(.section-tabs .section-tab:nth-child(3).section-tab-active) .compact-panel > h3 + p.muted {
+  font-size: 0;
+  line-height: 0;
+  margin: 0;
+}
+
+.command-center:has(.section-tabs .section-tab:nth-child(3).section-tab-active) .compact-panel > h3 + p.muted::before {
+  content: "Family breaks, shows, kid resets, and nearby filler.";
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
 .muted {
   color: var(--muted);
 }

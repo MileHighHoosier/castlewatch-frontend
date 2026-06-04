@@ -39,3 +39,12 @@
   background: rgba(56, 217, 150, 0.1);
   border-color: rgba(56, 217, 150, 0.35);
 }
+
+.blocked-start-route,
+.blocked-start-route:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: rgba(255, 204, 102, 0.12);
+  border-color: rgba(255, 204, 102, 0.35);
+  color: var(--muted);
+}

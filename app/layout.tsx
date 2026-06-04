@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ActivityMetadataCleaner from "./components/ActivityMetadataCleaner";
 
 export const metadata: Metadata = {
   title: "CastleWatch",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ActivityMetadataCleaner />
+        {children}
+      </body>
     </html>
   );
 }

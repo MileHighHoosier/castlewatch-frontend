@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./completion.css";
 import ActivityMetadataPolish from "./components/ActivityMetadataPolish";
 import RideCompletionTracker from "./components/RideCompletionTracker";
 

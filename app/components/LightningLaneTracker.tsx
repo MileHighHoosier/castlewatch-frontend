@@ -157,30 +157,18 @@ export default function LightningLaneTracker() {
   useEffect(() => {
     let intervalId: number | null = null;
 
-    function scheduleRender() {
-      renderLightningLaneTracker();
-
-      if (intervalId) window.clearInterval(intervalId);
-      let runs = 0;
-      intervalId = window.setInterval(() => {
-        renderLightningLaneTracker();
-        runs += 1;
-
-        if (runs >= 8 && intervalId) {
-          window.clearInterval(intervalId);
-          intervalId = null;
-        }
-      }, 250);
+    function renderOnPlanOpen() {
+      window.setTimeout(renderLightningLaneTracker, 80);
     }
 
-    scheduleRender();
-    document.addEventListener("click", scheduleRender, { passive: true });
-    document.addEventListener("touchend", scheduleRender, { passive: true });
+    renderOnPlanOpen();
+    intervalId = window.setInterval(renderLightningLaneTracker, 60000);
+
+    window.addEventListener("castlewatch:completed-rides-cleared", renderOnPlanOpen);
 
     return () => {
       if (intervalId) window.clearInterval(intervalId);
-      document.removeEventListener("click", scheduleRender);
-      document.removeEventListener("touchend", scheduleRender);
+      window.removeEventListener("castlewatch:completed-rides-cleared", renderOnPlanOpen);
     };
   }, []);
 

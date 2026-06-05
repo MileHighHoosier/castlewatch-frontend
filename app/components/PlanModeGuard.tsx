@@ -162,7 +162,7 @@ function replacementWhyChosen(ride: RawRide, mode: "aggressive" | "lowStress") {
   return `Chosen because it is the best eligible ${label} ride available right now.`;
 }
 
-function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress") {
+function replacePlanCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress", reasonPrefix = "") {
   const nextMoveCard = document.querySelector(".next-move-card");
   if (!nextMoveCard) return;
 
@@ -201,7 +201,7 @@ function replaceBlockedCardWithRide(ride: RawRide, mode: "aggressive" | "lowStre
 
   const mutedParagraphs = nextMoveCard.querySelectorAll("p.muted");
   if (mutedParagraphs[0]) {
-    mutedParagraphs[0].innerHTML = `<strong>Why chosen:</strong> ${replacementWhyChosen(ride, mode)}`;
+    mutedParagraphs[0].innerHTML = `<strong>Why chosen:</strong> ${reasonPrefix}${replacementWhyChosen(ride, mode)}`;
   }
   if (mutedParagraphs[1]) {
     mutedParagraphs[1].textContent = `${wait} min wait in ${land}. Recalculate before crossing the park.`;
@@ -235,11 +235,6 @@ function showNoReplacementFallback(mode: "aggressive" | "lowStress") {
 
 function guardPlanModeRecommendations() {
   const mode = activePlanMode();
-  if (mode === "coolDown" || mode === "unknown") {
-    setStartRouteActive();
-    return;
-  }
-
   const nextMoveCard = document.querySelector(".next-move-card");
   if (!nextMoveCard) {
     setStartRouteActive();
@@ -247,7 +242,17 @@ function guardPlanModeRecommendations() {
   }
 
   const title = nextMoveCard.querySelector("h3")?.textContent?.trim() || "";
-  if (!isCoolDownOnly(title)) {
+  const completedRides = getCompletedRides();
+  const recommendationIsCompleted = Boolean(title && completedRides.has(title));
+
+  if (mode === "coolDown" || mode === "unknown") {
+    if (!recommendationIsCompleted) setStartRouteActive();
+    return;
+  }
+
+  const shouldReplace = recommendationIsCompleted || isCoolDownOnly(title);
+
+  if (!shouldReplace) {
     nextMoveCard.classList.remove("plan-mode-guard-warning");
     document.querySelector(".plan-mode-guard-note")?.remove();
     setStartRouteActive();
@@ -259,7 +264,7 @@ function guardPlanModeRecommendations() {
 
   findReplacementRide(mode).then((replacement) => {
     if (replacement) {
-      replaceBlockedCardWithRide(replacement, mode);
+      replacePlanCardWithRide(replacement, mode, recommendationIsCompleted ? "Completed ride skipped. " : "");
     } else {
       showNoReplacementFallback(mode);
     }

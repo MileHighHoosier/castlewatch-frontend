@@ -17,11 +17,19 @@ function saveCompletedRides(completed: Set<string>) {
 }
 
 function clearCompletedRides() {
-  window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.setItem(STORAGE_KEY, "[]");
+
   const emptyCompleted = new Set<string>();
   document.querySelectorAll(".ride").forEach((card) => applyCompletedState(card, emptyCompleted));
   document.querySelector(".next-move-card")?.classList.remove("plan-completed-warning");
-  updatePlanCompletedNote();
+  document.querySelector(".completed-plan-note")?.remove();
+
+  window.dispatchEvent(new CustomEvent("castlewatch:completed-rides-cleared"));
+
+  window.setTimeout(() => {
+    enhanceRideCards();
+    updatePlanCompletedNote();
+  }, 50);
 }
 
 function getRideName(card: Element) {
@@ -123,11 +131,17 @@ function updatePlanCompletedNote() {
   clearButton.className = "clear-completed-button";
   clearButton.textContent = "Clear";
   clearButton.setAttribute("aria-label", "Clear completed rides");
-  clearButton.addEventListener("click", (event) => {
+
+  const handleClear = (event: Event) => {
     event.preventDefault();
     event.stopPropagation();
+    clearButton.textContent = "Cleared";
     clearCompletedRides();
-  });
+  };
+
+  clearButton.addEventListener("pointerdown", handleClear);
+  clearButton.addEventListener("touchend", handleClear);
+  clearButton.addEventListener("click", handleClear);
 
   note.appendChild(noteText);
   note.appendChild(clearButton);
@@ -165,11 +179,13 @@ export default function RideCompletionTracker() {
     scheduleEnhance();
     document.addEventListener("click", scheduleEnhance, { passive: true });
     document.addEventListener("touchend", scheduleEnhance, { passive: true });
+    window.addEventListener("castlewatch:completed-rides-cleared", scheduleEnhance);
 
     return () => {
       if (intervalId) window.clearInterval(intervalId);
       document.removeEventListener("click", scheduleEnhance);
       document.removeEventListener("touchend", scheduleEnhance);
+      window.removeEventListener("castlewatch:completed-rides-cleared", scheduleEnhance);
     };
   }, []);
 

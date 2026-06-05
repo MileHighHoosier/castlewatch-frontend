@@ -97,13 +97,14 @@
 .lightning-lane-form {
   display: grid;
   grid-template-columns: 1fr 86px 86px auto;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
 .lightning-lane-field {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .lightning-lane-field span {
@@ -111,6 +112,7 @@
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.04em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -125,6 +127,7 @@
   font-size: 12px;
   font-weight: 800;
   min-width: 0;
+  width: 100%;
 }
 
 .lightning-lane-form button {
@@ -169,14 +172,25 @@
 @media (max-width: 520px) {
   .lightning-lane-form {
     grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
   }
 
   .lightning-lane-field-ride {
     grid-column: 1 / -1;
   }
 
+  .lightning-lane-field span {
+    font-size: 11px;
+  }
+
+  .lightning-lane-form input,
+  .lightning-lane-form button {
+    min-height: 42px;
+  }
+
   .lightning-lane-form button {
     grid-column: 1 / -1;
+    justify-self: stretch;
   }
 
   .lightning-lane-row {

@@ -77,9 +77,18 @@ function renderLightningLaneTracker() {
   const form = document.createElement("form");
   form.className = "lightning-lane-form";
   form.innerHTML = `
-    <input name="name" aria-label="Ride name" placeholder="Ride" />
-    <input name="start" aria-label="Start time" type="time" />
-    <input name="end" aria-label="End time" type="time" />
+    <label class="lightning-lane-field lightning-lane-field-ride">
+      <span>Ride</span>
+      <input name="name" aria-label="Ride name" placeholder="Ride" />
+    </label>
+    <label class="lightning-lane-field">
+      <span>Start</span>
+      <input name="start" aria-label="Start time" type="time" />
+    </label>
+    <label class="lightning-lane-field">
+      <span>End</span>
+      <input name="end" aria-label="End time" type="time" />
+    </label>
     <button type="submit">Add</button>
   `;
 

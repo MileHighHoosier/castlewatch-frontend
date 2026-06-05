@@ -69,6 +69,100 @@
   transform: translateY(-4px);
 }
 
+.lightning-lane-tracker {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid rgba(142, 197, 255, 0.25);
+  border-radius: 20px;
+  background: rgba(142, 197, 255, 0.07);
+}
+
+.lightning-lane-title {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.lightning-lane-title strong {
+  font-size: 16px;
+}
+
+.lightning-lane-title span,
+.lightning-lane-empty,
+.lightning-lane-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lightning-lane-form {
+  display: grid;
+  grid-template-columns: 1fr 86px 86px auto;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.lightning-lane-form input,
+.lightning-lane-form button,
+.lightning-lane-actions button {
+  border: 1px solid rgba(142, 197, 255, 0.28);
+  border-radius: 999px;
+  padding: 8px 9px;
+  background: rgba(9, 19, 32, 0.55);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lightning-lane-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lightning-lane-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(142, 197, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(9, 19, 32, 0.38);
+}
+
+.lightning-lane-row > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.lightning-lane-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.lightning-lane-used {
+  opacity: 0.6;
+}
+
+.lightning-lane-used strong {
+  text-decoration: line-through;
+}
+
+@media (max-width: 520px) {
+  .lightning-lane-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .lightning-lane-form input[name="name"] {
+    grid-column: 1 / -1;
+  }
+
+  .lightning-lane-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .blocked-start-route,
 .blocked-start-route:disabled {
   opacity: 0.55;

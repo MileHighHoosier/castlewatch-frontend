@@ -128,6 +128,7 @@
   font-weight: 800;
   min-width: 0;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .lightning-lane-form button {
@@ -171,8 +172,10 @@
 
 @media (max-width: 520px) {
   .lightning-lane-form {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 16px;
+    row-gap: 12px;
+    overflow: hidden;
   }
 
   .lightning-lane-field-ride {
@@ -186,6 +189,10 @@
   .lightning-lane-form input,
   .lightning-lane-form button {
     min-height: 42px;
+  }
+
+  .lightning-lane-field input[type="time"] {
+    max-width: 100%;
   }
 
   .lightning-lane-form button {

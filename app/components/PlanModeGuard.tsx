@@ -162,6 +162,27 @@ function replacementWhyChosen(ride: RawRide, mode: "aggressive" | "lowStress") {
   return `Chosen because it is the best eligible ${label} ride available right now.`;
 }
 
+function updateRouteStepsForRide(name: string, gentleFiller = false) {
+  if (!name) return;
+
+  const steps = document.querySelectorAll(".plan-step p");
+  if (steps[0]) steps[0].textContent = gentleFiller ? `Use ${name} if nearby.` : `Go to ${name}.`;
+  if (steps[1]) steps[1].textContent = "Refresh after ride.";
+  if (steps[2]) steps[2].textContent = "Recalculate before moving on.";
+}
+
+function syncRouteStepsFromCurrentRecommendation() {
+  const nextMoveCard = document.querySelector(".next-move-card");
+  if (!nextMoveCard) return;
+
+  const replaced = nextMoveCard.getAttribute("data-plan-guard-replaced") === "true";
+  const title = nextMoveCard.querySelector("h3")?.textContent?.trim() || "";
+  if (!replaced || !title || isCoolDownOnly(title)) return;
+
+  const gentleFiller = includesAny(title, GENTLE_FILLER_KEYWORDS);
+  updateRouteStepsForRide(title, gentleFiller);
+}
+
 function replacePlanCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress", reasonPrefix = "") {
   const nextMoveCard = document.querySelector(".next-move-card");
   if (!nextMoveCard) return;
@@ -208,10 +229,7 @@ function replacePlanCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress"
     mutedParagraphs[1].textContent = `${wait} min wait in ${land}. Recalculate before crossing the park.`;
   }
 
-  const steps = document.querySelectorAll(".plan-step p");
-  if (steps[0]) steps[0].textContent = gentleFiller ? `Use ${name} if nearby.` : `Go to ${name}.`;
-  if (steps[1]) steps[1].textContent = "Refresh after ride.";
-  if (steps[2]) steps[2].textContent = "Recalculate before moving on.";
+  updateRouteStepsForRide(name, gentleFiller);
 }
 
 function showNoReplacementFallback(mode: "aggressive" | "lowStress") {
@@ -257,10 +275,14 @@ function guardPlanModeRecommendations() {
     nextMoveCard.classList.remove("plan-mode-guard-warning");
     document.querySelector(".plan-mode-guard-note")?.remove();
     setStartRouteActive();
+    syncRouteStepsFromCurrentRecommendation();
     return;
   }
 
-  if (nextMoveCard.getAttribute("data-plan-guard-loading") === "true") return;
+  if (nextMoveCard.getAttribute("data-plan-guard-loading") === "true") {
+    syncRouteStepsFromCurrentRecommendation();
+    return;
+  }
   nextMoveCard.setAttribute("data-plan-guard-loading", "true");
 
   findReplacementRide(mode).then((replacement) => {
@@ -271,6 +293,7 @@ function guardPlanModeRecommendations() {
     }
   }).finally(() => {
     nextMoveCard.removeAttribute("data-plan-guard-loading");
+    syncRouteStepsFromCurrentRecommendation();
   });
 }
 

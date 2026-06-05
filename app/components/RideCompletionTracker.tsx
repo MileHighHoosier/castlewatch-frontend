@@ -16,6 +16,32 @@ function saveCompletedRides(completed: Set<string>) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(completed)));
 }
 
+function showClearConfirmation() {
+  const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
+  if (!planPanel) return;
+
+  planPanel.querySelector(".completed-clear-confirmation")?.remove();
+
+  const confirmation = document.createElement("div");
+  confirmation.className = "plan-note completed-clear-confirmation";
+  confirmation.textContent = "Completed rides cleared";
+
+  const steps = planPanel.querySelector(".plan-steps");
+  if (steps) {
+    planPanel.insertBefore(confirmation, steps);
+  } else {
+    planPanel.appendChild(confirmation);
+  }
+
+  window.setTimeout(() => {
+    confirmation.classList.add("completed-clear-confirmation-fading");
+  }, 1700);
+
+  window.setTimeout(() => {
+    confirmation.remove();
+  }, 2300);
+}
+
 function clearCompletedRides() {
   window.localStorage.setItem(STORAGE_KEY, "[]");
 
@@ -23,6 +49,7 @@ function clearCompletedRides() {
   document.querySelectorAll(".ride").forEach((card) => applyCompletedState(card, emptyCompleted));
   document.querySelector(".next-move-card")?.classList.remove("plan-completed-warning");
   document.querySelector(".completed-plan-note")?.remove();
+  showClearConfirmation();
 
   window.dispatchEvent(new CustomEvent("castlewatch:completed-rides-cleared"));
 

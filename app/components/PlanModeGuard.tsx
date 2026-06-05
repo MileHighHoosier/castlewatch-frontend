@@ -176,6 +176,7 @@ function replacePlanCardWithRide(ride: RawRide, mode: "aggressive" | "lowStress"
 
   nextMoveCard.classList.remove("plan-mode-guard-warning");
   nextMoveCard.setAttribute("data-plan-guard-replaced", "true");
+  nextMoveCard.setAttribute("data-plan-guard-original-blocked", "true");
   document.querySelector(".plan-mode-guard-note")?.remove();
   setStartRouteActive();
 
@@ -276,9 +277,13 @@ function guardPlanModeRecommendations() {
 export default function PlanModeGuard() {
   useEffect(() => {
     let intervalId: number | null = null;
+    let delayedGuardTimeout: number | null = null;
 
     function scheduleGuard() {
       guardPlanModeRecommendations();
+
+      if (delayedGuardTimeout) window.clearTimeout(delayedGuardTimeout);
+      delayedGuardTimeout = window.setTimeout(guardPlanModeRecommendations, 260);
 
       if (intervalId) window.clearInterval(intervalId);
       let runs = 0;
@@ -286,7 +291,7 @@ export default function PlanModeGuard() {
         guardPlanModeRecommendations();
         runs += 1;
 
-        if (runs >= 8 && intervalId) {
+        if (runs >= 12 && intervalId) {
           window.clearInterval(intervalId);
           intervalId = null;
         }
@@ -296,11 +301,14 @@ export default function PlanModeGuard() {
     scheduleGuard();
     document.addEventListener("click", scheduleGuard, { passive: true });
     document.addEventListener("touchend", scheduleGuard, { passive: true });
+    window.addEventListener("castlewatch:completed-rides-cleared", scheduleGuard);
 
     return () => {
       if (intervalId) window.clearInterval(intervalId);
+      if (delayedGuardTimeout) window.clearTimeout(delayedGuardTimeout);
       document.removeEventListener("click", scheduleGuard);
       document.removeEventListener("touchend", scheduleGuard);
+      window.removeEventListener("castlewatch:completed-rides-cleared", scheduleGuard);
     };
   }, []);
 

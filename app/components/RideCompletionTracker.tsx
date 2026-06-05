@@ -16,6 +16,14 @@ function saveCompletedRides(completed: Set<string>) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(completed)));
 }
 
+function clearCompletedRides() {
+  window.localStorage.removeItem(STORAGE_KEY);
+  const emptyCompleted = new Set<string>();
+  document.querySelectorAll(".ride").forEach((card) => applyCompletedState(card, emptyCompleted));
+  document.querySelector(".next-move-card")?.classList.remove("plan-completed-warning");
+  updatePlanCompletedNote();
+}
+
 function getRideName(card: Element) {
   return card.querySelector("strong")?.textContent?.trim() || "";
 }
@@ -104,9 +112,25 @@ function updatePlanCompletedNote() {
 
   const note = document.createElement("div");
   note.className = "plan-note completed-plan-note";
-  note.innerHTML = planAlreadyCompleted
+
+  const noteText = document.createElement("span");
+  noteText.innerHTML = planAlreadyCompleted
     ? `<strong>Completed rides skipped:</strong> ${completedCount}. Current recommendation is already done — tap Recalculate or switch modes.`
     : `<strong>Completed rides skipped:</strong> ${completedCount}.`;
+
+  const clearButton = document.createElement("button");
+  clearButton.type = "button";
+  clearButton.className = "clear-completed-button";
+  clearButton.textContent = "Clear";
+  clearButton.setAttribute("aria-label", "Clear completed rides");
+  clearButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearCompletedRides();
+  });
+
+  note.appendChild(noteText);
+  note.appendChild(clearButton);
 
   const steps = planPanel.querySelector(".plan-steps");
   if (steps) {

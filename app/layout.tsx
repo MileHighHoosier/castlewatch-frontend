@@ -4,6 +4,7 @@ import "./completion.css";
 import ActivityMetadataPolish from "./components/ActivityMetadataPolish";
 import RideCompletionTracker from "./components/RideCompletionTracker";
 import PlanModeGuard from "./components/PlanModeGuard";
+import LightningLaneTracker from "./components/LightningLaneTracker";
 
 export const metadata: Metadata = {
   title: "CastleWatch",
@@ -21,6 +22,7 @@ export default function RootLayout({
         <ActivityMetadataPolish />
         <RideCompletionTracker />
         <PlanModeGuard />
+        <LightningLaneTracker />
         {children}
       </body>
     </html>

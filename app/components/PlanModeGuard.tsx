@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { fetchRideData } from "../lib/api";
 
-const COOL_DOWN_ONLY_RECOMMENDATIONS = ["carousel of progress", "use carousel only"];
+const COOL_DOWN_ONLY_RECOMMENDATIONS = ["carousel of progress", "use carousel only", "monsters inc", "laugh floor"];
 const PLAN_EXCLUDED_KEYWORDS = [
   "carousel of progress",
   "main street vehicles",

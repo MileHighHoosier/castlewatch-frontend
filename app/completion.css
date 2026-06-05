@@ -55,6 +55,20 @@
   font-weight: 800;
 }
 
+.completed-clear-confirmation {
+  background: rgba(56, 217, 150, 0.14);
+  border-color: rgba(56, 217, 150, 0.45);
+  color: var(--text);
+  font-weight: 900;
+  opacity: 1;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.completed-clear-confirmation-fading {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
 .blocked-start-route,
 .blocked-start-route:disabled {
   opacity: 0.55;

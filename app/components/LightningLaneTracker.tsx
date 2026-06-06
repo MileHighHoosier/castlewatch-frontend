@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.lightningLanes.v1";
 const SAVED_CONFIRMATION_KEY = "castlewatch.lightningLaneSavedAt.v1";
-const LL_CONFLICT_SOON_MINUTES = 45;
+const LL_CONFLICT_SOON_MINUTES = 60;
 const PARK_RIDE_PRESETS: Record<string, string[]> = {
   "magic kingdom": [
     "Haunted Mansion",

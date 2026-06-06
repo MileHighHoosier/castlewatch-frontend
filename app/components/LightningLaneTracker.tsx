@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.lightningLanes.v1";
+const SAVED_CONFIRMATION_KEY = "castlewatch.lightningLaneSavedAt.v1";
 const LL_CONFLICT_SOON_MINUTES = 45;
 const PARK_RIDE_PRESETS: Record<string, string[]> = {
   "magic kingdom": [
@@ -67,6 +68,22 @@ function readLanes(): LightningLane[] {
 
 function saveLanes(lanes: LightningLane[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lanes));
+}
+
+function markSavedConfirmation() {
+  window.localStorage.setItem(SAVED_CONFIRMATION_KEY, String(Date.now()));
+}
+
+function shouldShowSavedConfirmation() {
+  const savedAt = Number(window.localStorage.getItem(SAVED_CONFIRMATION_KEY) || 0);
+  return savedAt > 0 && Date.now() - savedAt < 3500;
+}
+
+function clearSavedConfirmationSoon() {
+  window.setTimeout(() => {
+    window.localStorage.removeItem(SAVED_CONFIRMATION_KEY);
+    renderLightningLaneTracker();
+  }, 3000);
 }
 
 function minutesFromNow(time: string) {
@@ -219,6 +236,14 @@ function renderLightningLaneTracker() {
     <button type="submit">Add</button>
   `;
 
+  if (shouldShowSavedConfirmation()) {
+    const savedNote = document.createElement("div");
+    savedNote.className = "lightning-lane-saved-confirmation";
+    savedNote.textContent = "Lightning Lane saved";
+    form.prepend(savedNote);
+    clearSavedConfirmationSoon();
+  }
+
   const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
   form.addEventListener("input", () => updateAddReadyState(form));
   form.addEventListener("change", () => updateAddReadyState(form));
@@ -249,6 +274,7 @@ function renderLightningLaneTracker() {
       ...readLanes(),
       { id: `${Date.now()}`, name, start, end, used: false },
     ]);
+    markSavedConfirmation();
     renderLightningLaneTracker();
   });
 

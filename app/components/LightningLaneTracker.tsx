@@ -185,6 +185,7 @@ function renderLightningLaneTracker() {
   `;
 
   const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
+  const startInput = form.querySelector<HTMLInputElement>("input[name='start']");
   form.querySelectorAll<HTMLButtonElement>("[data-ride-preset]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -192,6 +193,10 @@ function renderLightningLaneTracker() {
       if (!nameInput) return;
       nameInput.value = button.dataset.ridePreset || "";
       nameInput.blur();
+      window.setTimeout(() => {
+        startInput?.focus({ preventScroll: true });
+        startInput?.showPicker?.();
+      }, 80);
     });
   });
 

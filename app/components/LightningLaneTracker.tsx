@@ -4,6 +4,14 @@ import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.lightningLanes.v1";
 const LL_CONFLICT_SOON_MINUTES = 45;
+const RIDE_PRESETS = [
+  "Haunted Mansion",
+  "Pirates",
+  "Big Thunder",
+  "Tiana",
+  "TRON",
+  "Seven Dwarfs",
+];
 
 type LightningLane = {
   id: string;
@@ -125,6 +133,9 @@ function renderLightningLaneTracker() {
       <span>Ride</span>
       <input name="name" aria-label="Ride name" placeholder="Ride" />
     </label>
+    <div class="lightning-lane-presets" aria-label="Ride presets">
+      ${RIDE_PRESETS.map((ride) => `<button type="button" data-ride-preset="${ride}">${ride}</button>`).join("")}
+    </div>
     <label class="lightning-lane-field">
       <span>Start</span>
       <input name="start" aria-label="Start time" type="time" />
@@ -135,6 +146,17 @@ function renderLightningLaneTracker() {
     </label>
     <button type="submit">Add</button>
   `;
+
+  const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
+  form.querySelectorAll<HTMLButtonElement>("[data-ride-preset]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!nameInput) return;
+      nameInput.value = button.dataset.ridePreset || "";
+      nameInput.focus();
+    });
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();

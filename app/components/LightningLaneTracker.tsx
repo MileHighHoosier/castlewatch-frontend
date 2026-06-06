@@ -4,14 +4,41 @@ import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.lightningLanes.v1";
 const LL_CONFLICT_SOON_MINUTES = 45;
-const RIDE_PRESETS = [
-  "Haunted Mansion",
-  "Pirates",
-  "Big Thunder",
-  "Tiana",
-  "TRON",
-  "Seven Dwarfs",
-];
+const PARK_RIDE_PRESETS: Record<string, string[]> = {
+  "magic kingdom": [
+    "Haunted Mansion",
+    "Pirates",
+    "Big Thunder",
+    "Tiana",
+    "TRON",
+    "Seven Dwarfs",
+  ],
+  epcot: [
+    "Remy",
+    "Frozen",
+    "Guardians",
+    "Test Track",
+    "Soarin'",
+    "Spaceship Earth",
+  ],
+  "hollywood studios": [
+    "Slinky Dog",
+    "Rise of the Resistance",
+    "Millennium Falcon",
+    "Tower of Terror",
+    "Rock 'n' Roller Coaster",
+    "Mickey & Minnie's",
+  ],
+  "animal kingdom": [
+    "Flight of Passage",
+    "Na'vi River Journey",
+    "Expedition Everest",
+    "Kilimanjaro Safaris",
+    "DINOSAUR",
+    "Kali River Rapids",
+  ],
+};
+const DEFAULT_RIDE_PRESETS = PARK_RIDE_PRESETS["magic kingdom"];
 
 type LightningLane = {
   id: string;
@@ -20,6 +47,15 @@ type LightningLane = {
   end: string;
   used: boolean;
 };
+
+function activeParkName() {
+  return document.querySelector(".command-header h2")?.textContent?.trim() || "Magic Kingdom";
+}
+
+function ridePresetsForCurrentPark() {
+  const park = activeParkName().toLowerCase();
+  return PARK_RIDE_PRESETS[park] || DEFAULT_RIDE_PRESETS;
+}
 
 function readLanes(): LightningLane[] {
   try {
@@ -117,6 +153,7 @@ function renderLightningLaneTracker() {
   planPanel.querySelector(".lightning-lane-tracker")?.remove();
 
   const lanes = readLanes();
+  const ridePresets = ridePresetsForCurrentPark();
   renderLightningLaneConflictNote(lanes, planPanel);
 
   const tracker = document.createElement("section");
@@ -134,7 +171,7 @@ function renderLightningLaneTracker() {
       <input name="name" aria-label="Ride name" placeholder="Ride" />
     </label>
     <div class="lightning-lane-presets" aria-label="Ride presets">
-      ${RIDE_PRESETS.map((ride) => `<button type="button" data-ride-preset="${ride}">${ride}</button>`).join("")}
+      ${ridePresets.map((ride) => `<button type="button" data-ride-preset="${ride}">${ride}</button>`).join("")}
     </div>
     <label class="lightning-lane-field">
       <span>Start</span>

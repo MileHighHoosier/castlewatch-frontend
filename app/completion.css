@@ -69,6 +69,11 @@
   transform: translateY(-4px);
 }
 
+.lightning-lane-conflict-note {
+  background: rgba(255, 204, 102, 0.12);
+  border-color: rgba(255, 204, 102, 0.45);
+}
+
 .lightning-lane-tracker {
   margin: 14px 0;
   padding: 14px;

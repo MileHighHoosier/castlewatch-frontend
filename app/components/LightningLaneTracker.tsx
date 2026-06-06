@@ -100,6 +100,9 @@ function renderLightningLaneConflictNote(lanes: LightningLane[], planPanel: Elem
 }
 
 function renderLightningLaneTracker() {
+  const activeElement = document.activeElement;
+  if (activeElement?.closest?.(".lightning-lane-tracker")) return;
+
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
   if (!planPanel) return;
 
@@ -211,7 +214,10 @@ export default function LightningLaneTracker() {
     let intervalId: number | null = null;
     let renderTimeout: number | null = null;
 
-    function renderOnPlanOpen() {
+    function renderOnPlanOpen(event?: Event) {
+      const target = event?.target as Element | null;
+      if (target?.closest?.(".lightning-lane-tracker")) return;
+
       if (renderTimeout) window.clearTimeout(renderTimeout);
       renderTimeout = window.setTimeout(renderLightningLaneTracker, 180);
     }

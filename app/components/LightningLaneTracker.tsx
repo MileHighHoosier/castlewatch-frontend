@@ -143,6 +143,29 @@ function renderLightningLaneConflictNote(lanes: LightningLane[], planPanel: Elem
   }
 }
 
+function showPresetNextPrompt(form: HTMLFormElement) {
+  form.querySelector(".lightning-lane-next-prompt")?.remove();
+
+  const prompt = document.createElement("div");
+  prompt.className = "lightning-lane-next-prompt";
+  prompt.textContent = "Next: tap Start time";
+
+  const startField = form.querySelector("input[name='start']")?.closest(".lightning-lane-field");
+  if (startField) {
+    startField.insertAdjacentElement("beforebegin", prompt);
+  } else {
+    form.appendChild(prompt);
+  }
+
+  window.setTimeout(() => {
+    prompt.classList.add("lightning-lane-next-prompt-fading");
+  }, 2400);
+
+  window.setTimeout(() => {
+    prompt.remove();
+  }, 3000);
+}
+
 function renderLightningLaneTracker() {
   const activeElement = document.activeElement;
   if (activeElement?.closest?.(".lightning-lane-tracker")) return;
@@ -185,7 +208,6 @@ function renderLightningLaneTracker() {
   `;
 
   const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
-  const startInput = form.querySelector<HTMLInputElement>("input[name='start']");
   form.querySelectorAll<HTMLButtonElement>("[data-ride-preset]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -193,10 +215,7 @@ function renderLightningLaneTracker() {
       if (!nameInput) return;
       nameInput.value = button.dataset.ridePreset || "";
       nameInput.blur();
-      window.setTimeout(() => {
-        startInput?.focus({ preventScroll: true });
-        startInput?.showPicker?.();
-      }, 80);
+      showPresetNextPrompt(form);
     });
   });
 

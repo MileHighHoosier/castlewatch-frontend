@@ -177,6 +177,13 @@
   align-self: end;
 }
 
+.lightning-lane-form button.lightning-lane-add-ready {
+  background: rgba(56, 217, 150, 0.18);
+  border-color: rgba(56, 217, 150, 0.55);
+  box-shadow: 0 0 0 1px rgba(56, 217, 150, 0.18) inset;
+  color: var(--text);
+}
+
 .lightning-lane-list {
   display: grid;
   gap: 8px;

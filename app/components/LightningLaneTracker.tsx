@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.lightningLanes.v1";
+const LL_CONFLICT_SOON_MINUTES = 45;
 
 type LightningLane = {
   id: string;
@@ -49,6 +50,26 @@ function statusForLane(lane: LightningLane) {
   return `Later · ${untilStart}m`;
 }
 
+function activeConflictLane(lanes: LightningLane[]) {
+  return lanes
+    .filter((lane) => !lane.used && statusForLane(lane) !== "Expired")
+    .map((lane) => ({ lane, untilStart: minutesFromNow(lane.start), untilEnd: minutesFromNow(lane.end) }))
+    .filter(({ untilStart, untilEnd }) => untilEnd >= 0 && untilStart <= LL_CONFLICT_SOON_MINUTES)
+    .sort((a, b) => a.untilStart - b.untilStart)[0] || null;
+}
+
+function conflictNoteText(lanes: LightningLane[]) {
+  const conflict = activeConflictLane(lanes);
+  if (!conflict) return "";
+
+  const { lane, untilStart } = conflict;
+  if (untilStart <= 0) {
+    return `Lightning Lane active: ${lane.name} ${formatWindow(lane.start, lane.end)}. Check this before following the Plan move.`;
+  }
+
+  return `Lightning Lane soon: ${lane.name} starts in ${untilStart}m. Avoid crossing the park unless this Plan move still fits.`;
+}
+
 function nextSelectionHint(lanes: LightningLane[]) {
   const active = lanes.filter((lane) => !lane.used && statusForLane(lane) !== "Expired");
   if (!active.length) return "No active Lightning Lane windows. Add one when booked.";
@@ -60,6 +81,24 @@ function nextSelectionHint(lanes: LightningLane[]) {
   return `Next window to watch: ${next.name} at ${next.start}.`;
 }
 
+function renderLightningLaneConflictNote(lanes: LightningLane[], planPanel: Element) {
+  planPanel.querySelector(".lightning-lane-conflict-note")?.remove();
+
+  const text = conflictNoteText(lanes);
+  if (!text) return;
+
+  const note = document.createElement("div");
+  note.className = "plan-note lightning-lane-conflict-note";
+  note.innerHTML = `<strong>LL check:</strong> ${text}`;
+
+  const nextMoveCard = planPanel.querySelector(".next-move-card");
+  if (nextMoveCard) {
+    nextMoveCard.insertAdjacentElement("afterend", note);
+  } else {
+    planPanel.appendChild(note);
+  }
+}
+
 function renderLightningLaneTracker() {
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
   if (!planPanel) return;
@@ -67,6 +106,8 @@ function renderLightningLaneTracker() {
   planPanel.querySelector(".lightning-lane-tracker")?.remove();
 
   const lanes = readLanes();
+  renderLightningLaneConflictNote(lanes, planPanel);
+
   const tracker = document.createElement("section");
   tracker.className = "lightning-lane-tracker";
 
@@ -154,8 +195,11 @@ function renderLightningLaneTracker() {
   tracker.appendChild(form);
   tracker.appendChild(list);
 
+  const conflictNote = planPanel.querySelector(".lightning-lane-conflict-note");
   const nextMoveCard = planPanel.querySelector(".next-move-card");
-  if (nextMoveCard) {
+  if (conflictNote) {
+    conflictNote.insertAdjacentElement("afterend", tracker);
+  } else if (nextMoveCard) {
     nextMoveCard.insertAdjacentElement("afterend", tracker);
   } else {
     planPanel.appendChild(tracker);

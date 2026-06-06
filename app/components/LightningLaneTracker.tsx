@@ -166,6 +166,18 @@ function showPresetNextPrompt(form: HTMLFormElement) {
   }, 3000);
 }
 
+function updateAddReadyState(form: HTMLFormElement) {
+  const name = String(new FormData(form).get("name") || "").trim();
+  const start = String(new FormData(form).get("start") || "").trim();
+  const end = String(new FormData(form).get("end") || "").trim();
+  const addButton = form.querySelector<HTMLButtonElement>("button[type='submit']");
+  if (!addButton) return;
+
+  const ready = Boolean(name && start && end);
+  addButton.classList.toggle("lightning-lane-add-ready", ready);
+  addButton.textContent = ready ? "Add ready" : "Add";
+}
+
 function renderLightningLaneTracker() {
   const activeElement = document.activeElement;
   if (activeElement?.closest?.(".lightning-lane-tracker")) return;
@@ -208,6 +220,9 @@ function renderLightningLaneTracker() {
   `;
 
   const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
+  form.addEventListener("input", () => updateAddReadyState(form));
+  form.addEventListener("change", () => updateAddReadyState(form));
+
   form.querySelectorAll<HTMLButtonElement>("[data-ride-preset]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -215,9 +230,12 @@ function renderLightningLaneTracker() {
       if (!nameInput) return;
       nameInput.value = button.dataset.ridePreset || "";
       nameInput.blur();
+      updateAddReadyState(form);
       showPresetNextPrompt(form);
     });
   });
+
+  updateAddReadyState(form);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();

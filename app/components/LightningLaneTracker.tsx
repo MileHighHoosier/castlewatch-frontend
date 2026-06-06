@@ -94,9 +94,19 @@ function minutesFromNow(time: string) {
   return Math.round((target.getTime() - now.getTime()) / 60000);
 }
 
+function formatDisplayTime(time: string) {
+  const [rawHours, rawMinutes] = time.split(":").map(Number);
+  if (!Number.isFinite(rawHours) || !Number.isFinite(rawMinutes)) return time || "Time needed";
+
+  const suffix = rawHours >= 12 ? "PM" : "AM";
+  const hours = rawHours % 12 || 12;
+  const minutes = String(rawMinutes).padStart(2, "0");
+  return `${hours}:${minutes} ${suffix}`;
+}
+
 function formatWindow(start: string, end: string) {
   if (!start || !end) return "Window needed";
-  return `${start}–${end}`;
+  return `${formatDisplayTime(start)}–${formatDisplayTime(end)}`;
 }
 
 function statusForLane(lane: LightningLane) {
@@ -139,7 +149,7 @@ function nextSelectionHint(lanes: LightningLane[]) {
   if (current) return `After tapping into ${current.name}, check for another selection.`;
 
   const next = [...active].sort((a, b) => minutesFromNow(a.start) - minutesFromNow(b.start))[0];
-  return `Next window to watch: ${next.name} at ${next.start}.`;
+  return `Next window to watch: ${next.name} at ${formatDisplayTime(next.start)}.`;
 }
 
 function renderLightningLaneConflictNote(lanes: LightningLane[], planPanel: Element) {
@@ -238,7 +248,7 @@ function renderLightningLaneTracker() {
 
   if (shouldShowSavedConfirmation()) {
     const savedNote = document.createElement("div");
-    savedNote.className = "lightning-lane-saved-confirmation";
+    savedNote.className = "lightning-lane-saved-confirmation lightning-lane-next-prompt";
     savedNote.textContent = "Lightning Lane saved";
     form.prepend(savedNote);
     clearSavedConfirmationSoon();

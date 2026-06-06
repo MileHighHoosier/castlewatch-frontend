@@ -121,6 +121,20 @@ function statusForLane(lane: LightningLane) {
   return `Later · ${untilStart}m`;
 }
 
+function laneUrgencySortValue(lane: LightningLane) {
+  const untilStart = minutesFromNow(lane.start);
+  const untilEnd = minutesFromNow(lane.end);
+
+  if (lane.used) return 300000 + untilStart;
+  if (untilEnd < 0) return 200000 + Math.abs(untilEnd);
+  if (untilStart <= 0 && untilEnd >= 0) return -100000 + untilEnd;
+  return untilStart;
+}
+
+function sortLanesByUrgency(lanes: LightningLane[]) {
+  return [...lanes].sort((a, b) => laneUrgencySortValue(a) - laneUrgencySortValue(b));
+}
+
 function activeConflictLane(lanes: LightningLane[]) {
   return lanes
     .filter((lane) => !lane.used && statusForLane(lane) !== "Expired")
@@ -148,7 +162,7 @@ function nextSelectionHint(lanes: LightningLane[]) {
   const current = active.find((lane) => statusForLane(lane) === "Use now");
   if (current) return `After tapping into ${current.name}, check for another selection.`;
 
-  const next = [...active].sort((a, b) => minutesFromNow(a.start) - minutesFromNow(b.start))[0];
+  const next = sortLanesByUrgency(active)[0];
   return `Next window to watch: ${next.name} at ${formatDisplayTime(next.start)}.`;
 }
 
@@ -297,7 +311,7 @@ function renderLightningLaneTracker() {
     empty.textContent = "Add return windows here so Plan can avoid conflicts.";
     list.appendChild(empty);
   } else {
-    lanes.forEach((lane) => {
+    sortLanesByUrgency(lanes).forEach((lane) => {
       const row = document.createElement("div");
       row.className = `lightning-lane-row ${lane.used ? "lightning-lane-used" : ""}`;
 

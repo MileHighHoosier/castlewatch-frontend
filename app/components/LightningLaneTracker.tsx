@@ -138,7 +138,7 @@ function conflictNoteText(lanes: LightningLane[]) {
     return `Lightning Lane active: ${lane.name} ${formatWindow(lane.start, lane.end)}. Check this before following the Plan move.`;
   }
 
-  return `Lightning Lane soon: ${lane.name} starts in ${untilStart}m. Avoid crossing the park unless this Plan move still fits.`;
+  return `Lightning Lane soon: ${lane.name} ${formatWindow(lane.start, lane.end)} starts in ${untilStart}m. Avoid crossing the park unless this Plan move still fits.`;
 }
 
 function nextSelectionHint(lanes: LightningLane[]) {

@@ -121,6 +121,25 @@
   text-transform: uppercase;
 }
 
+.lightning-lane-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.lightning-lane-presets button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(142, 197, 255, 0.28);
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(142, 197, 255, 0.11);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  width: auto;
+}
+
 .lightning-lane-form input,
 .lightning-lane-form button,
 .lightning-lane-actions button {
@@ -184,6 +203,7 @@
 
   .lightning-lane-field,
   .lightning-lane-field-ride,
+  .lightning-lane-presets,
   .lightning-lane-form button {
     grid-column: 1 / -1;
   }
@@ -195,6 +215,11 @@
   .lightning-lane-form input,
   .lightning-lane-form button {
     min-height: 42px;
+  }
+
+  .lightning-lane-presets button {
+    min-height: 32px;
+    width: auto;
   }
 
   .lightning-lane-field input[type="time"] {

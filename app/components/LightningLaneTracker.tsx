@@ -191,7 +191,7 @@ function renderLightningLaneTracker() {
       event.stopPropagation();
       if (!nameInput) return;
       nameInput.value = button.dataset.ridePreset || "";
-      nameInput.focus();
+      nameInput.blur();
     });
   });
 

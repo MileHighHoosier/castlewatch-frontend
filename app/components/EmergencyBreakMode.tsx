@@ -87,7 +87,7 @@ function emergencyStepsMarkup(plan: { steps: string[]; note: string }) {
 }
 
 function renderEmergencyBreakMode() {
-  const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
+  const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
   const modeTabs = planPanel?.querySelector(".plan-mode-tabs");
   if (!planPanel || !modeTabs) return;
 
@@ -117,12 +117,12 @@ function renderEmergencyBreakMode() {
   const park = activeParkName().toLowerCase();
   const plan = PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
 
-  planPanel.querySelectorAll<HTMLElement>(".next-move-card:not(.emergency-break-card), .plan-steps:not(.emergency-break-steps)").forEach((element) => {
+  planPanel.querySelectorAll<HTMLElement>(".next-move-card, .plan-steps").forEach((element) => {
     element.style.display = "none";
   });
 
   const card = document.createElement("div");
-  card.className = "next-move-card emergency-break-card";
+  card.className = "emergency-break-card";
   styleCard(card);
   card.innerHTML = `
     <span class="stat-label">Emergency break · leave-park mode</span>

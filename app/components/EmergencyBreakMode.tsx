@@ -81,6 +81,11 @@ function styleCard(card: HTMLElement) {
   card.style.background = "linear-gradient(135deg, rgba(255, 204, 102, 0.18), rgba(255, 255, 255, 0.04))";
 }
 
+function emergencyStepsMarkup(plan: { steps: string[]; note: string }) {
+  return plan.steps.map((step, index) => `<div class="plan-step emergency-break-step"><span>${index + 1}</span><p>${step}</p></div>`).join("")
+    + `<div class="plan-note emergency-break-note"><strong>Exit note:</strong> ${plan.note}</div>`;
+}
+
 function renderEmergencyBreakMode() {
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
   const modeTabs = planPanel?.querySelector(".plan-mode-tabs");
@@ -88,6 +93,7 @@ function renderEmergencyBreakMode() {
 
   planPanel.querySelector(".emergency-break-control")?.remove();
   planPanel.querySelector(".emergency-break-card")?.remove();
+  planPanel.querySelector(".emergency-break-steps")?.remove();
   planPanel.querySelectorAll<HTMLElement>(".next-move-card, .plan-steps").forEach((element) => {
     element.style.display = "";
   });
@@ -108,14 +114,15 @@ function renderEmergencyBreakMode() {
 
   if (!active) return;
 
-  planPanel.querySelectorAll<HTMLElement>(".next-move-card, .plan-steps").forEach((element) => {
+  const park = activeParkName().toLowerCase();
+  const plan = PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
+
+  planPanel.querySelectorAll<HTMLElement>(".next-move-card:not(.emergency-break-card), .plan-steps:not(.emergency-break-steps)").forEach((element) => {
     element.style.display = "none";
   });
 
-  const park = activeParkName().toLowerCase();
-  const plan = PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
   const card = document.createElement("div");
-  card.className = "emergency-break-card";
+  card.className = "next-move-card emergency-break-card";
   styleCard(card);
   card.innerHTML = `
     <span class="stat-label">Emergency break · leave-park mode</span>
@@ -135,8 +142,7 @@ function renderEmergencyBreakMode() {
 
   const steps = document.createElement("div");
   steps.className = "plan-steps emergency-break-steps";
-  steps.innerHTML = plan.steps.map((step, index) => `<div class="plan-step"><span>${index + 1}</span><p>${step}</p></div>`).join("")
-    + `<div class="plan-note"><strong>Exit note:</strong> ${plan.note}</div>`;
+  steps.innerHTML = emergencyStepsMarkup(plan);
 
   modeTabs.insertAdjacentElement("afterend", card);
   card.insertAdjacentElement("afterend", steps);

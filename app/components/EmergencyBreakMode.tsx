@@ -86,6 +86,22 @@ function emergencyStepsMarkup(plan: { steps: string[]; note: string }) {
     + `<div class="plan-note emergency-break-note"><strong>Exit note:</strong> ${plan.note}</div>`;
 }
 
+function forceEmergencyContent(planPanel: Element, plan: { steps: string[]; note: string }) {
+  planPanel.querySelectorAll<HTMLElement>(".next-move-card:not(.emergency-break-card)").forEach((element) => {
+    element.style.display = "none";
+  });
+
+  planPanel.querySelectorAll<HTMLElement>(".plan-steps:not(.emergency-break-steps)").forEach((element) => {
+    element.style.display = "none";
+  });
+
+  const emergencySteps = planPanel.querySelector<HTMLElement>(".emergency-break-steps");
+  if (emergencySteps) {
+    emergencySteps.style.display = "grid";
+    emergencySteps.innerHTML = emergencyStepsMarkup(plan);
+  }
+}
+
 function renderEmergencyBreakMode() {
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
   const modeTabs = planPanel?.querySelector(".plan-mode-tabs");
@@ -117,10 +133,6 @@ function renderEmergencyBreakMode() {
   const park = activeParkName().toLowerCase();
   const plan = PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
 
-  planPanel.querySelectorAll<HTMLElement>(".next-move-card, .plan-steps").forEach((element) => {
-    element.style.display = "none";
-  });
-
   const card = document.createElement("div");
   card.className = "emergency-break-card";
   styleCard(card);
@@ -150,11 +162,14 @@ function renderEmergencyBreakMode() {
     setEmergencyActive(false);
     renderEmergencyBreakMode();
   });
+
+  forceEmergencyContent(planPanel, plan);
 }
 
 export default function EmergencyBreakMode() {
   useEffect(() => {
     let renderTimeout: number | null = null;
+    let intervalId: number | null = null;
 
     function scheduleRender(event?: Event) {
       const target = event?.target as Element | null;
@@ -163,12 +178,23 @@ export default function EmergencyBreakMode() {
       renderTimeout = window.setTimeout(renderEmergencyBreakMode, 160);
     }
 
+    function keepEmergencyOverrideFresh() {
+      if (!isEmergencyActive()) return;
+      const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
+      if (!planPanel) return;
+      const park = activeParkName().toLowerCase();
+      const plan = PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
+      forceEmergencyContent(planPanel, plan);
+    }
+
     scheduleRender();
+    intervalId = window.setInterval(keepEmergencyOverrideFresh, 700);
     document.addEventListener("click", scheduleRender, { passive: true });
     document.addEventListener("touchend", scheduleRender, { passive: true });
 
     return () => {
       if (renderTimeout) window.clearTimeout(renderTimeout);
+      if (intervalId) window.clearInterval(intervalId);
       document.removeEventListener("click", scheduleRender);
       document.removeEventListener("touchend", scheduleRender);
     };

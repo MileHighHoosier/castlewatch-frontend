@@ -95,6 +95,11 @@ function forceEmergencyContent(planPanel: Element, plan: { steps: string[]; note
     element.style.display = "none";
   });
 
+  planPanel.querySelectorAll<HTMLButtonElement>(".emergency-break-card .next-move-actions button:not(.emergency-break-exit)").forEach((button) => {
+    button.textContent = "Start break plan";
+    button.setAttribute("aria-label", "Start break plan");
+  });
+
   const emergencySteps = planPanel.querySelector<HTMLElement>(".emergency-break-steps");
   if (emergencySteps) {
     emergencySteps.style.display = "grid";
@@ -148,6 +153,7 @@ function renderEmergencyBreakMode() {
     <p class="muted"><strong>Why chosen:</strong> ${plan.reason}</p>
     <div class="history-summary"><strong>Family rule:</strong> This mode is for meltdown, heat, exhaustion, bathroom urgency, or a parent needing the day to stop escalating.</div>
     <div class="next-move-actions">
+      <button class="button primary-button emergency-break-start" type="button">Start break plan</button>
       <button class="button secondary-button emergency-break-exit" type="button">Exit emergency mode</button>
     </div>
   `;
@@ -158,6 +164,10 @@ function renderEmergencyBreakMode() {
 
   modeTabs.insertAdjacentElement("afterend", card);
   card.insertAdjacentElement("afterend", steps);
+  card.querySelector<HTMLButtonElement>(".emergency-break-start")?.addEventListener("click", () => {
+    const firstStep = planPanel.querySelector<HTMLElement>(".emergency-break-steps");
+    firstStep?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   card.querySelector<HTMLButtonElement>(".emergency-break-exit")?.addEventListener("click", () => {
     setEmergencyActive(false);
     renderEmergencyBreakMode();

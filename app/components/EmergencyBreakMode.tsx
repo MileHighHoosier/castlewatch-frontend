@@ -86,6 +86,33 @@ function emergencyStepsMarkup(plan: { steps: string[]; note: string }) {
     + `<div class="plan-note emergency-break-note"><strong>Exit note:</strong> ${plan.note}</div>`;
 }
 
+function deEmphasizeLightningLaneTracker(planPanel: Element, active: boolean) {
+  const tracker = planPanel.querySelector<HTMLElement>(".lightning-lane-tracker");
+  if (!tracker) return;
+
+  if (!active) {
+    tracker.style.opacity = "";
+    tracker.style.marginTop = "";
+    tracker.style.order = "";
+    tracker.style.borderStyle = "";
+    tracker.querySelector(".emergency-break-ll-note")?.remove();
+    return;
+  }
+
+  tracker.style.opacity = "0.55";
+  tracker.style.marginTop = "28px";
+  tracker.style.order = "99";
+  tracker.style.borderStyle = "dashed";
+
+  if (!tracker.querySelector(".emergency-break-ll-note")) {
+    const note = document.createElement("div");
+    note.className = "emergency-break-ll-note";
+    note.textContent = "Emergency break active: Lightning Lane details are secondary until the family is reset.";
+    note.setAttribute("style", "border:1px solid rgba(255,204,102,.35);border-radius:14px;padding:9px 10px;margin:0 0 10px;background:rgba(255,204,102,.08);font-weight:800;color:var(--text);");
+    tracker.prepend(note);
+  }
+}
+
 function forceEmergencyContent(planPanel: Element, plan: { steps: string[]; note: string }) {
   planPanel.querySelectorAll<HTMLElement>(".next-move-card:not(.emergency-break-card)").forEach((element) => {
     element.style.display = "none";
@@ -105,6 +132,14 @@ function forceEmergencyContent(planPanel: Element, plan: { steps: string[]; note
     emergencySteps.style.display = "grid";
     emergencySteps.innerHTML = emergencyStepsMarkup(plan);
   }
+
+  const exitNote = planPanel.querySelector<HTMLElement>(".emergency-break-note");
+  const tracker = planPanel.querySelector<HTMLElement>(".lightning-lane-tracker");
+  if (exitNote && tracker && exitNote.nextElementSibling !== tracker) {
+    exitNote.insertAdjacentElement("afterend", tracker);
+  }
+
+  deEmphasizeLightningLaneTracker(planPanel, true);
 }
 
 function renderEmergencyBreakMode() {
@@ -115,6 +150,7 @@ function renderEmergencyBreakMode() {
   planPanel.querySelector(".emergency-break-control")?.remove();
   planPanel.querySelector(".emergency-break-card")?.remove();
   planPanel.querySelector(".emergency-break-steps")?.remove();
+  deEmphasizeLightningLaneTracker(planPanel, false);
   planPanel.querySelectorAll<HTMLElement>(".next-move-card, .plan-steps").forEach((element) => {
     element.style.display = "";
   });

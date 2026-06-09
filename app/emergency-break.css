@@ -1,3 +1,21 @@
+.emergency-break-active .emergency-break-card .next-move-actions,
+.emergency-break-active .emergency-break-card .emergency-break-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+
+.emergency-break-active .emergency-break-card .emergency-break-start,
+.emergency-break-active .emergency-break-card .emergency-break-exit,
+.emergency-break-active .emergency-break-card .next-move-actions button,
+.emergency-break-active .emergency-break-card .emergency-break-actions button {
+  width: 100% !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
 .emergency-break-active .emergency-break-card .emergency-break-start,
 .emergency-break-active .emergency-break-card .next-move-actions button:first-child {
   font-size: 0 !important;
@@ -9,6 +27,19 @@
   content: "Start break plan";
   font-size: 14px !important;
   line-height: 1.1 !important;
+}
+
+@media (max-width: 360px) {
+  .emergency-break-active .emergency-break-card .next-move-actions,
+  .emergency-break-active .emergency-break-card .emergency-break-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .emergency-break-active .emergency-break-card .emergency-break-start,
+  .emergency-break-active .emergency-break-card .emergency-break-start::after,
+  .emergency-break-active .emergency-break-card .next-move-actions button:first-child::after {
+    font-size: 13px !important;
+  }
 }
 
 .emergency-break-active .emergency-break-steps .plan-step p {

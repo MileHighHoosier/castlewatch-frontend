@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./completion.css";
+import "./emergency-break.css";
 import ActivityMetadataPolish from "./components/ActivityMetadataPolish";
 import RideCompletionTracker from "./components/RideCompletionTracker";
 import PlanModeGuard from "./components/PlanModeGuard";

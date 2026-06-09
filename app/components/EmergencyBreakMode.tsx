@@ -143,11 +143,11 @@ function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: s
     </div>
     <p class="muted"><strong>Why chosen:</strong> ${plan.reason}</p>
     <div class="history-summary"><strong>Family rule:</strong> This mode is for meltdown, heat, exhaustion, bathroom urgency, or a parent needing the day to stop escalating.</div>
-    <div class="next-move-actions">
-      <button class="button primary-button emergency-break-start" type="button">Start break plan</button>
+    <div class="emergency-break-actions" style="display:grid;gap:10px;margin-top:14px;">
       <button class="button secondary-button emergency-break-exit" type="button">Exit emergency mode</button>
     </div>
   `;
+  // Future reassessment: consider a real "Begin 10-min reset" flow if it adds useful timer/state behavior.
 }
 
 function placeLightningLaneAfterEmergency(planPanel: Element) {
@@ -181,7 +181,7 @@ function forceEmergencyContent(planPanel: Element, plan: { title: string; reason
   const card = planPanel.querySelector<HTMLElement>(".emergency-break-card");
   if (card) {
     styleCard(card);
-    if (!card.querySelector(".emergency-break-start") || card.textContent?.includes("Start route")) {
+    if (card.textContent?.includes("Start route") || card.textContent?.includes("Start break plan")) {
       updateEmergencyCard(card, plan);
     }
   }
@@ -198,10 +198,6 @@ function forceEmergencyContent(planPanel: Element, plan: { title: string; reason
 }
 
 function bindEmergencyButtons(planPanel: Element) {
-  planPanel.querySelector<HTMLButtonElement>(".emergency-break-start")?.addEventListener("click", () => {
-    const firstStep = planPanel.querySelector<HTMLElement>(".emergency-break-steps");
-    firstStep?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
   planPanel.querySelector<HTMLButtonElement>(".emergency-break-exit")?.addEventListener("click", () => {
     setEmergencyActive(false);
     renderEmergencyBreakMode();

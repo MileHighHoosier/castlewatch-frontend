@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.emergencyBreakMode.v1";
+const STYLE_ID = "castlewatch-emergency-break-style";
 
 const PARK_BREAK_PLANS: Record<string, { title: string; reason: string; steps: string[]; note: string }> = {
   "magic kingdom": {
@@ -59,6 +60,33 @@ function setEmergencyActive(active: boolean) {
   window.localStorage.setItem(STORAGE_KEY, active ? "on" : "off");
 }
 
+function ensureEmergencyStyle() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = `
+    .emergency-break-active .next-move-card:not(.emergency-break-card),
+    .emergency-break-active .plan-steps:not(.emergency-break-steps) {
+      display: none !important;
+    }
+
+    .emergency-break-active .emergency-break-card {
+      display: block !important;
+    }
+
+    .emergency-break-active .emergency-break-steps {
+      display: grid !important;
+    }
+
+    .emergency-break-active .lightning-lane-tracker {
+      opacity: 0.5 !important;
+      margin-top: 28px !important;
+      border-style: dashed !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function styleButton(button: HTMLButtonElement, active: boolean) {
   button.style.border = active ? "1px solid rgba(255, 204, 102, 0.75)" : "1px solid rgba(255, 204, 102, 0.45)";
   button.style.borderRadius = "16px";
@@ -103,6 +131,7 @@ function parkPlan() {
 }
 
 function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: string; steps: string[]; note: string }) {
+  card.className = "next-move-card emergency-break-card";
   card.innerHTML = `
     <span class="stat-label">Emergency break · leave-park mode</span>
     <h3 style="font-size: 24px; line-height: 1.05; margin: 0 0 10px;">${plan.title}</h3>
@@ -146,13 +175,8 @@ function placeLightningLaneAfterEmergency(planPanel: Element) {
 }
 
 function forceEmergencyContent(planPanel: Element, plan: { title: string; reason: string; steps: string[]; note: string }) {
-  planPanel.querySelectorAll<HTMLElement>(".next-move-card:not(.emergency-break-card)").forEach((element) => {
-    element.style.display = "none";
-  });
-
-  planPanel.querySelectorAll<HTMLElement>(".plan-steps:not(.emergency-break-steps)").forEach((element) => {
-    element.style.display = "none";
-  });
+  ensureEmergencyStyle();
+  planPanel.classList.add("emergency-break-active");
 
   const card = planPanel.querySelector<HTMLElement>(".emergency-break-card");
   if (card) {
@@ -185,6 +209,7 @@ function bindEmergencyButtons(planPanel: Element) {
 }
 
 function renderEmergencyBreakMode() {
+  ensureEmergencyStyle();
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
   const modeTabs = planPanel?.querySelector(".plan-mode-tabs");
   if (!planPanel || !modeTabs) return;
@@ -193,6 +218,7 @@ function renderEmergencyBreakMode() {
 
   const active = isEmergencyActive();
   if (!active) {
+    planPanel.classList.remove("emergency-break-active");
     planPanel.querySelector(".emergency-break-card")?.remove();
     planPanel.querySelector(".emergency-break-steps")?.remove();
     resetLightningLaneTracker(planPanel);
@@ -217,10 +243,11 @@ function renderEmergencyBreakMode() {
   if (!active) return;
 
   const plan = parkPlan();
+  planPanel.classList.add("emergency-break-active");
+
   let card = planPanel.querySelector<HTMLElement>(".emergency-break-card");
   if (!card) {
     card = document.createElement("div");
-    card.className = "emergency-break-card";
     updateEmergencyCard(card, plan);
     modeTabs.insertAdjacentElement("afterend", card);
   }

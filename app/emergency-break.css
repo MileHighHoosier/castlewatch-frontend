@@ -14,6 +14,10 @@
   justify-content: center !important;
   text-align: center !important;
   white-space: nowrap !important;
+  font-size: 14px !important;
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
 }
 
 .emergency-break-active .emergency-break-card .emergency-break-start,
@@ -27,6 +31,8 @@
   content: "Start break plan";
   font-size: 14px !important;
   line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
 }
 
 @media (max-width: 360px) {
@@ -36,6 +42,9 @@
   }
 
   .emergency-break-active .emergency-break-card .emergency-break-start,
+  .emergency-break-active .emergency-break-card .emergency-break-exit,
+  .emergency-break-active .emergency-break-card .next-move-actions button,
+  .emergency-break-active .emergency-break-card .emergency-break-actions button,
   .emergency-break-active .emergency-break-card .emergency-break-start::after,
   .emergency-break-active .emergency-break-card .next-move-actions button:first-child::after {
     font-size: 13px !important;

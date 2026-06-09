@@ -1,0 +1,42 @@
+.emergency-break-active .emergency-break-card .emergency-break-start,
+.emergency-break-active .emergency-break-card .next-move-actions button:first-child {
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.emergency-break-active .emergency-break-card .emergency-break-start::after,
+.emergency-break-active .emergency-break-card .next-move-actions button:first-child::after {
+  content: "Start break plan";
+  font-size: 14px !important;
+  line-height: 1.1 !important;
+}
+
+.emergency-break-active .emergency-break-steps .plan-step p {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  margin: 0 !important;
+}
+
+.emergency-break-active .emergency-break-steps .plan-step:nth-child(1) p::after {
+  content: "Stop the current ride plan and move toward shade, restrooms, first aid, transportation, or the park exit.";
+  display: block;
+  font-size: 18px !important;
+  line-height: 1.28 !important;
+  color: var(--text);
+}
+
+.emergency-break-active .emergency-break-steps .plan-step:nth-child(2) p::after {
+  content: "Give everyone water, shade, and a 10-minute no-decision reset.";
+  display: block;
+  font-size: 18px !important;
+  line-height: 1.28 !important;
+  color: var(--text);
+}
+
+.emergency-break-active .emergency-break-steps .plan-step:nth-child(3) p::after {
+  content: "If the family is still overloaded, leave for the resort and recalculate after rest.";
+  display: block;
+  font-size: 18px !important;
+  line-height: 1.28 !important;
+  color: var(--text);
+}

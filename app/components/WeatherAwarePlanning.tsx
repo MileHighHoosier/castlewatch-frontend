@@ -9,7 +9,7 @@ type WeatherMode = "normal" | "hot" | "storm";
 
 const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; badges: string[]; note: string; planNote: string }> = {
   normal: {
-    label: "Weather OK",
+    label: "OK",
     icon: "🌤️",
     title: "Weather-aware planning ready",
     badges: ["Normal routing", "Watch heat", "Watch storms"],
@@ -17,7 +17,7 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     planNote: "Normal weather: CastleWatch can use the selected Plan mode normally.",
   },
   hot: {
-    label: "Heat risk",
+    label: "Heat",
     icon: "🥵",
     title: "Heat risk active",
     badges: ["Favor A/C", "Avoid hot zones", "Short walks", "Water breaks"],
@@ -25,7 +25,7 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     planNote: "Weather guard: heat risk is active. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
   },
   storm: {
-    label: "Storm risk",
+    label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
     badges: ["Indoor first", "Avoid outdoor rides", "Watch closures", "Shelter route"],
@@ -52,22 +52,24 @@ function ensureWeatherStyle() {
     .weather-aware-control-row {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin: 12px 0 14px;
+      gap: 8px;
+      margin: 10px 0 12px;
     }
 
     .weather-aware-button {
       border: 1px solid rgba(102, 178, 255, 0.28);
-      border-radius: 16px;
+      border-radius: 999px;
       background: rgba(255, 255, 255, 0.04);
       color: var(--text);
-      min-height: 74px;
-      padding: 9px 7px;
-      display: grid;
-      place-items: center;
-      gap: 5px;
+      min-height: 42px;
+      padding: 7px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       font-weight: 900;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .weather-aware-button-active {
@@ -78,10 +80,10 @@ function ensureWeatherStyle() {
 
     .weather-aware-card {
       border: 1px solid rgba(102, 178, 255, 0.42);
-      border-radius: 20px;
-      padding: 14px;
+      border-radius: 18px;
+      padding: 12px;
       background: linear-gradient(135deg, rgba(102, 178, 255, 0.12), rgba(255, 255, 255, 0.04));
-      margin: 0 0 14px;
+      margin: 0 0 12px;
     }
 
     .weather-aware-card-hot {
@@ -96,29 +98,27 @@ function ensureWeatherStyle() {
 
     .weather-aware-card h3 {
       margin: 0 0 8px;
-      font-size: 22px;
+      font-size: 20px;
       line-height: 1.08;
     }
 
     .weather-aware-note {
       border: 1px solid rgba(255, 204, 102, 0.42);
       border-radius: 16px;
-      padding: 12px 14px;
-      margin: 12px 0 0;
+      padding: 10px 12px;
+      margin: 10px 0 0;
       background: rgba(255, 204, 102, 0.08);
       color: var(--text);
     }
 
-    @media (max-width: 420px) {
+    @media (max-width: 360px) {
       .weather-aware-control-row {
         grid-template-columns: 1fr;
       }
 
       .weather-aware-button {
-        min-height: 54px;
-        grid-template-columns: auto 1fr;
-        justify-content: start;
-        text-align: left;
+        justify-content: center;
+        min-height: 40px;
       }
     }
   `;
@@ -147,7 +147,7 @@ function renderWeatherAwarePlanning() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `weather-aware-button ${mode === activeMode ? "weather-aware-button-active" : ""}`;
-    button.innerHTML = `<span style="font-size:22px;line-height:1;">${option.icon}</span><strong style="font-size:12px;line-height:1.1;">${option.label}</strong>`;
+    button.innerHTML = `<span style="font-size:18px;line-height:1;">${option.icon}</span><strong style="font-size:12px;line-height:1.1;">${option.label}</strong>`;
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();

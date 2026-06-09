@@ -65,7 +65,7 @@ function ensureEmergencyStyle() {
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
-    .emergency-break-active .next-move-card:not(.emergency-break-card),
+    .emergency-break-active .next-move-card,
     .emergency-break-active .plan-steps:not(.emergency-break-steps) {
       display: none !important;
     }
@@ -131,7 +131,7 @@ function parkPlan() {
 }
 
 function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: string; steps: string[]; note: string }) {
-  card.className = "next-move-card emergency-break-card";
+  card.className = "emergency-break-card";
   card.innerHTML = `
     <span class="stat-label">Emergency break · leave-park mode</span>
     <h3 style="font-size: 24px; line-height: 1.05; margin: 0 0 10px;">${plan.title}</h3>

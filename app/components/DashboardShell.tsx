@@ -5,6 +5,7 @@ import BackendStatus from "./BackendStatus";
 import TransportationPlanner from "./TransportationPlanner";
 import ParkCommandCenter from "./ParkCommandCenter";
 import EmergencyBreakMode from "./EmergencyBreakMode";
+import WeatherAwarePlanning from "./WeatherAwarePlanning";
 
 const PARKS = [
   { name: "Magic Kingdom", icon: "🏰" },
@@ -25,6 +26,7 @@ export default function DashboardShell() {
   return (
     <main className="page">
       <EmergencyBreakMode />
+      <WeatherAwarePlanning />
       <nav className="top-park-banner" aria-label="Choose a CastleWatch section">
         {PARKS.map((park) => (
           <button

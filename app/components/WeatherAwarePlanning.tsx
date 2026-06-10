@@ -116,6 +116,28 @@ function ensureWeatherStyle() {
       color: var(--text);
     }
 
+    .emergency-break-active .weather-aware-control-row {
+      opacity: 0.64;
+      transform: scale(0.96);
+      transform-origin: top center;
+      margin-top: 6px;
+      margin-bottom: 8px;
+    }
+
+    .emergency-break-active .weather-aware-button {
+      min-height: 36px;
+      padding: 5px 7px;
+      border-style: dashed;
+    }
+
+    .emergency-break-active .weather-aware-button span {
+      font-size: 16px !important;
+    }
+
+    .emergency-break-active .weather-aware-button strong {
+      font-size: 11px !important;
+    }
+
     .emergency-break-active .weather-aware-card {
       opacity: 0.78;
       margin-top: 12px;

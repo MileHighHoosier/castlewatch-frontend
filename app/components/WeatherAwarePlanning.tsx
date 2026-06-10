@@ -207,20 +207,6 @@ function ensureWeatherStyle() {
       font-size: 11px !important;
     }
 
-    .emergency-break-active .weather-aware-card {
-      opacity: 0.78;
-      margin-top: 12px;
-      border-style: dashed;
-    }
-
-    .emergency-break-active .weather-aware-card h3 {
-      font-size: 16px;
-    }
-
-    .emergency-break-active .weather-aware-summary {
-      font-size: 13px;
-    }
-
     @media (max-width: 360px) {
       .weather-aware-control-row {
         grid-template-columns: 1fr;
@@ -244,25 +230,6 @@ function forceCoolDownMode(panel: Element) {
   const coolDownButton = buttons.find((button) => button.textContent?.toLowerCase().includes("cool down"));
   if (!coolDownButton || coolDownButton.classList.contains("plan-mode-active")) return;
   coolDownButton.click();
-}
-
-function placeWeatherCard(panel: Element, card: HTMLElement) {
-  const emergencyExitNote = panel.querySelector<HTMLElement>(".emergency-break-note");
-  const lightningLaneTracker = panel.querySelector<HTMLElement>(".lightning-lane-tracker");
-
-  if (panel.classList.contains("emergency-break-active") && emergencyExitNote) {
-    if (lightningLaneTracker && emergencyExitNote.nextElementSibling === lightningLaneTracker) {
-      emergencyExitNote.insertAdjacentElement("afterend", card);
-      card.insertAdjacentElement("afterend", lightningLaneTracker);
-      return;
-    }
-
-    emergencyExitNote.insertAdjacentElement("afterend", card);
-    return;
-  }
-
-  const row = panel.querySelector<HTMLElement>(".weather-aware-control-row");
-  row?.insertAdjacentElement("afterend", card);
 }
 
 function renderWeatherAwarePlanning() {
@@ -299,7 +266,7 @@ function renderWeatherAwarePlanning() {
 
   modeTabs.insertAdjacentElement("afterend", row);
 
-  if (activeMode === "normal") return;
+  if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) return;
 
   const option = WEATHER_MODES[activeMode];
   const autoAdvisory = getAutoAdvisoryMode();
@@ -310,10 +277,10 @@ function renderWeatherAwarePlanning() {
     <h3>${option.icon} Weather guard: ${option.title}${sourceText}</h3>
     <p class="weather-aware-summary">${option.note}</p>
   `;
-  placeWeatherCard(panel, card);
+  row.insertAdjacentElement("afterend", card);
 
   const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
-  if (nextCard && !panel.classList.contains("emergency-break-active")) {
+  if (nextCard) {
     const note = document.createElement("div");
     note.className = "weather-aware-note";
     note.innerHTML = `<strong>Weather check:</strong> ${option.planNote}`;

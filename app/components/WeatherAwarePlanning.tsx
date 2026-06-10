@@ -7,29 +7,26 @@ const STYLE_ID = "castlewatch-weather-aware-style";
 
 type WeatherMode = "normal" | "hot" | "storm";
 
-const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; badges: string[]; note: string; planNote: string }> = {
+const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; note: string; planNote: string }> = {
   normal: {
     label: "OK",
     icon: "🌤️",
-    title: "Weather-aware planning ready",
-    badges: ["Normal routing", "Watch heat", "Watch storms"],
-    note: "Use this if the weather is comfortable and no storm risk is active.",
+    title: "Weather OK",
+    note: "Normal routing",
     planNote: "Normal weather: CastleWatch can use the selected Plan mode normally.",
   },
   hot: {
     label: "Heat",
     icon: "🥵",
     title: "Heat risk active",
-    badges: ["Favor A/C", "Avoid hot zones", "Short walks", "Water breaks"],
-    note: "Use this when it feels hot, humid, or tiring. CastleWatch should prefer Cool down / Low-stress choices and avoid long outdoor crossings.",
+    note: "Favor A/C · Avoid hot zones · Short walks · Water breaks",
     planNote: "Weather guard: heat risk is active. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
   },
   storm: {
     label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
-    badges: ["Indoor first", "Avoid outdoor rides", "Watch closures", "Shelter route"],
-    note: "Use this when lightning, heavy rain, or outdoor ride closures are likely. CastleWatch should bias toward indoor attractions, food, shows, or safe shelter.",
+    note: "Indoor first · Avoid outdoor rides · Watch closures · Shelter route",
     planNote: "Weather guard: storm risk is active. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
   },
 };
@@ -80,26 +77,34 @@ function ensureWeatherStyle() {
 
     .weather-aware-card {
       border: 1px solid rgba(102, 178, 255, 0.42);
-      border-radius: 18px;
-      padding: 12px;
+      border-radius: 16px;
+      padding: 10px 12px;
       background: linear-gradient(135deg, rgba(102, 178, 255, 0.12), rgba(255, 255, 255, 0.04));
       margin: 0 0 12px;
     }
 
     .weather-aware-card-hot {
       border-color: rgba(255, 204, 102, 0.62);
-      background: linear-gradient(135deg, rgba(255, 204, 102, 0.17), rgba(255, 255, 255, 0.04));
+      background: linear-gradient(135deg, rgba(255, 204, 102, 0.16), rgba(255, 255, 255, 0.04));
     }
 
     .weather-aware-card-storm {
       border-color: rgba(165, 180, 252, 0.62);
-      background: linear-gradient(135deg, rgba(129, 140, 248, 0.18), rgba(255, 255, 255, 0.04));
+      background: linear-gradient(135deg, rgba(129, 140, 248, 0.16), rgba(255, 255, 255, 0.04));
     }
 
     .weather-aware-card h3 {
-      margin: 0 0 8px;
-      font-size: 20px;
+      margin: 0 0 5px;
+      font-size: 18px;
       line-height: 1.08;
+    }
+
+    .weather-aware-summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 750;
     }
 
     .weather-aware-note {
@@ -165,12 +170,8 @@ function renderWeatherAwarePlanning() {
   const card = document.createElement("div");
   card.className = `weather-aware-card weather-aware-card-${activeMode}`;
   card.innerHTML = `
-    <span class="stat-label">Weather-aware planning</span>
-    <h3>${option.icon} ${option.title}</h3>
-    <div class="badge-row">
-      ${option.badges.map((badge) => `<span class="recommendation-badge">${badge}</span>`).join("")}
-    </div>
-    <p class="muted"><strong>Planning rule:</strong> ${option.note}</p>
+    <h3>${option.icon} Weather guard: ${option.title}</h3>
+    <p class="weather-aware-summary">${option.note}</p>
   `;
   row.insertAdjacentElement("afterend", card);
 

@@ -3,6 +3,9 @@
 import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.emergencyBreakMode.v1";
+const WEATHER_STORAGE_KEY = "castlewatch.weatherRiskMode.v1";
+const WEATHER_AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
+const WEATHER_MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
 const STYLE_ID = "castlewatch-emergency-break-style";
 
 const PARK_BREAK_PLANS: Record<string, { title: string; reason: string; steps: string[]; note: string }> = {
@@ -50,6 +53,23 @@ const PARK_BREAK_PLANS: Record<string, { title: string; reason: string; steps: s
 
 function activeParkName() {
   return document.querySelector(".command-header h2")?.textContent?.trim() || "Magic Kingdom";
+}
+
+function todayKey() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function isManualWeatherOverrideActive() {
+  return window.localStorage.getItem(WEATHER_MANUAL_OVERRIDE_DATE_KEY) === todayKey();
+}
+
+function activeWeatherRisk() {
+  const autoAdvisory = window.localStorage.getItem(WEATHER_AUTO_ADVISORY_KEY);
+  if ((autoAdvisory === "hot" || autoAdvisory === "storm") && !isManualWeatherOverrideActive()) return autoAdvisory;
+
+  const saved = window.localStorage.getItem(WEATHER_STORAGE_KEY);
+  if (saved === "hot" || saved === "storm") return saved;
+  return "normal";
 }
 
 function isEmergencyActive() {
@@ -130,6 +150,17 @@ function parkPlan() {
   return PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
 }
 
+function weatherRiskNote() {
+  const risk = activeWeatherRisk();
+  if (risk === "hot") {
+    return `<div class="history-summary emergency-weather-note"><strong>Heat active:</strong> Use shade, A/C, water, and the shortest exit route. Do not chase one more ride.</div>`;
+  }
+  if (risk === "storm") {
+    return `<div class="history-summary emergency-weather-note"><strong>Storm active:</strong> Move indoors or to safe shelter before making another plan.</div>`;
+  }
+  return "";
+}
+
 function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: string; steps: string[]; note: string }) {
   card.className = "emergency-break-card";
   card.innerHTML = `
@@ -142,6 +173,7 @@ function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: s
       <span class="recommendation-badge">Exit OK</span>
     </div>
     <p class="muted"><strong>Why chosen:</strong> ${plan.reason}</p>
+    ${weatherRiskNote()}
     <div class="history-summary"><strong>Family rule:</strong> This mode is for meltdown, heat, exhaustion, bathroom urgency, or a parent needing the day to stop escalating.</div>
     <div class="emergency-break-actions" style="display:grid;gap:10px;margin-top:14px;">
       <button class="button secondary-button emergency-break-exit" type="button">Exit emergency mode</button>
@@ -181,7 +213,7 @@ function forceEmergencyContent(planPanel: Element, plan: { title: string; reason
   const card = planPanel.querySelector<HTMLElement>(".emergency-break-card");
   if (card) {
     styleCard(card);
-    if (card.textContent?.includes("Start route") || card.textContent?.includes("Start break plan")) {
+    if (card.textContent?.includes("Start route") || card.textContent?.includes("Start break plan") || !card.querySelector(".emergency-weather-note") && activeWeatherRisk() !== "normal") {
       updateEmergencyCard(card, plan);
     }
   }

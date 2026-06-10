@@ -31,8 +31,8 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
-    note: "Indoor first · Avoid outdoor rides · Watch closures · Shelter route",
-    planNote: "Weather guard: storm risk is active. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
+    note: "Auto-prefers Cool down · Indoor first · Avoid outdoor rides · Shelter route",
+    planNote: "Weather guard: storm risk is active, so CastleWatch is using Cool down scoring as a safe indoor-first fallback. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
   },
 };
 
@@ -232,6 +232,10 @@ function forceCoolDownMode(panel: Element) {
   coolDownButton.click();
 }
 
+function shouldForceSafeWeatherMode(mode: WeatherMode) {
+  return mode === "hot" || mode === "storm";
+}
+
 function renderWeatherAwarePlanning() {
   ensureWeatherStyle();
   const panel = planPanel();
@@ -243,7 +247,7 @@ function renderWeatherAwarePlanning() {
   panel.querySelector(".weather-aware-note")?.remove();
 
   const activeMode = getWeatherMode();
-  if (activeMode === "hot") {
+  if (shouldForceSafeWeatherMode(activeMode)) {
     forceCoolDownMode(panel);
   }
 
@@ -291,7 +295,7 @@ function renderWeatherAwarePlanning() {
 export default function WeatherAwarePlanning() {
   useEffect(() => {
     let renderTimeout: number | null = null;
-    let heatGuardInterval: number | null = null;
+    let weatherGuardInterval: number | null = null;
     let advisoryInterval: number | null = null;
 
     function scheduleRender(event?: Event) {
@@ -301,8 +305,9 @@ export default function WeatherAwarePlanning() {
       renderTimeout = window.setTimeout(renderWeatherAwarePlanning, 160);
     }
 
-    function keepHeatScoringActive() {
-      if (getWeatherMode() !== "hot") return;
+    function keepWeatherScoringActive() {
+      const mode = getWeatherMode();
+      if (!shouldForceSafeWeatherMode(mode)) return;
       const panel = planPanel();
       if (!panel) return;
       forceCoolDownMode(panel);
@@ -310,14 +315,14 @@ export default function WeatherAwarePlanning() {
 
     scheduleRender();
     refreshAutoAdvisory();
-    heatGuardInterval = window.setInterval(keepHeatScoringActive, 700);
+    weatherGuardInterval = window.setInterval(keepWeatherScoringActive, 700);
     advisoryInterval = window.setInterval(refreshAutoAdvisory, 10 * 60 * 1000);
     document.addEventListener("click", scheduleRender, { passive: true });
     document.addEventListener("touchend", scheduleRender, { passive: true });
 
     return () => {
       if (renderTimeout) window.clearTimeout(renderTimeout);
-      if (heatGuardInterval) window.clearInterval(heatGuardInterval);
+      if (weatherGuardInterval) window.clearInterval(weatherGuardInterval);
       if (advisoryInterval) window.clearInterval(advisoryInterval);
       document.removeEventListener("click", scheduleRender);
       document.removeEventListener("touchend", scheduleRender);

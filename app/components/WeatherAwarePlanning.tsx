@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 
 const STORAGE_KEY = "castlewatch.weatherRiskMode.v1";
+const AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
+const MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
 const STYLE_ID = "castlewatch-weather-aware-style";
 
 type WeatherMode = "normal" | "hot" | "storm";
@@ -19,7 +21,7 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     label: "Heat",
     icon: "🥵",
     title: "Heat risk active",
-    note: "Auto-prefers Cool down · Favor A/C · Avoid hot zones · Short walks",
+    note: "Advisory-aware · Auto-prefers Cool down · Favor A/C · Short walks",
     planNote: "Weather guard: heat risk is active, so CastleWatch is using Cool down scoring. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
   },
   storm: {
@@ -31,14 +33,46 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
   },
 };
 
+function todayKey() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function isWeatherMode(value: string | null): value is WeatherMode {
+  return value === "hot" || value === "storm" || value === "normal";
+}
+
+function getAutoAdvisoryMode(): WeatherMode | null {
+  const saved = window.localStorage.getItem(AUTO_ADVISORY_KEY);
+  if (saved === "hot" || saved === "storm") return saved;
+  return null;
+}
+
+function isManualOverrideActive() {
+  return window.localStorage.getItem(MANUAL_OVERRIDE_DATE_KEY) === todayKey();
+}
+
 function getWeatherMode(): WeatherMode {
   const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (saved === "hot" || saved === "storm" || saved === "normal") return saved;
+  const autoAdvisoryMode = getAutoAdvisoryMode();
+
+  if (autoAdvisoryMode && !isManualOverrideActive()) {
+    return autoAdvisoryMode;
+  }
+
+  if (isWeatherMode(saved)) return saved;
   return "normal";
 }
 
-function setWeatherMode(mode: WeatherMode) {
+function setWeatherMode(mode: WeatherMode, source: "manual" | "auto" = "manual") {
   window.localStorage.setItem(STORAGE_KEY, mode);
+
+  if (source === "manual" && mode === "normal") {
+    window.localStorage.setItem(MANUAL_OVERRIDE_DATE_KEY, todayKey());
+  }
+
+  if (source === "manual" && mode !== "normal") {
+    window.localStorage.removeItem(MANUAL_OVERRIDE_DATE_KEY);
+  }
 }
 
 function ensureWeatherStyle() {
@@ -222,7 +256,7 @@ function renderWeatherAwarePlanning() {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      setWeatherMode(mode);
+      setWeatherMode(mode, "manual");
       renderWeatherAwarePlanning();
     });
     row.appendChild(button);
@@ -233,10 +267,12 @@ function renderWeatherAwarePlanning() {
   if (activeMode === "normal") return;
 
   const option = WEATHER_MODES[activeMode];
+  const autoAdvisory = getAutoAdvisoryMode();
+  const sourceText = autoAdvisory === activeMode && !isManualOverrideActive() ? " · official advisory auto" : "";
   const card = document.createElement("div");
   card.className = `weather-aware-card weather-aware-card-${activeMode}`;
   card.innerHTML = `
-    <h3>${option.icon} Weather guard: ${option.title}</h3>
+    <h3>${option.icon} Weather guard: ${option.title}${sourceText}</h3>
     <p class="weather-aware-summary">${option.note}</p>
   `;
   placeWeatherCard(panel, card);

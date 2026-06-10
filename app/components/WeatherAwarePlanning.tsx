@@ -31,8 +31,8 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
-    note: "Auto-prefers Cool down · Indoor first · Avoid outdoor rides · Shelter route",
-    planNote: "Weather guard: storm risk is active, so CastleWatch is using Cool down scoring as a safe indoor-first fallback. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
+    note: "Shelter-first fallback · Indoor first · Avoid outdoor rides · Short exposed walks",
+    planNote: "Weather guard: storm risk is active, so CastleWatch is using a shelter-first Cool down fallback. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
   },
 };
 
@@ -236,6 +236,46 @@ function shouldForceSafeWeatherMode(mode: WeatherMode) {
   return mode === "hot" || mode === "storm";
 }
 
+function applyWeatherPlanPresentation(panel: Element, mode: WeatherMode) {
+  if (mode === "normal" || panel.classList.contains("emergency-break-active")) return;
+
+  const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
+  if (!nextCard) return;
+
+  const label = nextCard.querySelector<HTMLElement>(".stat-label");
+  if (label) {
+    label.textContent = mode === "storm" ? "Next move · Storm guard · Cool down" : "Next move · Heat guard · Cool down";
+  }
+
+  const badgeRow = nextCard.querySelector<HTMLElement>(".badge-row");
+  if (badgeRow && !badgeRow.textContent?.includes("Weather guard")) {
+    const badge = document.createElement("span");
+    badge.className = "recommendation-badge";
+    badge.textContent = "Weather guard";
+    badgeRow.prepend(badge);
+  }
+}
+
+function insertWeatherNoteNearPlan(panel: Element, note: HTMLElement) {
+  const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
+  if (!nextCard) return;
+
+  const tracker = panel.querySelector<HTMLElement>(".lightning-lane-tracker");
+  const nextSteps = panel.querySelector<HTMLElement>(".plan-steps");
+
+  if (tracker && tracker.compareDocumentPosition(nextCard) & Node.DOCUMENT_POSITION_PRECEDING) {
+    tracker.insertAdjacentElement("beforebegin", note);
+    return;
+  }
+
+  if (nextSteps) {
+    nextSteps.insertAdjacentElement("beforebegin", note);
+    return;
+  }
+
+  nextCard.insertAdjacentElement("afterend", note);
+}
+
 function renderWeatherAwarePlanning() {
   ensureWeatherStyle();
   const panel = planPanel();
@@ -272,6 +312,8 @@ function renderWeatherAwarePlanning() {
 
   if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) return;
 
+  applyWeatherPlanPresentation(panel, activeMode);
+
   const option = WEATHER_MODES[activeMode];
   const autoAdvisory = getAutoAdvisoryMode();
   const sourceText = autoAdvisory === activeMode && !isManualOverrideActive() ? ` · auto: ${autoAdvisoryHeadline()}` : "";
@@ -288,7 +330,7 @@ function renderWeatherAwarePlanning() {
     const note = document.createElement("div");
     note.className = "weather-aware-note";
     note.innerHTML = `<strong>Weather check:</strong> ${option.planNote}`;
-    nextCard.insertAdjacentElement("afterend", note);
+    insertWeatherNoteNearPlan(panel, note);
   }
 }
 
@@ -311,6 +353,7 @@ export default function WeatherAwarePlanning() {
       const panel = planPanel();
       if (!panel) return;
       forceCoolDownMode(panel);
+      applyWeatherPlanPresentation(panel, mode);
     }
 
     scheduleRender();

@@ -74,6 +74,15 @@ function normalizeRideRows<T>(rows: T[]): T[] {
   });
 }
 
+export type WeatherAdvisoryResult = {
+  mode?: "normal" | "hot" | "storm";
+  advisoryActive?: boolean;
+  advisoryType?: string;
+  headline?: string;
+  expiresAt?: string;
+  source?: string;
+};
+
 export async function checkBackendStatus(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
@@ -138,4 +147,21 @@ export async function fetchPlanningInsights(park: string): Promise<ApiResult<any
   if (!API_BASE_URL) return missingApiBaseResult();
 
   return tryFetch<any>(`/api/planning-insights?park=${encodeURIComponent(park)}`);
+}
+
+export async function fetchWeatherAdvisory(): Promise<ApiResult<WeatherAdvisoryResult>> {
+  if (!API_BASE_URL) return missingApiBaseResult();
+
+  const paths = ["/api/weather-advisory", "/api/weather/alerts", "/weather-advisory"];
+
+  for (const path of paths) {
+    const result = await tryFetch<WeatherAdvisoryResult>(path);
+    if (result.ok && result.data && typeof result.data === "object") return result;
+  }
+
+  return {
+    ok: false,
+    url: API_BASE_URL,
+    error: "Backend connected, but no weather advisory endpoint returned advisory data yet.",
+  };
 }

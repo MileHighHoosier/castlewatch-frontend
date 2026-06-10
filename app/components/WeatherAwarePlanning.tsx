@@ -19,8 +19,8 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     label: "Heat",
     icon: "🥵",
     title: "Heat risk active",
-    note: "Favor A/C · Avoid hot zones · Short walks · Water breaks",
-    planNote: "Weather guard: heat risk is active. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
+    note: "Auto-prefers Cool down · Favor A/C · Avoid hot zones · Short walks",
+    planNote: "Weather guard: heat risk is active, so CastleWatch is using Cool down scoring. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
   },
   storm: {
     label: "Storm",
@@ -134,6 +134,13 @@ function planPanel() {
   return Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
 }
 
+function forceCoolDownMode(panel: Element) {
+  const buttons = Array.from(panel.querySelectorAll<HTMLButtonElement>(".plan-mode"));
+  const coolDownButton = buttons.find((button) => button.textContent?.toLowerCase().includes("cool down"));
+  if (!coolDownButton || coolDownButton.classList.contains("plan-mode-active")) return;
+  coolDownButton.click();
+}
+
 function renderWeatherAwarePlanning() {
   ensureWeatherStyle();
   const panel = planPanel();
@@ -145,6 +152,10 @@ function renderWeatherAwarePlanning() {
   panel.querySelector(".weather-aware-note")?.remove();
 
   const activeMode = getWeatherMode();
+  if (activeMode === "hot") {
+    forceCoolDownMode(panel);
+  }
+
   const row = document.createElement("div");
   row.className = "weather-aware-control-row";
   (["normal", "hot", "storm"] as WeatherMode[]).forEach((mode) => {
@@ -187,6 +198,7 @@ function renderWeatherAwarePlanning() {
 export default function WeatherAwarePlanning() {
   useEffect(() => {
     let renderTimeout: number | null = null;
+    let heatGuardInterval: number | null = null;
 
     function scheduleRender(event?: Event) {
       const target = event?.target as Element | null;
@@ -195,12 +207,21 @@ export default function WeatherAwarePlanning() {
       renderTimeout = window.setTimeout(renderWeatherAwarePlanning, 160);
     }
 
+    function keepHeatScoringActive() {
+      if (getWeatherMode() !== "hot") return;
+      const panel = planPanel();
+      if (!panel) return;
+      forceCoolDownMode(panel);
+    }
+
     scheduleRender();
+    heatGuardInterval = window.setInterval(keepHeatScoringActive, 700);
     document.addEventListener("click", scheduleRender, { passive: true });
     document.addEventListener("touchend", scheduleRender, { passive: true });
 
     return () => {
       if (renderTimeout) window.clearTimeout(renderTimeout);
+      if (heatGuardInterval) window.clearInterval(heatGuardInterval);
       document.removeEventListener("click", scheduleRender);
       document.removeEventListener("touchend", scheduleRender);
     };

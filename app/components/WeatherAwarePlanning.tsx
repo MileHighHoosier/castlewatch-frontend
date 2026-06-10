@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { fetchWeatherAdvisory } from "../lib/api";
 
 const STORAGE_KEY = "castlewatch.weatherRiskMode.v1";
 const AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
+const AUTO_ADVISORY_HEADLINE_KEY = "castlewatch.weatherAutoAdvisoryHeadline.v1";
+const AUTO_ADVISORY_CHECKED_KEY = "castlewatch.weatherAutoAdvisoryChecked.v1";
 const MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
 const STYLE_ID = "castlewatch-weather-aware-style";
 
@@ -72,6 +75,38 @@ function setWeatherMode(mode: WeatherMode, source: "manual" | "auto" = "manual")
 
   if (source === "manual" && mode !== "normal") {
     window.localStorage.removeItem(MANUAL_OVERRIDE_DATE_KEY);
+  }
+}
+
+function setAutoAdvisory(mode: WeatherMode | null, headline?: string) {
+  if (mode === "hot" || mode === "storm") {
+    window.localStorage.setItem(AUTO_ADVISORY_KEY, mode);
+    if (headline) window.localStorage.setItem(AUTO_ADVISORY_HEADLINE_KEY, headline);
+  } else {
+    window.localStorage.removeItem(AUTO_ADVISORY_KEY);
+    window.localStorage.removeItem(AUTO_ADVISORY_HEADLINE_KEY);
+  }
+  window.localStorage.setItem(AUTO_ADVISORY_CHECKED_KEY, new Date().toISOString());
+}
+
+function autoAdvisoryHeadline() {
+  return window.localStorage.getItem(AUTO_ADVISORY_HEADLINE_KEY) || "official advisory";
+}
+
+async function refreshAutoAdvisory() {
+  const result = await fetchWeatherAdvisory();
+  const data = result.data;
+
+  if (!result.ok || !data || data.advisoryActive !== true) {
+    setAutoAdvisory(null);
+    renderWeatherAwarePlanning();
+    return;
+  }
+
+  if (data.mode === "hot" || data.mode === "storm") {
+    setAutoAdvisory(data.mode, data.headline || data.advisoryType || data.source);
+    if (!isManualOverrideActive()) setWeatherMode(data.mode, "auto");
+    renderWeatherAwarePlanning();
   }
 }
 
@@ -268,7 +303,7 @@ function renderWeatherAwarePlanning() {
 
   const option = WEATHER_MODES[activeMode];
   const autoAdvisory = getAutoAdvisoryMode();
-  const sourceText = autoAdvisory === activeMode && !isManualOverrideActive() ? " · official advisory auto" : "";
+  const sourceText = autoAdvisory === activeMode && !isManualOverrideActive() ? ` · auto: ${autoAdvisoryHeadline()}` : "";
   const card = document.createElement("div");
   card.className = `weather-aware-card weather-aware-card-${activeMode}`;
   card.innerHTML = `
@@ -290,6 +325,7 @@ export default function WeatherAwarePlanning() {
   useEffect(() => {
     let renderTimeout: number | null = null;
     let heatGuardInterval: number | null = null;
+    let advisoryInterval: number | null = null;
 
     function scheduleRender(event?: Event) {
       const target = event?.target as Element | null;
@@ -306,13 +342,16 @@ export default function WeatherAwarePlanning() {
     }
 
     scheduleRender();
+    refreshAutoAdvisory();
     heatGuardInterval = window.setInterval(keepHeatScoringActive, 700);
+    advisoryInterval = window.setInterval(refreshAutoAdvisory, 10 * 60 * 1000);
     document.addEventListener("click", scheduleRender, { passive: true });
     document.addEventListener("touchend", scheduleRender, { passive: true });
 
     return () => {
       if (renderTimeout) window.clearTimeout(renderTimeout);
       if (heatGuardInterval) window.clearInterval(heatGuardInterval);
+      if (advisoryInterval) window.clearInterval(advisoryInterval);
       document.removeEventListener("click", scheduleRender);
       document.removeEventListener("touchend", scheduleRender);
     };

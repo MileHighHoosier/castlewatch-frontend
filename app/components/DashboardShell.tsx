@@ -7,6 +7,7 @@ import ParkCommandCenter from "./ParkCommandCenter";
 import EmergencyBreakMode from "./EmergencyBreakMode";
 import WeatherAwarePlanning from "./WeatherAwarePlanning";
 import ShowTimesActivityLayer from "./ShowTimesActivityLayer";
+import CharacterMeetLayer from "./CharacterMeetLayer";
 
 const PARKS = [
   { name: "Magic Kingdom", icon: "🏰" },
@@ -29,6 +30,7 @@ export default function DashboardShell() {
       <EmergencyBreakMode />
       <WeatherAwarePlanning />
       <ShowTimesActivityLayer selectedPark={selectedPark} />
+      <CharacterMeetLayer selectedPark={selectedPark} />
       <nav className="top-park-banner" aria-label="Choose a CastleWatch section">
         {PARKS.map((park) => (
           <button

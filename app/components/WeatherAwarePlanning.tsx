@@ -227,6 +227,12 @@ function planPanel() {
   return Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".plan-mode-tabs"));
 }
 
+function selectedPlanModeLabel(panel: Element) {
+  const activeButton = panel.querySelector<HTMLElement>(".plan-mode-active");
+  const text = activeButton?.textContent?.replace(/[⚡😌❄️]/g, "").trim();
+  return text || "Plan";
+}
+
 function forceCoolDownMode(panel: Element) {
   const buttons = Array.from(panel.querySelectorAll<HTMLButtonElement>(".plan-mode"));
   const coolDownButton = buttons.find((button) => button.textContent?.toLowerCase().includes("cool down"));
@@ -252,10 +258,22 @@ function applyWeatherPlanPresentation(panel: Element, mode: WeatherMode) {
   const badgeRow = nextCard.querySelector<HTMLElement>(".badge-row");
   if (badgeRow && !badgeRow.textContent?.includes("Weather guard")) {
     const badge = document.createElement("span");
-    badge.className = "recommendation-badge";
+    badge.className = "recommendation-badge weather-guard-badge";
     badge.textContent = "Weather guard";
     badgeRow.prepend(badge);
   }
+}
+
+function resetWeatherPlanPresentation(panel: Element) {
+  const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
+  if (!nextCard) return;
+
+  const label = nextCard.querySelector<HTMLElement>(".stat-label");
+  if (label && /Heat guard|Storm guard/.test(label.textContent || "")) {
+    label.textContent = `Next move · ${selectedPlanModeLabel(panel)}`;
+  }
+
+  nextCard.querySelectorAll<HTMLElement>(".weather-guard-badge").forEach((badge) => badge.remove());
 }
 
 function keepPlanContentTogether(panel: Element, note?: HTMLElement) {
@@ -314,6 +332,7 @@ function renderWeatherAwarePlanning() {
   modeTabs.insertAdjacentElement("afterend", row);
 
   if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) {
+    resetWeatherPlanPresentation(panel);
     keepPlanContentTogether(panel);
     return;
   }
@@ -360,6 +379,8 @@ export default function WeatherAwarePlanning() {
       if (shouldForceSafeWeatherMode(mode)) {
         forceCoolDownMode(panel);
         applyWeatherPlanPresentation(panel, mode);
+      } else {
+        resetWeatherPlanPresentation(panel);
       }
       keepPlanContentTogether(panel);
     }

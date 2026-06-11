@@ -25,14 +25,14 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
     icon: "🥵",
     title: "Heat risk active",
     note: "Advisory-aware · Auto-prefers Cool down · Favor A/C · Short walks",
-    planNote: "Weather guard: heat risk is active, so CastleWatch is using Cool down scoring. Prefer A/C, shade, indoor shows, water breaks, and shorter walking routes before chasing ride value.",
+    planNote: "Cool down active: favor A/C, shade, water, and short walks.",
   },
   storm: {
     label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
     note: "Shelter-first fallback · Indoor first · Avoid outdoor rides · Short exposed walks",
-    planNote: "Weather guard: storm risk is active, so CastleWatch is using a shelter-first Cool down fallback. Prefer indoor attractions, shows, food, and nearby shelter. Avoid outdoor rides and long exposed walks.",
+    planNote: "Storm guard: stay indoors/sheltered and avoid exposed walks.",
   },
 };
 
@@ -178,11 +178,13 @@ function ensureWeatherStyle() {
 
     .weather-aware-note {
       border: 1px solid rgba(255, 204, 102, 0.42);
-      border-radius: 16px;
-      padding: 10px 12px;
-      margin: 10px 0 0;
+      border-radius: 14px;
+      padding: 8px 10px;
+      margin: 8px 0 0;
       background: rgba(255, 204, 102, 0.08);
       color: var(--text);
+      font-size: 14px;
+      line-height: 1.25;
     }
 
     .emergency-break-active .weather-aware-control-row {

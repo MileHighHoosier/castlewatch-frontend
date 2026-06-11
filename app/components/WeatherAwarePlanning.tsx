@@ -260,19 +260,20 @@ function keepPlanContentTogether(panel: Element, note?: HTMLElement) {
   const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
   if (!nextCard) return;
 
-  const nextSteps = panel.querySelector<HTMLElement>(".plan-steps:not(.emergency-break-steps)");
+  const activeNote = note || panel.querySelector<HTMLElement>(".weather-aware-note");
+  const routeSteps = panel.querySelector<HTMLElement>(".plan-steps:not(.emergency-break-steps)");
   const tracker = panel.querySelector<HTMLElement>(".lightning-lane-tracker");
 
-  if (note) {
-    nextCard.insertAdjacentElement("afterend", note);
+  if (activeNote) {
+    nextCard.insertAdjacentElement("afterend", activeNote);
   }
 
-  if (nextSteps) {
-    (note || nextCard).insertAdjacentElement("afterend", nextSteps);
+  if (routeSteps) {
+    (activeNote || nextCard).insertAdjacentElement("afterend", routeSteps);
   }
 
   if (tracker) {
-    (nextSteps || note || nextCard).insertAdjacentElement("afterend", tracker);
+    (routeSteps || activeNote || nextCard).insertAdjacentElement("afterend", tracker);
   }
 }
 

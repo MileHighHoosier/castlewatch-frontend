@@ -12,27 +12,24 @@ const STYLE_ID = "castlewatch-weather-aware-style";
 
 type WeatherMode = "normal" | "hot" | "storm";
 
-const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; note: string; planNote: string }> = {
+const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; note: string }> = {
   normal: {
     label: "OK",
     icon: "🌤️",
     title: "Weather OK",
     note: "Normal routing",
-    planNote: "Normal weather: CastleWatch can use the selected Plan mode normally.",
   },
   hot: {
     label: "Heat",
     icon: "🥵",
     title: "Heat risk active",
     note: "Advisory-aware · Auto-prefers Cool down · Favor A/C · Short walks",
-    planNote: "Cool down active: favor A/C, shade, water, and short walks.",
   },
   storm: {
     label: "Storm",
     icon: "⛈️",
     title: "Storm risk active",
     note: "Shelter-first fallback · Indoor first · Avoid outdoor rides · Short exposed walks",
-    planNote: "Storm guard: stay indoors/sheltered and avoid exposed walks.",
   },
 };
 
@@ -176,17 +173,6 @@ function ensureWeatherStyle() {
       font-weight: 750;
     }
 
-    .weather-aware-note {
-      border: 1px solid rgba(255, 204, 102, 0.42);
-      border-radius: 14px;
-      padding: 8px 10px;
-      margin: 8px 0 0;
-      background: rgba(255, 204, 102, 0.08);
-      color: var(--text);
-      font-size: 14px;
-      line-height: 1.25;
-    }
-
     .emergency-break-active .weather-aware-control-row {
       opacity: 0.64;
       transform: scale(0.96);
@@ -276,16 +262,6 @@ function resetWeatherPlanPresentation(panel: Element) {
   nextCard.querySelectorAll<HTMLElement>(".weather-guard-badge").forEach((badge) => badge.remove());
 }
 
-function placeWeatherNoteAfterPlan(panel: Element, note?: HTMLElement) {
-  const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
-  if (!nextCard) return;
-
-  const activeNote = note || panel.querySelector<HTMLElement>(".weather-aware-note");
-  if (!activeNote) return;
-
-  nextCard.insertAdjacentElement("afterend", activeNote);
-}
-
 function renderWeatherAwarePlanning() {
   ensureWeatherStyle();
   const panel = planPanel();
@@ -337,14 +313,6 @@ function renderWeatherAwarePlanning() {
     <p class="weather-aware-summary">${option.note}</p>
   `;
   row.insertAdjacentElement("afterend", card);
-
-  const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
-  if (nextCard) {
-    const note = document.createElement("div");
-    note.className = "weather-aware-note";
-    note.innerHTML = `<strong>Weather check:</strong> ${option.planNote}`;
-    placeWeatherNoteAfterPlan(panel, note);
-  }
 }
 
 export default function WeatherAwarePlanning() {
@@ -367,7 +335,6 @@ export default function WeatherAwarePlanning() {
       if (shouldForceSafeWeatherMode(mode)) {
         forceCoolDownMode(panel);
         applyWeatherPlanPresentation(panel, mode);
-        placeWeatherNoteAfterPlan(panel);
       } else {
         resetWeatherPlanPresentation(panel);
       }

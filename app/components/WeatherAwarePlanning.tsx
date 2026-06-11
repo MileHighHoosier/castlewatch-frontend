@@ -276,25 +276,14 @@ function resetWeatherPlanPresentation(panel: Element) {
   nextCard.querySelectorAll<HTMLElement>(".weather-guard-badge").forEach((badge) => badge.remove());
 }
 
-function keepPlanContentTogether(panel: Element, note?: HTMLElement) {
+function placeWeatherNoteAfterPlan(panel: Element, note?: HTMLElement) {
   const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
   if (!nextCard) return;
 
   const activeNote = note || panel.querySelector<HTMLElement>(".weather-aware-note");
-  const routeSteps = panel.querySelector<HTMLElement>(".plan-steps:not(.emergency-break-steps)");
-  const tracker = panel.querySelector<HTMLElement>(".lightning-lane-tracker");
+  if (!activeNote) return;
 
-  if (activeNote) {
-    nextCard.insertAdjacentElement("afterend", activeNote);
-  }
-
-  if (routeSteps) {
-    (activeNote || nextCard).insertAdjacentElement("afterend", routeSteps);
-  }
-
-  if (tracker) {
-    (routeSteps || activeNote || nextCard).insertAdjacentElement("afterend", tracker);
-  }
+  nextCard.insertAdjacentElement("afterend", activeNote);
 }
 
 function renderWeatherAwarePlanning() {
@@ -333,7 +322,6 @@ function renderWeatherAwarePlanning() {
 
   if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) {
     resetWeatherPlanPresentation(panel);
-    keepPlanContentTogether(panel);
     return;
   }
 
@@ -355,7 +343,7 @@ function renderWeatherAwarePlanning() {
     const note = document.createElement("div");
     note.className = "weather-aware-note";
     note.innerHTML = `<strong>Weather check:</strong> ${option.planNote}`;
-    keepPlanContentTogether(panel, note);
+    placeWeatherNoteAfterPlan(panel, note);
   }
 }
 
@@ -379,15 +367,15 @@ export default function WeatherAwarePlanning() {
       if (shouldForceSafeWeatherMode(mode)) {
         forceCoolDownMode(panel);
         applyWeatherPlanPresentation(panel, mode);
+        placeWeatherNoteAfterPlan(panel);
       } else {
         resetWeatherPlanPresentation(panel);
       }
-      keepPlanContentTogether(panel);
     }
 
     scheduleRender();
     refreshAutoAdvisory();
-    weatherGuardInterval = window.setInterval(keepWeatherScoringActive, 700);
+    weatherGuardInterval = window.setInterval(keepWeatherScoringActive, 1200);
     advisoryInterval = window.setInterval(refreshAutoAdvisory, 10 * 60 * 1000);
     document.addEventListener("click", scheduleRender, { passive: true });
     document.addEventListener("touchend", scheduleRender, { passive: true });

@@ -17,9 +17,71 @@ export const API_BASE_URL = rawApiBaseUrl
   .trim()
   .replace(/\/$/, "");
 
+const THEMEPARKS_WIKI_PARK_IDS: Record<string, string> = {
+  "Magic Kingdom": "75ea578a-adc8-4116-a54d-dccb60765ef9",
+  Epcot: "47f90d2c-e191-4239-a466-5892ef59a88b",
+  "Hollywood Studios": "89db5d43-c434-4097-b71f-f6869f495a22",
+  "Animal Kingdom": "1c84a229-8862-4648-9c71-378ddd2c7693",
+};
+
+export type ShowTimeEntry = {
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+  isPast?: boolean;
+};
+
+export type ParkShow = {
+  id?: string;
+  name: string;
+  park?: string;
+  land?: string;
+  status?: string;
+  nextStartTime?: string | null;
+  times: ShowTimeEntry[];
+  upcomingCount?: number;
+};
+
+export type ShowTimesResult = {
+  park: string;
+  shows: ParkShow[];
+  source?: string;
+  updated_at?: string;
+  status?: string;
+};
+
 async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${path}`;
 
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+
+    return {
+      ok: response.ok,
+      url,
+      status: response.status,
+      data: data as T,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      url,
+      error: error instanceof Error ? error.message : "Unknown fetch error",
+    };
+  }
+}
+
+async function tryFetchAbsolute<T>(url: string): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
       cache: "no-store",
@@ -72,6 +134,56 @@ function normalizeRideRows<T>(rows: T[]): T[] {
       castlewatch_category: "transportation filler",
     } as T;
   });
+}
+
+function parseShowTime(value?: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeExternalShowTimes(park: string, data: any, source: string): ShowTimesResult {
+  const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
+  const now = new Date();
+
+  const shows = liveData.flatMap((item: any): ParkShow[] => {
+    const schedule = Array.isArray(item?.showtimes) ? item.showtimes : Array.isArray(item?.schedule) ? item.schedule : [];
+    const entityType = String(item?.entityType || item?.type || "").toUpperCase();
+    if (!schedule.length && !["SHOW", "ENTERTAINMENT", "PARADE"].includes(entityType)) return [];
+
+    const times = schedule.flatMap((entry: any): ShowTimeEntry[] => {
+      const startTime = entry?.startTime || entry?.start || entry?.time;
+      const start = parseShowTime(startTime);
+      if (!start) return [];
+      return [{
+        startTime,
+        endTime: entry?.endTime || entry?.end,
+        status: entry?.type || entry?.status || "Scheduled",
+        isPast: start < now,
+      }];
+    });
+
+    if (!times.length) return [];
+    const upcoming = times.filter((time) => !time.isPast);
+
+    return [{
+      id: item?.id || item?.entityId,
+      name: item?.name || item?.entityName || "Show",
+      park,
+      land: item?.land || item?.area || "Entertainment",
+      status: item?.status || "SCHEDULED",
+      nextStartTime: upcoming[0]?.startTime || null,
+      times: times.slice(0, 12),
+      upcomingCount: upcoming.length,
+    }];
+  }).sort((a: ParkShow, b: ParkShow) => String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) || a.name.localeCompare(b.name));
+
+  return {
+    park,
+    shows,
+    source,
+    updated_at: new Date().toISOString(),
+  };
 }
 
 export type WeatherAdvisoryResult = {
@@ -147,6 +259,33 @@ export async function fetchPlanningInsights(park: string): Promise<ApiResult<any
   if (!API_BASE_URL) return missingApiBaseResult();
 
   return tryFetch<any>(`/api/planning-insights?park=${encodeURIComponent(park)}`);
+}
+
+export async function fetchShowTimes(park: string): Promise<ApiResult<ShowTimesResult>> {
+  if (API_BASE_URL) {
+    const backendResult = await tryFetch<ShowTimesResult>(`/api/show-times?park=${encodeURIComponent(park)}`);
+    if (backendResult.ok && backendResult.data && Array.isArray(backendResult.data.shows)) return backendResult;
+  }
+
+  const parkId = THEMEPARKS_WIKI_PARK_IDS[park];
+  if (!parkId) {
+    return {
+      ok: false,
+      url: "themeparks.wiki unsupported park",
+      error: `No showtime source configured for ${park}.`,
+    };
+  }
+
+  const url = `https://api.themeparks.wiki/v1/entity/${parkId}/live`;
+  const result = await tryFetchAbsolute<any>(url);
+  if (!result.ok) return result as ApiResult<ShowTimesResult>;
+
+  return {
+    ok: true,
+    url,
+    status: result.status,
+    data: normalizeExternalShowTimes(park, result.data, url),
+  };
 }
 
 export async function fetchWeatherAdvisory(): Promise<ApiResult<WeatherAdvisoryResult>> {

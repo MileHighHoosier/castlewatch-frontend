@@ -256,24 +256,24 @@ function applyWeatherPlanPresentation(panel: Element, mode: WeatherMode) {
   }
 }
 
-function insertWeatherNoteNearPlan(panel: Element, note: HTMLElement) {
+function keepPlanContentTogether(panel: Element, note?: HTMLElement) {
   const nextCard = panel.querySelector<HTMLElement>(".next-move-card");
   if (!nextCard) return;
 
+  const nextSteps = panel.querySelector<HTMLElement>(".plan-steps:not(.emergency-break-steps)");
   const tracker = panel.querySelector<HTMLElement>(".lightning-lane-tracker");
-  const nextSteps = panel.querySelector<HTMLElement>(".plan-steps");
 
-  if (tracker && tracker.compareDocumentPosition(nextCard) & Node.DOCUMENT_POSITION_PRECEDING) {
-    tracker.insertAdjacentElement("beforebegin", note);
-    return;
+  if (note) {
+    nextCard.insertAdjacentElement("afterend", note);
   }
 
   if (nextSteps) {
-    nextSteps.insertAdjacentElement("beforebegin", note);
-    return;
+    (note || nextCard).insertAdjacentElement("afterend", nextSteps);
   }
 
-  nextCard.insertAdjacentElement("afterend", note);
+  if (tracker) {
+    (nextSteps || note || nextCard).insertAdjacentElement("afterend", tracker);
+  }
 }
 
 function renderWeatherAwarePlanning() {
@@ -310,7 +310,10 @@ function renderWeatherAwarePlanning() {
 
   modeTabs.insertAdjacentElement("afterend", row);
 
-  if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) return;
+  if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) {
+    keepPlanContentTogether(panel);
+    return;
+  }
 
   applyWeatherPlanPresentation(panel, activeMode);
 
@@ -330,7 +333,7 @@ function renderWeatherAwarePlanning() {
     const note = document.createElement("div");
     note.className = "weather-aware-note";
     note.innerHTML = `<strong>Weather check:</strong> ${option.planNote}`;
-    insertWeatherNoteNearPlan(panel, note);
+    keepPlanContentTogether(panel, note);
   }
 }
 
@@ -349,11 +352,13 @@ export default function WeatherAwarePlanning() {
 
     function keepWeatherScoringActive() {
       const mode = getWeatherMode();
-      if (!shouldForceSafeWeatherMode(mode)) return;
       const panel = planPanel();
       if (!panel) return;
-      forceCoolDownMode(panel);
-      applyWeatherPlanPresentation(panel, mode);
+      if (shouldForceSafeWeatherMode(mode)) {
+        forceCoolDownMode(panel);
+        applyWeatherPlanPresentation(panel, mode);
+      }
+      keepPlanContentTogether(panel);
     }
 
     scheduleRender();

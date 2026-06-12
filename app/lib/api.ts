@@ -50,6 +50,25 @@ export type ShowTimesResult = {
   status?: string;
 };
 
+export type CharacterMeet = {
+  id?: string;
+  name: string;
+  park: string;
+  land?: string;
+  status?: string;
+  nextStartTime?: string | null;
+  times: ShowTimeEntry[];
+  upcomingCount?: number;
+};
+
+export type CharacterMeetResult = {
+  park: string;
+  characters: CharacterMeet[];
+  source?: string;
+  updated_at?: string;
+  status?: string;
+};
+
 async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${path}`;
 
@@ -142,26 +161,84 @@ function parseShowTime(value?: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function normalizeExternalShowTimes(park: string, data: any, source: string): ShowTimesResult {
-  const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
+function scheduleTimesFromItem(item: any) {
+  const schedule = Array.isArray(item?.showtimes) ? item.showtimes : Array.isArray(item?.schedule) ? item.schedule : [];
   const now = new Date();
 
-  const shows = liveData.flatMap((item: any): ParkShow[] => {
-    const schedule = Array.isArray(item?.showtimes) ? item.showtimes : Array.isArray(item?.schedule) ? item.schedule : [];
-    const entityType = String(item?.entityType || item?.type || "").toUpperCase();
-    if (!schedule.length && !["SHOW", "ENTERTAINMENT", "PARADE"].includes(entityType)) return [];
+  return schedule.flatMap((entry: any): ShowTimeEntry[] => {
+    const startTime = entry?.startTime || entry?.start || entry?.time;
+    const start = parseShowTime(startTime);
+    if (!start) return [];
+    return [{
+      startTime,
+      endTime: entry?.endTime || entry?.end,
+      status: entry?.type || entry?.status || "Scheduled",
+      isPast: start < now,
+    }];
+  });
+}
 
-    const times = schedule.flatMap((entry: any): ShowTimeEntry[] => {
-      const startTime = entry?.startTime || entry?.start || entry?.time;
-      const start = parseShowTime(startTime);
-      if (!start) return [];
-      return [{
-        startTime,
-        endTime: entry?.endTime || entry?.end,
-        status: entry?.type || entry?.status || "Scheduled",
-        isPast: start < now,
-      }];
-    });
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function includesAny(value: string, keywords: string[]) {
+  const normalized = normalizeText(value);
+  return keywords.some((keyword) => normalized.includes(normalizeText(keyword)));
+}
+
+const CHARACTER_INCLUDE_KEYWORDS = [
+  "adventurers outpost",
+  "celebrity spotlight",
+  "character landing",
+  "character meet",
+  "character greeting",
+  "fairytale hall",
+  "greeting",
+  "meet ",
+  "meet-",
+  "meet and greet",
+  "meet disney",
+  "princess fairytale hall",
+  "royal sommerhus",
+  "star wars launch bay",
+  "town square theater",
+];
+
+const CHARACTER_EXCLUDE_KEYWORDS = [
+  "buzz lightyear",
+  "cinderella castle",
+  "journey into imagination",
+  "mickey & minnie's runaway railway",
+  "mickey and minnie's runaway railway",
+  "mickey's philharmagic",
+  "monsters inc. laugh floor",
+  "peter pan's flight",
+  "the many adventures of winnie the pooh",
+  "tiana's bayou adventure",
+];
+
+function isCharacterMeetEntity(item: any) {
+  const name = String(item?.name || item?.entityName || "");
+  const entityType = String(item?.entityType || item?.type || "").toUpperCase();
+  const combined = `${name} ${item?.land || ""} ${item?.area || ""}`;
+
+  if (includesAny(combined, CHARACTER_EXCLUDE_KEYWORDS)) return false;
+  if (entityType.includes("MEET") || entityType.includes("CHARACTER")) return true;
+  return includesAny(combined, CHARACTER_INCLUDE_KEYWORDS);
+}
+
+function normalizeExternalShowTimes(park: string, data: any, source: string): ShowTimesResult {
+  const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
+
+  const shows = liveData.flatMap((item: any): ParkShow[] => {
+    const times = scheduleTimesFromItem(item);
+    const entityType = String(item?.entityType || item?.type || "").toUpperCase();
+    if (!times.length && !["SHOW", "ENTERTAINMENT", "PARADE"].includes(entityType)) return [];
 
     if (!times.length) return [];
     const upcoming = times.filter((time) => !time.isPast);
@@ -181,6 +258,35 @@ function normalizeExternalShowTimes(park: string, data: any, source: string): Sh
   return {
     park,
     shows,
+    source,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function normalizeExternalCharacterMeets(park: string, data: any, source: string): CharacterMeetResult {
+  const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
+
+  const characters = liveData.flatMap((item: any): CharacterMeet[] => {
+    if (!isCharacterMeetEntity(item)) return [];
+
+    const times = scheduleTimesFromItem(item);
+    const upcoming = times.filter((time) => !time.isPast);
+
+    return [{
+      id: item?.id || item?.entityId,
+      name: item?.name || item?.entityName || "Character greeting",
+      park,
+      land: item?.land || item?.area || "Character greeting",
+      status: item?.status || "VERIFY_IN_APP",
+      nextStartTime: upcoming[0]?.startTime || null,
+      times: times.slice(0, 12),
+      upcomingCount: upcoming.length,
+    }];
+  }).sort((a: CharacterMeet, b: CharacterMeet) => String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) || a.name.localeCompare(b.name));
+
+  return {
+    park,
+    characters,
     source,
     updated_at: new Date().toISOString(),
   };
@@ -285,6 +391,28 @@ export async function fetchShowTimes(park: string): Promise<ApiResult<ShowTimesR
     url,
     status: result.status,
     data: normalizeExternalShowTimes(park, result.data, url),
+  };
+}
+
+export async function fetchCharacterMeets(park: string): Promise<ApiResult<CharacterMeetResult>> {
+  const parkId = THEMEPARKS_WIKI_PARK_IDS[park];
+  if (!parkId) {
+    return {
+      ok: false,
+      url: "themeparks.wiki unsupported park",
+      error: `No character source configured for ${park}.`,
+    };
+  }
+
+  const url = `https://api.themeparks.wiki/v1/entity/${parkId}/live`;
+  const result = await tryFetchAbsolute<any>(url);
+  if (!result.ok) return result as ApiResult<CharacterMeetResult>;
+
+  return {
+    ok: true,
+    url,
+    status: result.status,
+    data: normalizeExternalCharacterMeets(park, result.data, url),
   };
 }
 

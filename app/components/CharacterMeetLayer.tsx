@@ -1,47 +1,48 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchRideData } from "../lib/api";
 
 const STYLE_ID = "castlewatch-character-layer-style";
 const CHARACTERS_TAB_CLASS = "castlewatch-characters-tab";
 const CHARACTERS_PANEL_CLASS = "castlewatch-characters-panel";
 
-const CHARACTER_KEYWORDS = [
+const TRUE_CHARACTER_EXPERIENCE_KEYWORDS = [
   "adventurers outpost",
-  "anna",
-  "ariel",
-  "belle",
-  "buzz lightyear",
-  "character",
-  "cinderella",
-  "daisy",
-  "donald",
-  "elena",
-  "enchanted tales with belle",
+  "celebrity spotlight",
+  "character landing",
+  "character meet",
+  "character greeting",
   "fairytale hall",
-  "figment",
-  "goofy",
   "greeting",
-  "groot",
-  "jasmine",
-  "meet",
-  "mickey",
-  "minnie",
-  "moana",
-  "olaf",
-  "pluto",
-  "princess",
+  "meet ",
+  "meet-",
+  "meet and greet",
+  "meet disney",
+  "princess fairytale hall",
   "royal sommerhus",
-  "snow white",
+  "star wars launch bay",
   "town square theater",
-  "tiana",
-  "winnie the pooh",
 ];
 
-const NON_CHARACTER_FALSE_POSITIVES = [
-  "meet disney pals at disney and pixar short film festival",
+const CHARACTER_ACTIVITY_KEYWORDS = [
+  "enchanted tales with belle",
+];
+
+const CHARACTER_FALSE_POSITIVES = [
+  "a pirate's adventure",
+  "buzz lightyear",
+  "cinderella castle",
+  "figment",
+  "journey into imagination",
+  "mickey & minnie's runaway railway",
+  "mickey and minnie's runaway railway",
+  "mickey's philharmagic",
   "monsters inc. laugh floor",
+  "peter pan's flight",
+  "the many adventures of winnie the pooh",
+  "tiana's bayou adventure",
+  "winnie the pooh",
 ];
 
 type CharacterItem = {
@@ -140,15 +141,27 @@ function normalizeParkName(value?: string) {
   return value.trim() || "Unknown Park";
 }
 
+function normalizedText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function includesAny(value: string, keywords: string[]) {
-  const normalized = value.toLowerCase();
-  return keywords.some((keyword) => normalized.includes(keyword));
+  const normalized = normalizedText(value);
+  return keywords.some((keyword) => normalized.includes(normalizedText(keyword)));
+}
+
+function isCharacterText(value: string) {
+  const normalized = normalizedText(value);
+  if (includesAny(normalized, CHARACTER_FALSE_POSITIVES)) return false;
+  return includesAny(normalized, TRUE_CHARACTER_EXPERIENCE_KEYWORDS) || includesAny(normalized, CHARACTER_ACTIVITY_KEYWORDS);
 }
 
 function isCharacterItem(item: CharacterItem) {
-  const combined = `${item.name} ${item.land}`.toLowerCase();
-  if (includesAny(combined, NON_CHARACTER_FALSE_POSITIVES)) return false;
-  return includesAny(combined, CHARACTER_KEYWORDS);
+  return isCharacterText(`${item.name} ${item.land}`);
 }
 
 function formatDateTime(value?: string) {
@@ -200,7 +213,7 @@ function createCharactersPanel(characters: CharacterItem[], selectedPark: string
   if (!characters.length) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = `No character meet-and-greet style entries found for ${selectedPark} yet. Refresh later or check the official app for exact appearance times.`;
+    empty.textContent = `No true meet-and-greet entries found for ${selectedPark} yet. Character-themed rides and landmarks are intentionally excluded. Check the official app for exact character appearance times.`;
     panel.appendChild(empty);
     return panel;
   }
@@ -255,8 +268,10 @@ function removeCharacterCardsFromActivities() {
 
   Array.from(panel.querySelectorAll<HTMLElement>(".ride")).forEach((card) => {
     const text = card.textContent || "";
-    if (includesAny(text, CHARACTER_KEYWORDS) && !includesAny(text, NON_CHARACTER_FALSE_POSITIVES)) {
+    if (isCharacterText(text)) {
       card.classList.add("castlewatch-character-hidden");
+    } else {
+      card.classList.remove("castlewatch-character-hidden");
     }
   });
 }

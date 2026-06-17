@@ -6,6 +6,23 @@ import { fetchShowTimes, type ParkShow, type ShowTimesResult } from "../lib/api"
 const STYLE_ID = "castlewatch-showtimes-activity-style";
 const CARD_CLASS = "castlewatch-showtimes-card";
 
+const CHARACTER_SHOW_KEYWORDS = [
+  "adventurers outpost",
+  "celebrity spotlight",
+  "character landing",
+  "character meet",
+  "character greeting",
+  "fairytale hall",
+  "meet ",
+  "meet-",
+  "meet and greet",
+  "meet disney",
+  "princess fairytale hall",
+  "royal sommerhus",
+  "star wars launch bay",
+  "town square theater",
+];
+
 function ensureShowTimesStyle() {
   if (document.getElementById(STYLE_ID)) return;
 
@@ -71,6 +88,19 @@ function ensureShowTimesStyle() {
   document.head.appendChild(style);
 }
 
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isCharacterShow(show: ParkShow) {
+  const combined = normalizeText(`${show.name} ${show.land || ""}`);
+  return CHARACTER_SHOW_KEYWORDS.some((keyword) => combined.includes(normalizeText(keyword)));
+}
+
 function formatShowTime(value?: string) {
   if (!value) return "Time TBD";
   const date = new Date(value);
@@ -110,6 +140,7 @@ function createShowTimesCard(data: ShowTimesResult | null, loading: boolean, err
 
   const shows = (data?.shows || [])
     .filter((show) => show.times?.length)
+    .filter((show) => !isCharacterShow(show))
     .slice(0, 6);
 
   if (!shows.length) {

@@ -17,10 +17,11 @@ export const API_BASE_URL = rawApiBaseUrl
   .trim()
   .replace(/\/$/, "");
 
+// ThemeParks.wiki park entity IDs for the four Walt Disney World theme parks.
 const THEMEPARKS_WIKI_PARK_IDS: Record<string, string> = {
   "Magic Kingdom": "75ea578a-adc8-4116-a54d-dccb60765ef9",
   Epcot: "47f90d2c-e191-4239-a466-5892ef59a88b",
-  "Hollywood Studios": "89db5d43-c434-4097-b71f-f6869f495a22",
+  "Hollywood Studios": "288747d1-8b4f-4a64-867e-ea7c9b27bad8",
   "Animal Kingdom": "1c84a229-8862-4648-9c71-378ddd2c7693",
 };
 
@@ -69,17 +70,23 @@ export type CharacterMeetResult = {
   status?: string;
 };
 
+export type WeatherAdvisoryResult = {
+  mode?: "normal" | "hot" | "storm";
+  advisoryActive?: boolean;
+  advisoryType?: string;
+  headline?: string;
+  expiresAt?: string;
+  source?: string;
+};
+
 async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${path}`;
 
   try {
     const response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     });
-
     const contentType = response.headers.get("content-type") || "";
     const data = contentType.includes("application/json")
       ? await response.json()
@@ -104,11 +111,8 @@ async function tryFetchAbsolute<T>(url: string): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     });
-
     const contentType = response.headers.get("content-type") || "";
     const data = contentType.includes("application/json")
       ? await response.json()
@@ -143,7 +147,6 @@ function normalizeRideRows<T>(rows: T[]): T[] {
 
     const ride = row as Record<string, unknown>;
     const name = String(ride.name || ride.ride_name || ride.attraction || "").toLowerCase();
-
     if (!name.includes("main street vehicles")) return row;
 
     return {
@@ -162,13 +165,18 @@ function parseShowTime(value?: string) {
 }
 
 function scheduleTimesFromItem(item: any) {
-  const schedule = Array.isArray(item?.showtimes) ? item.showtimes : Array.isArray(item?.schedule) ? item.schedule : [];
+  const schedule = Array.isArray(item?.showtimes)
+    ? item.showtimes
+    : Array.isArray(item?.schedule)
+      ? item.schedule
+      : [];
   const now = new Date();
 
   return schedule.flatMap((entry: any): ShowTimeEntry[] => {
     const startTime = entry?.startTime || entry?.start || entry?.time;
     const start = parseShowTime(startTime);
     if (!start) return [];
+
     return [{
       startTime,
       endTime: entry?.endTime || entry?.end,
@@ -222,27 +230,65 @@ const CHARACTER_EXCLUDE_KEYWORDS = [
   "tiana's bayou adventure",
 ];
 
+// Fail closed if non-Disney Orlando content is ever returned for a WDW park.
+const NON_DISNEY_ORLANDO_KEYWORDS = [
+  "classic comic book characters",
+  "dreamworks character zone",
+  "frog choir",
+  "harry potter",
+  "hogwarts",
+  "jurassic",
+  "mario",
+  "luigi",
+  "marvel super heroes",
+  "meet spider-man",
+  "minion",
+  "nintendo",
+  "super nintendo world",
+  "transformers",
+  "universal studios",
+  "wizarding world",
+];
+
+function itemIdentity(item: any) {
+  return `${item?.name || item?.entityName || ""} ${item?.land || item?.area || ""}`;
+}
+
+function isAllowedWdwItem(item: any) {
+  return !includesAny(itemIdentity(item), NON_DISNEY_ORLANDO_KEYWORDS);
+}
+
 function isCharacterMeetEntity(item: any) {
-  const name = String(item?.name || item?.entityName || "");
+  if (!isAllowedWdwItem(item)) return false;
+
   const entityType = String(item?.entityType || item?.type || "").toUpperCase();
-  const combined = `${name} ${item?.land || ""} ${item?.area || ""}`;
+  const combined = itemIdentity(item);
 
   if (includesAny(combined, CHARACTER_EXCLUDE_KEYWORDS)) return false;
   if (entityType.includes("MEET") || entityType.includes("CHARACTER")) return true;
   return includesAny(combined, CHARACTER_INCLUDE_KEYWORDS);
 }
 
+function sanitizeShowTimesResult(park: string, data: ShowTimesResult): ShowTimesResult {
+  return {
+    ...data,
+    park,
+    shows: (data.shows || []).filter((show) => isAllowedWdwItem(show)),
+  };
+}
+
 function normalizeExternalShowTimes(park: string, data: any, source: string): ShowTimesResult {
   const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
 
   const shows = liveData.flatMap((item: any): ParkShow[] => {
+    if (!isAllowedWdwItem(item)) return [];
+
     const times = scheduleTimesFromItem(item);
     const entityType = String(item?.entityType || item?.type || "").toUpperCase();
     if (!times.length && !["SHOW", "ENTERTAINMENT", "PARADE"].includes(entityType)) return [];
-
     if (!times.length) return [];
-    const upcoming = times.filter((time) => !time.isPast);
 
+    const upcoming = times.filter((time) => !time.isPast);
     return [{
       id: item?.id || item?.entityId,
       name: item?.name || item?.entityName || "Show",
@@ -253,7 +299,9 @@ function normalizeExternalShowTimes(park: string, data: any, source: string): Sh
       times: times.slice(0, 12),
       upcomingCount: upcoming.length,
     }];
-  }).sort((a: ParkShow, b: ParkShow) => String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) || a.name.localeCompare(b.name));
+  }).sort((a: ParkShow, b: ParkShow) =>
+    String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) ||
+    a.name.localeCompare(b.name));
 
   return {
     park,
@@ -282,7 +330,9 @@ function normalizeExternalCharacterMeets(park: string, data: any, source: string
       times: times.slice(0, 12),
       upcomingCount: upcoming.length,
     }];
-  }).sort((a: CharacterMeet, b: CharacterMeet) => String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) || a.name.localeCompare(b.name));
+  }).sort((a: CharacterMeet, b: CharacterMeet) =>
+    String(a.nextStartTime || "9999").localeCompare(String(b.nextStartTime || "9999")) ||
+    a.name.localeCompare(b.name));
 
   return {
     park,
@@ -292,21 +342,10 @@ function normalizeExternalCharacterMeets(park: string, data: any, source: string
   };
 }
 
-export type WeatherAdvisoryResult = {
-  mode?: "normal" | "hot" | "storm";
-  advisoryActive?: boolean;
-  advisoryType?: string;
-  headline?: string;
-  expiresAt?: string;
-  source?: string;
-};
-
 export async function checkBackendStatus(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
-  const paths = ["/", "/health", "/api/health", "/status"];
-
-  for (const path of paths) {
+  for (const path of ["/", "/health", "/api/health", "/status"]) {
     const result = await tryFetch(path);
     if (result.status && result.status >= 200 && result.status < 500) return result;
   }
@@ -321,9 +360,7 @@ export async function checkBackendStatus(): Promise<ApiResult> {
 export async function refreshRideData(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
-  const paths = ["/api/refresh-rides", "/api/collect", "/collect", "/refresh"];
-
-  for (const path of paths) {
+  for (const path of ["/api/refresh-rides", "/api/collect", "/collect", "/refresh"]) {
     const result = await tryFetch(path);
     if (result.ok) return result;
   }
@@ -338,13 +375,9 @@ export async function refreshRideData(): Promise<ApiResult> {
 export async function fetchRideData(): Promise<ApiResult<any[]>> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
-  // First collect the newest wait times into Railway/Postgres, then read latest rows.
-  // Without this, the UI only re-read old stored wait times and looked stuck.
   await refreshRideData();
 
-  const paths = ["/api/rides", "/rides", "/api/wait-times", "/wait-times"];
-
-  for (const path of paths) {
+  for (const path of ["/api/rides", "/rides", "/api/wait-times", "/wait-times"]) {
     const result = await tryFetch<any[]>(path);
     if (result.ok && Array.isArray(result.data)) {
       return {
@@ -363,14 +396,18 @@ export async function fetchRideData(): Promise<ApiResult<any[]>> {
 
 export async function fetchPlanningInsights(park: string): Promise<ApiResult<any>> {
   if (!API_BASE_URL) return missingApiBaseResult();
-
   return tryFetch<any>(`/api/planning-insights?park=${encodeURIComponent(park)}`);
 }
 
 export async function fetchShowTimes(park: string): Promise<ApiResult<ShowTimesResult>> {
   if (API_BASE_URL) {
     const backendResult = await tryFetch<ShowTimesResult>(`/api/show-times?park=${encodeURIComponent(park)}`);
-    if (backendResult.ok && backendResult.data && Array.isArray(backendResult.data.shows)) return backendResult;
+    if (backendResult.ok && backendResult.data && Array.isArray(backendResult.data.shows)) {
+      return {
+        ...backendResult,
+        data: sanitizeShowTimesResult(park, backendResult.data),
+      };
+    }
   }
 
   const parkId = THEMEPARKS_WIKI_PARK_IDS[park];
@@ -419,9 +456,7 @@ export async function fetchCharacterMeets(park: string): Promise<ApiResult<Chara
 export async function fetchWeatherAdvisory(): Promise<ApiResult<WeatherAdvisoryResult>> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
-  const paths = ["/api/weather-advisory", "/api/weather/alerts", "/weather-advisory"];
-
-  for (const path of paths) {
+  for (const path of ["/api/weather-advisory", "/api/weather/alerts", "/weather-advisory"]) {
     const result = await tryFetch<WeatherAdvisoryResult>(path);
     if (result.ok && result.data && typeof result.data === "object") return result;
   }

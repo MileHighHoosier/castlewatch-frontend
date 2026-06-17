@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchShowTimes, type ParkShow, type ShowTimesResult } from "../lib/api";
+import CurrentParkContext from "./CurrentParkContext";
 
 const STYLE_ID = "castlewatch-showtimes-activity-style";
 const CARD_CLASS = "castlewatch-showtimes-card";
@@ -265,5 +266,5 @@ export default function ShowTimesActivityLayer({ selectedPark }: { selectedPark:
     };
   }, [data, loading, error]);
 
-  return null;
+  return <CurrentParkContext selectedPark={selectedPark} />;
 }

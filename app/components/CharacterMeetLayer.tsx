@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchRideData } from "../lib/api";
+import { fetchCharacterMeets, type CharacterMeet } from "../lib/api";
 
 const STYLE_ID = "castlewatch-character-layer-style";
 const CHARACTERS_TAB_CLASS = "castlewatch-characters-tab";
@@ -45,16 +45,6 @@ const CHARACTER_FALSE_POSITIVES = [
   "winnie the pooh",
 ];
 
-type CharacterItem = {
-  id?: string | number;
-  name: string;
-  park: string;
-  land: string;
-  wait: number;
-  isOpen?: boolean;
-  updated?: string;
-};
-
 function ensureCharacterStyle() {
   if (document.getElementById(STYLE_ID)) return;
 
@@ -77,9 +67,6 @@ function ensureCharacterStyle() {
       border-radius: 16px;
       padding: 12px;
       background: rgba(255, 255, 255, 0.04);
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
     }
 
     .castlewatch-character-card strong {
@@ -89,14 +76,16 @@ function ensureCharacterStyle() {
       margin-bottom: 6px;
     }
 
-    .castlewatch-character-badges {
+    .castlewatch-character-badges,
+    .castlewatch-character-time-row {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin: 6px 0;
+      margin: 7px 0;
     }
 
-    .castlewatch-character-badge {
+    .castlewatch-character-badge,
+    .castlewatch-character-time-pill {
       border: 1px solid rgba(143, 202, 255, 0.42);
       border-radius: 999px;
       padding: 4px 8px;
@@ -107,38 +96,16 @@ function ensureCharacterStyle() {
       white-space: nowrap;
     }
 
-    .castlewatch-character-pill {
-      align-self: flex-start;
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 999px;
-      padding: 7px 10px;
-      font-size: 13px;
-      font-weight: 900;
-      background: rgba(255,255,255,0.08);
-      white-space: nowrap;
+    .castlewatch-character-time-pill {
+      background: rgba(255, 216, 102, 0.10);
+      border-color: rgba(255, 216, 102, 0.42);
     }
 
     .castlewatch-character-hidden {
       display: none !important;
     }
-
-    @media (max-width: 420px) {
-      .castlewatch-character-card {
-        flex-direction: column;
-      }
-    }
   `;
   document.head.appendChild(style);
-}
-
-function normalizeParkName(value?: string) {
-  if (!value) return "Unknown Park";
-  const normalized = value.trim().toLowerCase();
-  if (normalized.includes("magic kingdom")) return "Magic Kingdom";
-  if (normalized.includes("epcot")) return "Epcot";
-  if (normalized.includes("hollywood")) return "Hollywood Studios";
-  if (normalized.includes("animal kingdom")) return "Animal Kingdom";
-  return value.trim() || "Unknown Park";
 }
 
 function normalizedText(value: string) {
@@ -160,15 +127,11 @@ function isCharacterText(value: string) {
   return includesAny(normalized, TRUE_CHARACTER_EXPERIENCE_KEYWORDS) || includesAny(normalized, CHARACTER_ACTIVITY_KEYWORDS);
 }
 
-function isCharacterItem(item: CharacterItem) {
-  return isCharacterText(`${item.name} ${item.land}`);
-}
-
-function formatDateTime(value?: string) {
-  if (!value) return "Unknown";
+function formatShowTime(value?: string) {
+  if (!value) return "Time TBD";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function tabList() {
@@ -197,7 +160,14 @@ function showCharactersPanel() {
   document.querySelector(`.${CHARACTERS_PANEL_CLASS}`)?.classList.remove("castlewatch-character-hidden");
 }
 
-function createCharactersPanel(characters: CharacterItem[], selectedPark: string) {
+function createBadge(text: string) {
+  const badge = document.createElement("span");
+  badge.className = "castlewatch-character-badge";
+  badge.textContent = text;
+  return badge;
+}
+
+function createCharactersPanel(characters: CharacterMeet[], selectedPark: string, error: string | null) {
   const panel = document.createElement("div");
   panel.className = `compact-panel ${CHARACTERS_PANEL_CLASS}`;
 
@@ -207,13 +177,21 @@ function createCharactersPanel(characters: CharacterItem[], selectedPark: string
 
   const intro = document.createElement("p");
   intro.className = "muted";
-  intro.textContent = "Character greetings, princess moments, and meet-style experiences separated from general activities.";
+  intro.textContent = "True meet-and-greet locations separated from rides, shows, landmarks, and general activities.";
   panel.appendChild(intro);
+
+  if (error) {
+    const unavailable = document.createElement("p");
+    unavailable.className = "muted";
+    unavailable.textContent = "Character feed is not available yet. Check the official app for exact character appearance times.";
+    panel.appendChild(unavailable);
+    return panel;
+  }
 
   if (!characters.length) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = `No true meet-and-greet entries found for ${selectedPark} yet. Character-themed rides and landmarks are intentionally excluded. Check the official app for exact character appearance times.`;
+    empty.textContent = `No true meet-and-greet entries found for ${selectedPark} right now. Character-themed rides and landmarks are intentionally excluded.`;
     panel.appendChild(empty);
     return panel;
   }
@@ -225,36 +203,41 @@ function createCharactersPanel(characters: CharacterItem[], selectedPark: string
     const card = document.createElement("div");
     card.className = "castlewatch-character-card";
 
-    const body = document.createElement("div");
     const name = document.createElement("strong");
     name.textContent = character.name;
-    body.appendChild(name);
+    card.appendChild(name);
 
     const badges = document.createElement("div");
     badges.className = "castlewatch-character-badges";
-
-    const badgeTexts = ["Character", character.wait >= 0 && character.wait <= 15 ? "Low wait" : null, character.isOpen === false ? "Check later" : "Check timing"]
-      .filter(Boolean) as string[];
-
-    badgeTexts.forEach((text) => {
-      const badge = document.createElement("span");
-      badge.className = "castlewatch-character-badge";
-      badge.textContent = text;
-      badges.appendChild(badge);
-    });
-    body.appendChild(badges);
+    badges.appendChild(createBadge("Meet-and-greet"));
+    if ((character.upcomingCount || 0) > 0) badges.appendChild(createBadge(`${character.upcomingCount} upcoming`));
+    else badges.appendChild(createBadge("Verify timing"));
+    card.appendChild(badges);
 
     const detail = document.createElement("p");
     detail.className = "muted";
-    detail.textContent = `${character.land} · ${character.isOpen === false ? "Closed" : "Available/verify"} · ${formatDateTime(character.updated)}`;
-    body.appendChild(detail);
+    detail.textContent = `${character.land || "Character greeting"} · ${character.status || "Check official app"}`;
+    card.appendChild(detail);
 
-    const pill = document.createElement("div");
-    pill.className = "castlewatch-character-pill";
-    pill.textContent = character.wait >= 0 ? `${character.wait} min` : "Character";
+    const upcomingTimes = (character.times || []).filter((time) => !time.isPast).slice(0, 5);
+    const timeRow = document.createElement("div");
+    timeRow.className = "castlewatch-character-time-row";
 
-    card.appendChild(body);
-    card.appendChild(pill);
+    if (upcomingTimes.length) {
+      upcomingTimes.forEach((time) => {
+        const pill = document.createElement("span");
+        pill.className = "castlewatch-character-time-pill";
+        pill.textContent = formatShowTime(time.startTime);
+        timeRow.appendChild(pill);
+      });
+    } else {
+      const pill = document.createElement("span");
+      pill.className = "castlewatch-character-time-pill";
+      pill.textContent = "Check app";
+      timeRow.appendChild(pill);
+    }
+
+    card.appendChild(timeRow);
     list.appendChild(card);
   });
 
@@ -283,7 +266,7 @@ function activityPanel() {
   });
 }
 
-function renderCharactersLayer(characters: CharacterItem[], selectedPark: string, active: boolean, setActive: (value: boolean) => void) {
+function renderCharactersLayer(characters: CharacterMeet[], selectedPark: string, active: boolean, error: string | null, setActive: (value: boolean) => void) {
   ensureCharacterStyle();
 
   const tabs = tabList();
@@ -307,7 +290,7 @@ function renderCharactersLayer(characters: CharacterItem[], selectedPark: string
   }
 
   document.querySelector(`.${CHARACTERS_PANEL_CLASS}`)?.remove();
-  const panel = createCharactersPanel(characters, selectedPark);
+  const panel = createCharactersPanel(characters, selectedPark, error);
   const center = commandCenter();
   const source = center?.querySelector(".compact-source");
   if (source) source.insertAdjacentElement("beforebegin", panel);
@@ -326,31 +309,24 @@ function renderCharactersLayer(characters: CharacterItem[], selectedPark: string
 }
 
 export default function CharacterMeetLayer({ selectedPark }: { selectedPark: string }) {
-  const [characters, setCharacters] = useState<CharacterItem[]>([]);
+  const [characters, setCharacters] = useState<CharacterMeet[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadCharacters() {
-      const result = await fetchRideData();
+      const result = await fetchCharacterMeets(selectedPark);
       if (cancelled) return;
 
-      const rows = Array.isArray(result.data) ? result.data : [];
-      const items: CharacterItem[] = rows.map((row: any, index: number) => ({
-        id: row.id || `${row.name || row.ride_name || row.attraction || "character"}-${index}`,
-        name: row.name || row.ride_name || row.attraction || `Character ${index + 1}`,
-        park: normalizeParkName(row.park),
-        land: row.land || "Character location",
-        wait: typeof row.wait_time === "number" ? row.wait_time : typeof row.wait === "number" ? row.wait : -1,
-        isOpen: row.is_open,
-        updated: row.created_at,
-      }));
-
-      setCharacters(items
-        .filter((item) => item.park === selectedPark)
-        .filter(isCharacterItem)
-        .sort((a, b) => (a.isOpen === false ? 1 : 0) - (b.isOpen === false ? 1 : 0) || Math.max(a.wait, 0) - Math.max(b.wait, 0) || a.name.localeCompare(b.name)));
+      if (result.ok && result.data) {
+        setCharacters(result.data.characters || []);
+        setError(null);
+      } else {
+        setCharacters([]);
+        setError(result.error || "Character feed unavailable");
+      }
     }
 
     setActive(false);
@@ -374,7 +350,7 @@ export default function CharacterMeetLayer({ selectedPark }: { selectedPark: str
       }
 
       if (renderTimeout) window.clearTimeout(renderTimeout);
-      renderTimeout = window.setTimeout(() => renderCharactersLayer(characters, selectedPark, active, setActive), 120);
+      renderTimeout = window.setTimeout(() => renderCharactersLayer(characters, selectedPark, active, error, setActive), 120);
     }
 
     scheduleRender();
@@ -388,7 +364,7 @@ export default function CharacterMeetLayer({ selectedPark }: { selectedPark: str
       document.querySelector(`.${CHARACTERS_PANEL_CLASS}`)?.remove();
       document.querySelector(`.${CHARACTERS_TAB_CLASS}`)?.remove();
     };
-  }, [active, characters, selectedPark]);
+  }, [active, characters, error, selectedPark]);
 
   return null;
 }

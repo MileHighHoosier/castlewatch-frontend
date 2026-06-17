@@ -305,6 +305,7 @@ function renderCharactersLayer(characters: CharacterMeet[], selectedPark: string
   } else {
     tab.classList.remove("section-tab-active");
     panel.classList.add("castlewatch-character-hidden");
+    window.requestAnimationFrame(showOriginalPanel);
   }
 }
 
@@ -346,7 +347,6 @@ export default function CharacterMeetLayer({ selectedPark }: { selectedPark: str
 
       if (active && target?.closest?.(".section-tab") && !target.closest(`.${CHARACTERS_TAB_CLASS}`)) {
         setActive(false);
-        showOriginalPanel();
       }
 
       if (renderTimeout) window.clearTimeout(renderTimeout);
@@ -361,10 +361,16 @@ export default function CharacterMeetLayer({ selectedPark }: { selectedPark: str
       if (renderTimeout) window.clearTimeout(renderTimeout);
       document.removeEventListener("click", scheduleRender);
       document.removeEventListener("touchend", scheduleRender);
+    };
+  }, [active, characters, error, selectedPark]);
+
+  useEffect(() => {
+    return () => {
+      showOriginalPanel();
       document.querySelector(`.${CHARACTERS_PANEL_CLASS}`)?.remove();
       document.querySelector(`.${CHARACTERS_TAB_CLASS}`)?.remove();
     };
-  }, [active, characters, error, selectedPark]);
+  }, []);
 
   return null;
 }

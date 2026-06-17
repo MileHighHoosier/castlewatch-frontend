@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { fetchShowTimes, type ParkShow } from "../lib/api";
 import { getActiveWeatherRiskMode } from "../lib/weatherRisk";
 
@@ -41,6 +42,18 @@ export default function CurrentParkContext({ selectedPark }: { selectedPark: str
   const [draft, setDraft] = useState("");
   const [shows, setShows] = useState<ParkShow[]>([]);
   const [loadedPark, setLoadedPark] = useState("");
+  const [mount, setMount] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const grid = document.querySelector<HTMLElement>(".grid");
+    if (!grid) return;
+    const node = document.createElement("div");
+    node.className = "current-context-mount";
+    node.style.display = "contents";
+    grid.insertBefore(node, grid.firstChild);
+    setMount(node);
+    return () => { node.remove(); setMount(null); };
+  }, []);
 
   useEffect(() => {
     const saved = readAll()[selectedPark] || EMPTY;
@@ -96,7 +109,9 @@ export default function CurrentParkContext({ selectedPark }: { selectedPark: str
   function setStatus(status: Status) { setContext((old) => ({ ...old, status, startedAt: old.startedAt || new Date().toISOString() })); }
   function clear() { setContext((old) => ({ ...old, activity: "", status: "idle", startedAt: undefined })); setDraft(""); }
 
-  return (
+  if (!mount) return null;
+
+  return createPortal(
     <section className="card current-context-card">
       <style>{`
         .current-context-card{display:grid;gap:12px}.current-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -119,6 +134,7 @@ export default function CurrentParkContext({ selectedPark }: { selectedPark: str
       </div>
       <div className="current-context-box"><strong>{statusText(context.status)}</strong><p className="muted">{active ? `${context.activity} · started ${clock(context.startedAt)}${context.land ? ` · ${context.land}` : " · area not set"}` : context.land ? `Area confirmed: ${context.land}. No active activity.` : "Set your area when you want location-aware guidance."}</p></div>
       <div className="current-context-box current-context-show"><strong>Next show opportunity</strong><p className="muted">{showMessage}</p></div>
-    </section>
+    </section>,
+    mount,
   );
 }

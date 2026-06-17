@@ -6,6 +6,7 @@ import { fetchCharacterMeets, type CharacterMeet } from "../lib/api";
 const STYLE_ID = "castlewatch-character-layer-style";
 const CHARACTERS_TAB_CLASS = "castlewatch-characters-tab";
 const CHARACTERS_PANEL_CLASS = "castlewatch-characters-panel";
+const CHARACTERS_ACTIVE_CLASS = "castlewatch-characters-active";
 
 const TRUE_CHARACTER_EXPERIENCE_KEYWORDS = [
   "adventurers outpost",
@@ -53,6 +54,12 @@ function ensureCharacterStyle() {
   style.textContent = `
     .${CHARACTERS_PANEL_CLASS} {
       margin-top: 0;
+    }
+
+    .section-tabs.${CHARACTERS_ACTIVE_CLASS} .section-tab.section-tab-active:not(.${CHARACTERS_TAB_CLASS}) {
+      border-color: var(--line) !important;
+      background: rgba(255, 255, 255, 0.05) !important;
+      color: var(--muted) !important;
     }
 
     .castlewatch-character-list {
@@ -146,11 +153,8 @@ function commandCenter() {
   return document.querySelector<HTMLElement>(".command-center");
 }
 
-function setExistingTabsInactive() {
-  document.querySelectorAll<HTMLElement>(".section-tab").forEach((tab) => tab.classList.remove("section-tab-active"));
-}
-
 function showOriginalPanel() {
+  tabList()?.classList.remove(CHARACTERS_ACTIVE_CLASS);
   document.querySelector(`.${CHARACTERS_PANEL_CLASS}`)?.classList.add("castlewatch-character-hidden");
   activeContentPanel()?.classList.remove("castlewatch-character-hidden");
 }
@@ -299,10 +303,11 @@ function renderCharactersLayer(characters: CharacterMeet[], selectedPark: string
   removeCharacterCardsFromActivities();
 
   if (active) {
-    setExistingTabsInactive();
+    tabs.classList.add(CHARACTERS_ACTIVE_CLASS);
     tab.classList.add("section-tab-active");
     showCharactersPanel();
   } else {
+    tabs.classList.remove(CHARACTERS_ACTIVE_CLASS);
     tab.classList.remove("section-tab-active");
     panel.classList.add("castlewatch-character-hidden");
     window.requestAnimationFrame(showOriginalPanel);
@@ -330,6 +335,7 @@ export default function CharacterMeetLayer({ selectedPark }: { selectedPark: str
       }
     }
 
+    showOriginalPanel();
     setActive(false);
     loadCharacters();
 

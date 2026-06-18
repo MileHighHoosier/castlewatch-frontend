@@ -7,9 +7,6 @@ const STYLE_ID = "castlewatch-day-trend-style";
 const CARD_CLASS = "castlewatch-day-trend-card";
 
 type RideTrend = {
-  name: string;
-  current_wait?: number;
-  typical_wait?: number;
   opportunity_score?: number;
   pressure_score?: number;
 };
@@ -26,7 +23,6 @@ type TrendView = {
   detail: string;
   tone: "quiet" | "normal" | "busy" | "learning";
   confidence: string;
-  tomorrowWatch: string[];
 };
 
 function ensureStyle() {
@@ -39,7 +35,7 @@ function ensureStyle() {
       border: 1px solid rgba(142, 197, 255, 0.38);
       border-radius: 18px;
       padding: 12px;
-      margin: 10px 0 14px;
+      margin: 14px 0 8px;
       background: rgba(142, 197, 255, 0.08);
     }
 
@@ -79,13 +75,6 @@ function ensureStyle() {
       border-color: rgba(255, 204, 102, 0.45);
       background: rgba(255, 204, 102, 0.08);
     }
-
-    .castlewatch-day-trend-watch {
-      margin-top: 8px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.4;
-    }
   `;
   document.head.appendChild(style);
 }
@@ -99,18 +88,12 @@ function buildTrend(insights: PlanningInsights | null): TrendView {
   const rides = Number(insights?.rides_analyzed || 0);
   const weekday = new Date().toLocaleDateString([], { weekday: "long" });
 
-  const tomorrowWatch = (insights?.unusually_high || [])
-    .filter((ride) => Number(ride.pressure_score || 0) > 0)
-    .slice(0, 3)
-    .map((ride) => ride.name);
-
   if (samples < 40 || rides < 5) {
     return {
       label: `${weekday} trend is still learning`,
       detail: "CastleWatch needs more saved wait-time samples before calling today busier or quieter than normal.",
       tone: "learning",
       confidence: "Low confidence",
-      tomorrowWatch,
     };
   }
 
@@ -125,7 +108,6 @@ function buildTrend(insights: PlanningInsights | null): TrendView {
       detail: "More tracked attractions are running below their historical baseline than above it.",
       tone: "quiet",
       confidence,
-      tomorrowWatch,
     };
   }
 
@@ -135,7 +117,6 @@ function buildTrend(insights: PlanningInsights | null): TrendView {
       detail: "More tracked attractions are running above their historical baseline than below it.",
       tone: "busy",
       confidence,
-      tomorrowWatch,
     };
   }
 
@@ -144,7 +125,6 @@ function buildTrend(insights: PlanningInsights | null): TrendView {
     detail: "Current waits are mixed and do not show a strong park-wide difference from the historical baseline.",
     tone: "normal",
     confidence,
-    tomorrowWatch,
   };
 }
 
@@ -182,13 +162,6 @@ function createCard(view: TrendView) {
   detail.textContent = view.detail;
   card.appendChild(detail);
 
-  if (view.tomorrowWatch.length) {
-    const watch = document.createElement("div");
-    watch.className = "castlewatch-day-trend-watch";
-    watch.innerHTML = `<strong>Recheck tomorrow:</strong> ${view.tomorrowWatch.join(", ")}. They are above their normal pattern today; this is a watch list, not a forecast.`;
-    card.appendChild(watch);
-  }
-
   return card;
 }
 
@@ -202,11 +175,11 @@ function renderCard(view: TrendView) {
     return;
   }
 
+  existing?.remove();
   const next = createCard(view);
-  const moveCard = panel.querySelector(".next-move-card");
-  if (existing) existing.replaceWith(next);
-  else if (moveCard) moveCard.insertAdjacentElement("beforebegin", next);
-  else panel.prepend(next);
+  const source = panel.querySelector(".compact-source");
+  if (source) source.insertAdjacentElement("beforebegin", next);
+  else panel.appendChild(next);
 }
 
 export default function DayTrendLayer({ selectedPark }: { selectedPark: string }) {

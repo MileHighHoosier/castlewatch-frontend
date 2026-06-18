@@ -32,11 +32,11 @@ function ensureStyle() {
   style.id = STYLE_ID;
   style.textContent = `
     .${CARD_CLASS} {
-      border: 1px solid rgba(142, 197, 255, 0.38);
+      border: 1px solid rgba(56, 217, 150, 0.42);
       border-radius: 18px;
       padding: 12px;
       margin: 14px 0 8px;
-      background: rgba(142, 197, 255, 0.08);
+      background: rgba(56, 217, 150, 0.08);
     }
 
     .${CARD_CLASS} h3,
@@ -58,22 +58,13 @@ function ensureStyle() {
     }
 
     .castlewatch-day-trend-pill {
-      border: 1px solid rgba(142, 197, 255, 0.34);
+      border: 1px solid rgba(56, 217, 150, 0.38);
       border-radius: 999px;
       padding: 4px 8px;
       font-size: 11px;
       font-weight: 900;
       white-space: nowrap;
-    }
-
-    .castlewatch-day-trend-card[data-tone="quiet"] {
-      border-color: rgba(56, 217, 150, 0.42);
-      background: rgba(56, 217, 150, 0.08);
-    }
-
-    .castlewatch-day-trend-card[data-tone="busy"] {
-      border-color: rgba(255, 204, 102, 0.45);
-      background: rgba(255, 204, 102, 0.08);
+      background: rgba(56, 217, 150, 0.06);
     }
   `;
   document.head.appendChild(style);

@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchShowTimes, type ParkShow, type ShowTimesResult } from "../lib/api";
+import {
+  fetchShowTimes,
+  markNextRideFetchAsExplicitRefresh,
+  type ParkShow,
+  type ShowTimesResult,
+} from "../lib/api";
 import DayTrendLayer from "./DayTrendLayer";
 
 const STYLE_ID = "castlewatch-showtimes-activity-style";
@@ -219,6 +224,19 @@ export default function ShowTimesActivityLayer({ selectedPark }: { selectedPark:
   const [data, setData] = useState<ShowTimesResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function markExplicitRefresh(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>(".command-header .button");
+      if (button?.textContent?.trim().toLowerCase() === "refresh") {
+        markNextRideFetchAsExplicitRefresh();
+      }
+    }
+
+    document.addEventListener("click", markExplicitRefresh, true);
+    return () => document.removeEventListener("click", markExplicitRefresh, true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

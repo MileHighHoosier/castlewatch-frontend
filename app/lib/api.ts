@@ -18,8 +18,16 @@ export const API_BASE_URL = rawApiBaseUrl
   .replace(/\/$/, "");
 
 const PLANNING_TIMEOUT_MS = 10_000;
+const RIDE_READ_TIMEOUT_MS = 8_000;
+const RIDE_REFRESH_TIMEOUT_MS = 12_000;
+const BACKGROUND_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
 let latestPlanningPark = "";
 const latestPlanningSuccess = new Map<string, ApiResult<any>>();
+let nextRideFetchIsExplicitRefresh = false;
+let lastBackgroundRideRefreshAt = 0;
+let backgroundRideRefreshPromise: Promise<ApiResult> | null = null;
+let latestRideSuccess: ApiResult<any[]> | null = null;
 
 // ThemeParks.wiki park entity IDs for the four Walt Disney World theme parks.
 const THEMEPARKS_WIKI_PARK_IDS: Record<string, string> = {
@@ -133,7 +141,7 @@ async function tryFetchWithTimeout<T>(path: string, timeoutMs: number): Promise<
       ok: false,
       url,
       error: timedOut
-        ? `Planning request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+        ? `Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
         : error instanceof Error
           ? error.message
           : "Unknown fetch error",
@@ -368,6 +376,43 @@ function normalizeExternalCharacterMeets(park: string, data: any, source: string
   };
 }
 
+async function readExistingRideData(): Promise<ApiResult<any[]>> {
+  for (const path of ["/api/rides", "/rides", "/api/wait-times", "/wait-times"]) {
+    const result = await tryFetchWithTimeout<any[]>(path, RIDE_READ_TIMEOUT_MS);
+    if (result.ok && Array.isArray(result.data)) {
+      const success = {
+        ...result,
+        data: normalizeRideRows(result.data),
+      };
+      latestRideSuccess = success;
+      return success;
+    }
+  }
+
+  return latestRideSuccess || {
+    ok: false,
+    url: API_BASE_URL,
+    error: "Backend connected, but no ride-data endpoint returned an array yet.",
+  };
+}
+
+function scheduleBackgroundRideRefresh() {
+  const now = Date.now();
+  if (backgroundRideRefreshPromise) return;
+  if (now - lastBackgroundRideRefreshAt < BACKGROUND_REFRESH_INTERVAL_MS) return;
+
+  lastBackgroundRideRefreshAt = now;
+  backgroundRideRefreshPromise = refreshRideData()
+    .catch(() => ({ ok: false, url: API_BASE_URL, error: "Background refresh failed." }))
+    .finally(() => {
+      backgroundRideRefreshPromise = null;
+    });
+}
+
+export function markNextRideFetchAsExplicitRefresh() {
+  nextRideFetchIsExplicitRefresh = true;
+}
+
 export async function checkBackendStatus(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
@@ -387,37 +432,31 @@ export async function refreshRideData(): Promise<ApiResult> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
   for (const path of ["/api/refresh-rides", "/api/collect", "/collect", "/refresh"]) {
-    const result = await tryFetch(path);
+    const result = await tryFetchWithTimeout(path, RIDE_REFRESH_TIMEOUT_MS);
     if (result.ok) return result;
   }
 
   return {
     ok: false,
     url: API_BASE_URL,
-    error: "Backend connected, but no refresh endpoint responded successfully.",
+    error: "Ride refresh did not finish in time. Existing ride data is still available.",
   };
 }
 
 export async function fetchRideData(): Promise<ApiResult<any[]>> {
   if (!API_BASE_URL) return missingApiBaseResult();
 
-  await refreshRideData();
+  const explicitRefresh = nextRideFetchIsExplicitRefresh;
+  nextRideFetchIsExplicitRefresh = false;
 
-  for (const path of ["/api/rides", "/rides", "/api/wait-times", "/wait-times"]) {
-    const result = await tryFetch<any[]>(path);
-    if (result.ok && Array.isArray(result.data)) {
-      return {
-        ...result,
-        data: normalizeRideRows(result.data),
-      };
-    }
+  if (explicitRefresh) {
+    await refreshRideData();
+    return readExistingRideData();
   }
 
-  return {
-    ok: false,
-    url: API_BASE_URL,
-    error: "Backend connected, but no ride-data endpoint returned an array yet.",
-  };
+  const existing = await readExistingRideData();
+  scheduleBackgroundRideRefresh();
+  return existing;
 }
 
 export async function fetchPlanningInsights(park: string): Promise<ApiResult<any>> {

@@ -17,6 +17,10 @@ export const API_BASE_URL = rawApiBaseUrl
   .trim()
   .replace(/\/$/, "");
 
+const PLANNING_TIMEOUT_MS = 10_000;
+let latestPlanningPark = "";
+const latestPlanningSuccess = new Map<string, ApiResult<any>>();
+
 // ThemeParks.wiki park entity IDs for the four Walt Disney World theme parks.
 const THEMEPARKS_WIKI_PARK_IDS: Record<string, string> = {
   "Magic Kingdom": "75ea578a-adc8-4116-a54d-dccb60765ef9",
@@ -79,6 +83,20 @@ export type WeatherAdvisoryResult = {
   source?: string;
 };
 
+async function parseResponse<T>(response: Response, url: string): Promise<ApiResult<T>> {
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+
+  return {
+    ok: response.ok,
+    url,
+    status: response.status,
+    data: data as T,
+  };
+}
+
 async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${path}`;
 
@@ -87,17 +105,7 @@ async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json")
-      ? await response.json()
-      : await response.text();
-
-    return {
-      ok: response.ok,
-      url,
-      status: response.status,
-      data: data as T,
-    };
+    return await parseResponse<T>(response, url);
   } catch (error) {
     return {
       ok: false,
@@ -107,23 +115,41 @@ async function tryFetch<T>(path: string): Promise<ApiResult<T>> {
   }
 }
 
+async function tryFetchWithTimeout<T>(path: string, timeoutMs: number): Promise<ApiResult<T>> {
+  const url = `${API_BASE_URL}${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    return await parseResponse<T>(response, url);
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    return {
+      ok: false,
+      url,
+      error: timedOut
+        ? `Planning request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+        : error instanceof Error
+          ? error.message
+          : "Unknown fetch error",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function tryFetchAbsolute<T>(url: string): Promise<ApiResult<T>> {
   try {
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json")
-      ? await response.json()
-      : await response.text();
-
-    return {
-      ok: response.ok,
-      url,
-      status: response.status,
-      data: data as T,
-    };
+    return await parseResponse<T>(response, url);
   } catch (error) {
     return {
       ok: false,
@@ -396,7 +422,39 @@ export async function fetchRideData(): Promise<ApiResult<any[]>> {
 
 export async function fetchPlanningInsights(park: string): Promise<ApiResult<any>> {
   if (!API_BASE_URL) return missingApiBaseResult();
-  return tryFetch<any>(`/api/planning-insights?park=${encodeURIComponent(park)}`);
+
+  latestPlanningPark = park;
+  const result = await tryFetchWithTimeout<any>(
+    `/api/planning-insights?park=${encodeURIComponent(park)}`,
+    PLANNING_TIMEOUT_MS,
+  );
+
+  // An older park request is not allowed to replace the currently selected park.
+  if (park !== latestPlanningPark) {
+    return latestPlanningSuccess.get(latestPlanningPark) || {
+      ok: false,
+      url: result.url,
+      error: "Superseded by a newer park request.",
+    };
+  }
+
+  if (result.ok && result.data && typeof result.data === "object") {
+    const responsePark = String((result.data as Record<string, unknown>).park || "");
+    if (responsePark && responsePark !== park) {
+      return {
+        ok: false,
+        url: result.url,
+        status: result.status,
+        error: `Planning response park mismatch: requested ${park}, received ${responsePark}.`,
+      };
+    }
+
+    latestPlanningSuccess.set(park, result);
+    return result;
+  }
+
+  // Preserve a successful same-park result if a later refresh times out.
+  return latestPlanningSuccess.get(park) || result;
 }
 
 export async function fetchShowTimes(park: string): Promise<ApiResult<ShowTimesResult>> {

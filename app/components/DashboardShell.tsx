@@ -8,6 +8,7 @@ import EmergencyBreakMode from "./EmergencyBreakMode";
 import WeatherAwarePlanning from "./WeatherAwarePlanning";
 import ShowTimesActivityLayer from "./ShowTimesActivityLayer";
 import CharacterMeetLayer from "./CharacterMeetLayer";
+import TripWeekPlanner from "./TripWeekPlanner";
 
 const PARKS = [
   { name: "Magic Kingdom", icon: "🏰" },
@@ -16,9 +17,11 @@ const PARKS = [
   { name: "Animal Kingdom", icon: "🌳" },
 ];
 
+type ActiveSection = "park" | "transportation" | "tripWeek";
+
 export default function DashboardShell() {
   const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
-  const [activeSection, setActiveSection] = useState<"park" | "transportation">("park");
+  const [activeSection, setActiveSection] = useState<ActiveSection>("park");
 
   function choosePark(park: string) {
     setSelectedPark(park);
@@ -45,6 +48,15 @@ export default function DashboardShell() {
         ))}
 
         <button
+          className={`top-park-button ${activeSection === "tripWeek" ? "top-park-button-active" : ""}`}
+          onClick={() => setActiveSection("tripWeek")}
+          type="button"
+        >
+          <span className="top-park-icon" aria-hidden="true">🗓️</span>
+          <span className="top-park-label">Trip Week</span>
+        </button>
+
+        <button
           className={`top-park-button ${activeSection === "transportation" ? "top-park-button-active" : ""}`}
           onClick={() => setActiveSection("transportation")}
           type="button"
@@ -57,6 +69,8 @@ export default function DashboardShell() {
       <section className="grid">
         {activeSection === "transportation" ? (
           <TransportationPlanner />
+        ) : activeSection === "tripWeek" ? (
+          <TripWeekPlanner />
         ) : (
           <ParkCommandCenter selectedPark={selectedPark} onSelectPark={setSelectedPark} />
         )}

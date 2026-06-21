@@ -61,8 +61,8 @@ export default function DashboardShell() {
           onClick={() => setActiveSection("transportation")}
           type="button"
         >
-          <span className="top-park-icon" aria-hidden="true">🚍</span>
-          <span className="top-park-label">Transport</span>
+          <span className="top-park-icon" aria-hidden="true">🧭</span>
+          <span className="top-park-label">Getting There</span>
         </button>
       </nav>
 

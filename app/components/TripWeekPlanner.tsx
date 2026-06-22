@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "../lib/api";
+import TripProfileReservations from "./TripProfileReservations";
+import { TripReservation, loadReservations } from "../lib/tripProfile";
 import {
   DEFAULT_RESORT_PLAN,
   RESORT_OPTIONS,
@@ -62,7 +64,7 @@ function ensureStyle() {
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
-    .trip-week-planner { grid-column: 1 / -1; }
+    .trip-week-planner { grid-column:1 / -1; }
     .trip-week-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
     .trip-week-header h2, .trip-week-header p { margin-top:0; }
     .trip-week-status { border:1px solid rgba(255,184,76,.45); background:rgba(255,184,76,.08); border-radius:999px; padding:5px 10px; font-size:11px; font-weight:900; white-space:nowrap; }
@@ -81,6 +83,12 @@ function ensureStyle() {
     .trip-week-resort-editor { border:1px solid rgba(99,164,255,.24); border-radius:12px; padding:9px 10px; margin:10px 0; background:rgba(99,164,255,.04); }
     .trip-week-resort-editor span { display:block; color:var(--muted); font-size:10px; font-weight:900; margin-bottom:5px; }
     .trip-week-resort-editor select { width:100%; border:1px solid rgba(255,255,255,.15); border-radius:9px; padding:8px; background:rgba(0,0,0,.17); color:inherit; font:inherit; }
+    .trip-week-bookings { border:1px solid rgba(156,118,255,.28); background:rgba(156,118,255,.055); border-radius:12px; padding:9px 10px; margin:10px 0; }
+    .trip-week-bookings-title { font-size:11px; font-weight:900; margin-bottom:6px; }
+    .trip-week-booking { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:5px 0; border-top:1px solid rgba(255,255,255,.08); }
+    .trip-week-booking:first-of-type { border-top:0; }
+    .trip-week-booking-status { border:1px solid rgba(255,184,76,.35); border-radius:999px; padding:3px 6px; font-size:9px; font-weight:900; white-space:nowrap; }
+    .trip-week-booking-confirmed { border-color:rgba(56,217,150,.4); color:rgb(124,239,191); }
     .trip-week-forecast { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:10px; }
     .trip-week-metric { border:1px solid rgba(255,255,255,.10); border-radius:11px; padding:8px; background:rgba(0,0,0,.08); }
     .trip-week-metric span { display:block; color:var(--muted); font-size:10px; font-weight:900; margin-bottom:3px; }
@@ -144,15 +152,34 @@ function ForecastMetrics({ forecast }: { forecast?: DayForecast }) {
   );
 }
 
+function DayBookings({ reservations }: { reservations: TripReservation[] }) {
+  if (!reservations.length) return null;
+  return (
+    <div className="trip-week-bookings">
+      <div className="trip-week-bookings-title">{reservations.length} reservation{reservations.length === 1 ? "" : "s"}</div>
+      {reservations.map((reservation) => (
+        <div className="trip-week-booking" key={reservation.id}>
+          <div><strong>{reservation.time}</strong> · {reservation.title}</div>
+          <span className={`trip-week-booking-status ${reservation.status === "confirmed" ? "trip-week-booking-confirmed" : ""}`}>
+            {reservation.status === "confirmed" ? "Confirmed" : "Provisional"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TripWeekPlanner() {
   const [plan, setPlan] = useState<TripWeekPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resortPlan, setResortPlan] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
+  const [reservations, setReservations] = useState<TripReservation[]>([]);
 
   useEffect(() => {
     ensureStyle();
     setResortPlan(loadResortPlan());
+    setReservations(loadReservations());
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -202,6 +229,23 @@ export default function TripWeekPlanner() {
     [plan],
   );
 
+  const assignedParks = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    for (const day of plan?.days || []) {
+      if (day.type === "park" && day.park) mapping[day.date] = day.park;
+    }
+    return mapping;
+  }, [plan]);
+
+  const reservationsByDate = useMemo(() => {
+    const mapping: Record<string, TripReservation[]> = {};
+    for (const reservation of reservations) {
+      if (!mapping[reservation.date]) mapping[reservation.date] = [];
+      mapping[reservation.date].push(reservation);
+    }
+    return mapping;
+  }, [reservations]);
+
   if (loading) {
     return <section className="card trip-week-planner"><h2>Columbus Day Week 2027</h2><p className="muted">Building the provisional park week...</p></section>;
   }
@@ -225,6 +269,13 @@ export default function TripWeekPlanner() {
         <p className="muted">The 2027 Mickey&apos;s Not-So-Scary Halloween Party calendar is not loaded. Keep Sunday provisional until Disney confirms whether regular Magic Kingdom hours will be shortened.</p>
       </div>
 
+      <TripProfileReservations
+        assignedParks={assignedParks}
+        resortPlan={resortPlan}
+        reservations={reservations}
+        onReservationsChange={setReservations}
+      />
+
       <div className="trip-week-save-note">
         <strong>Resort nights are editable</strong>
         <div className="muted">Change any overnight resort after bookings are made. Choices save automatically on this device and update Getting There routes.</div>
@@ -241,6 +292,8 @@ export default function TripWeekPlanner() {
               <span className={`trip-week-badge ${day.mnsshp_status ? "trip-week-badge-risk" : ""}`}>{dayBadge(day)}</span>
             </div>
             {day.subtitle && <p className="muted">{day.subtitle}</p>}
+
+            <DayBookings reservations={reservationsByDate[day.date] || []} />
 
             {day.type !== "departure" && resortPlan[day.date] && (
               <label className="trip-week-resort-editor">
@@ -271,8 +324,8 @@ export default function TripWeekPlanner() {
         </div>
       </div>
 
-      <p className="muted" style={{ marginBottom: 0, marginTop: 12 }}>
-        {parkDays.length} park days · overnight resorts can be revised as reservations become concrete.
+      <p className="muted" style={{ marginBottom:0, marginTop:12 }}>
+        {parkDays.length} park days · {reservations.length} reservations tracked · overnight resorts remain editable.
       </p>
     </section>
   );

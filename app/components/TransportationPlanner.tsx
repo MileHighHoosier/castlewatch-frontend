@@ -439,8 +439,6 @@ export default function TransportationPlanner() {
         <ol className="getting-there-steps">{route.steps.map((step) => <li key={step}>{step}</li>)}</ol>
         <div className="getting-there-info">
           <div className="getting-there-info-row"><span>Boarding destination</span><strong>{route.boardingLabel}</strong></div>
-          <div className="getting-there-info-row"><span>Bus route number</span><strong>{route.routeNumber}</strong></div>
-          <div className="getting-there-info-row"><span>Departure timetable</span><strong>{route.publishedSchedule}</strong></div>
         </div>
         <div className="getting-there-backup"><strong>Backup:</strong> {route.backup}</div>
       </div>

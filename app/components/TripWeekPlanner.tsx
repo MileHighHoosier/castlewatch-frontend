@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "../lib/api";
+import SpecialEventIntelligence, {
+  SpecialEventIntelligenceData,
+  SpecialEventSignal,
+} from "./SpecialEventIntelligence";
 import TripProfileReservations from "./TripProfileReservations";
 import { TripReservation, loadReservations } from "../lib/tripProfile";
 import {
@@ -35,6 +39,7 @@ type TripDay = {
   mnsshp_status?: string;
   mnsshp_label?: string;
   forecast?: DayForecast;
+  special_event_signals?: SpecialEventSignal[];
 };
 
 type AlternateDay = {
@@ -42,6 +47,7 @@ type AlternateDay = {
   park: string;
   title: string;
   forecast?: DayForecast;
+  special_event_signals?: SpecialEventSignal[];
 };
 
 type TripWeekPlan = {
@@ -57,6 +63,7 @@ type TripWeekPlan = {
     reason?: string;
     days?: AlternateDay[];
   };
+  special_event_intelligence?: SpecialEventIntelligenceData;
 };
 
 function ensureStyle() {
@@ -68,8 +75,6 @@ function ensureStyle() {
     .trip-week-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
     .trip-week-header h2, .trip-week-header p { margin-top:0; }
     .trip-week-status { border:1px solid rgba(255,184,76,.45); background:rgba(255,184,76,.08); border-radius:999px; padding:5px 10px; font-size:11px; font-weight:900; white-space:nowrap; }
-    .trip-week-warning { border:1px solid rgba(255,184,76,.34); background:rgba(255,184,76,.07); border-radius:14px; padding:11px 12px; margin-bottom:14px; }
-    .trip-week-warning strong, .trip-week-warning p { margin-top:0; }
     .trip-week-save-note { border:1px solid rgba(99,164,255,.28); background:rgba(99,164,255,.055); border-radius:13px; padding:10px 12px; margin-bottom:14px; }
     .trip-week-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
     .trip-week-day { border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; background:rgba(255,255,255,.025); }
@@ -80,6 +85,11 @@ function ensureStyle() {
     .trip-week-day h3, .trip-week-day p { margin-top:0; }
     .trip-week-badge { border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:4px 7px; font-size:10px; font-weight:900; white-space:nowrap; }
     .trip-week-badge-risk { border-color:rgba(255,184,76,.45); }
+    .trip-week-event-signals { display:grid; gap:6px; margin:9px 0; }
+    .trip-week-event-signal { border:1px solid rgba(255,255,255,.11); border-radius:10px; padding:7px 8px; font-size:11px; background:rgba(0,0,0,.08); }
+    .trip-week-event-signal strong { display:block; margin-bottom:2px; }
+    .trip-week-event-high { border-color:rgba(255,99,99,.35); background:rgba(255,99,99,.06); }
+    .trip-week-event-medium { border-color:rgba(255,184,76,.34); background:rgba(255,184,76,.06); }
     .trip-week-resort-editor { border:1px solid rgba(99,164,255,.24); border-radius:12px; padding:9px 10px; margin:10px 0; background:rgba(99,164,255,.04); }
     .trip-week-resort-editor span { display:block; color:var(--muted); font-size:10px; font-weight:900; margin-bottom:5px; }
     .trip-week-resort-editor select { width:100%; border:1px solid rgba(255,255,255,.15); border-radius:9px; padding:8px; background:rgba(0,0,0,.17); color:inherit; font:inherit; }
@@ -163,6 +173,20 @@ function DayBookings({ reservations }: { reservations: TripReservation[] }) {
           <span className={`trip-week-booking-status ${reservation.status === "confirmed" ? "trip-week-booking-confirmed" : ""}`}>
             {reservation.status === "confirmed" ? "Confirmed" : "Provisional"}
           </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DayEventSignals({ signals }: { signals?: SpecialEventSignal[] }) {
+  if (!signals?.length) return null;
+  return (
+    <div className="trip-week-event-signals">
+      {signals.map((signal) => (
+        <div className={`trip-week-event-signal trip-week-event-${signal.severity}`} key={`${signal.id}-${signal.status}`}>
+          <strong>{signal.label}</strong>
+          <span className="muted">{signal.summary}</span>
         </div>
       ))}
     </div>
@@ -264,10 +288,10 @@ export default function TripWeekPlanner() {
         <span className="trip-week-status">Provisional</span>
       </div>
 
-      <div className="trip-week-warning">
-        <strong>Magic Kingdom is not locked yet</strong>
-        <p className="muted">The 2027 Mickey&apos;s Not-So-Scary Halloween Party calendar is not loaded. Keep Sunday provisional until Disney confirms whether regular Magic Kingdom hours will be shortened.</p>
-      </div>
+      <SpecialEventIntelligence
+        intelligence={plan.special_event_intelligence}
+        reservations={reservations}
+      />
 
       <TripProfileReservations
         assignedParks={assignedParks}
@@ -293,6 +317,7 @@ export default function TripWeekPlanner() {
             </div>
             {day.subtitle && <p className="muted">{day.subtitle}</p>}
 
+            <DayEventSignals signals={day.special_event_signals} />
             <DayBookings reservations={reservationsByDate[day.date] || []} />
 
             {day.type !== "departure" && resortPlan[day.date] && (
@@ -318,6 +343,7 @@ export default function TripWeekPlanner() {
             <div className="trip-week-swap-item" key={`${day.date}-${day.park}`}>
               <div className="trip-week-date">{formatDay(day.date)}</div>
               <strong>{day.title}</strong>
+              <DayEventSignals signals={day.special_event_signals} />
               <ForecastMetrics forecast={day.forecast} />
             </div>
           ))}

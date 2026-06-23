@@ -18,6 +18,7 @@ import {
 
 const STYLE_ID = "castlewatch-trip-week-style";
 const REQUEST_TIMEOUT_MS = 20_000;
+const CALENDAR_REFRESH_TIMEOUT_MS = 35_000;
 
 type ForecastWindow = { window?: string };
 type DayForecast = {
@@ -197,6 +198,8 @@ export default function TripWeekPlanner() {
   const [plan, setPlan] = useState<TripWeekPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [calendarRefreshing, setCalendarRefreshing] = useState(false);
+  const [calendarRefreshError, setCalendarRefreshError] = useState<string | null>(null);
   const [resortPlan, setResortPlan] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
   const [reservations, setReservations] = useState<TripReservation[]>([]);
 
@@ -241,6 +244,39 @@ export default function TripWeekPlanner() {
       window.clearTimeout(timeout);
     };
   }, []);
+
+  async function refreshCalendar() {
+    if (!API_BASE_URL || calendarRefreshing) return;
+
+    setCalendarRefreshing(true);
+    setCalendarRefreshError(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), CALENDAR_REFRESH_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/trip-week?refresh_calendar=1`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      if (!response.ok || data?.status === "error") {
+        throw new Error(data?.message || "Calendar refresh did not finish.");
+      }
+      setPlan(data);
+      setCalendarRefreshError(null);
+    } catch (refreshError) {
+      const message = refreshError instanceof Error && refreshError.name === "AbortError"
+        ? "Calendar check timed out. CastleWatch kept the last known schedule."
+        : refreshError instanceof Error
+          ? refreshError.message
+          : "Calendar check failed. CastleWatch kept the last known schedule.";
+      setCalendarRefreshError(message);
+    } finally {
+      window.clearTimeout(timeout);
+      setCalendarRefreshing(false);
+    }
+  }
 
   function changeResort(date: string, resortId: string) {
     const next = { ...resortPlan, [date]: resortId };
@@ -291,6 +327,9 @@ export default function TripWeekPlanner() {
       <SpecialEventIntelligence
         intelligence={plan.special_event_intelligence}
         reservations={reservations}
+        refreshing={calendarRefreshing}
+        refreshError={calendarRefreshError}
+        onRefresh={() => void refreshCalendar()}
       />
 
       <TripProfileReservations

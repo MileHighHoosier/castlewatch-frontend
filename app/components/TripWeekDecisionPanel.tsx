@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import TripWeekDecisionCard from "./TripWeekDecisionCard";
+import TripWeekDecisionCard, { TripWeekScenarioChange } from "./TripWeekDecisionCard";
 import type { SpecialEventIntelligenceData, SpecialEventSignal } from "./SpecialEventIntelligence";
 import {
   DEFAULT_TRIP_PROFILE,
@@ -19,6 +19,10 @@ import {
   DecisionDay,
   buildTripWeekDecision,
 } from "../lib/tripDecisionEngine";
+import type {
+  TripWeekApprovalState,
+  TripWeekScenarioId,
+} from "../lib/tripWeekApproval";
 
 type PlanDay = DecisionDay & {
   type?: string;
@@ -36,6 +40,10 @@ type Props = {
     alternate_swap?: { days?: AlternateDay[] };
     special_event_intelligence?: SpecialEventIntelligenceData;
   };
+  approval: TripWeekApprovalState;
+  onApplyScenario: (scenario: TripWeekScenarioId) => void;
+  onUndo: () => void;
+  onLockChange: (locked: boolean) => void;
 };
 
 function snapshotKey(profile: TripProfile, reservations: TripReservation[], resorts: ResortPlan) {
@@ -57,7 +65,55 @@ function alternateDecisionDays(baseDays: PlanDay[], replacements: AlternateDay[]
     .map((day) => replacementMap.get(day.date) || day);
 }
 
-export default function TripWeekDecisionPanel({ plan }: Props) {
+function scenarioAssignments(days: DecisionDay[]) {
+  const assignments = new Map<string, string>();
+  for (const day of days) {
+    if (day.date && day.park) assignments.set(day.date, day.park);
+  }
+  return assignments;
+}
+
+function buildScenarioChanges(
+  activeScenario: TripWeekScenarioId,
+  preferredScenario: TripWeekScenarioId,
+  baseDays: DecisionDay[],
+  alternateDays: DecisionDay[],
+  reservations: TripReservation[],
+): TripWeekScenarioChange[] {
+  if (activeScenario === preferredScenario) return [];
+
+  const current = scenarioAssignments(activeScenario === "base" ? baseDays : alternateDays);
+  const proposed = scenarioAssignments(preferredScenario === "base" ? baseDays : alternateDays);
+  const dates = Array.from(new Set([...current.keys(), ...proposed.keys()])).sort();
+
+  return dates.flatMap((date) => {
+    const fromPark = current.get(date);
+    const toPark = proposed.get(date);
+    if (!fromPark || !toPark || fromPark === toPark) return [];
+
+    return [{
+      date,
+      fromPark,
+      toPark,
+      reservations: reservations
+        .filter((reservation) => reservation.date === date)
+        .map((reservation) => ({
+          id: reservation.id,
+          title: reservation.title,
+          time: reservation.time,
+          status: reservation.status,
+        })),
+    }];
+  });
+}
+
+export default function TripWeekDecisionPanel({
+  plan,
+  approval,
+  onApplyScenario,
+  onUndo,
+  onLockChange,
+}: Props) {
   const [profile, setProfile] = useState<TripProfile>({ ...DEFAULT_TRIP_PROFILE });
   const [reservations, setReservations] = useState<TripReservation[]>([]);
   const [resorts, setResorts] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
@@ -87,18 +143,41 @@ export default function TripWeekDecisionPanel({ plan }: Props) {
     };
   }, []);
 
-  const decision = useMemo(() => {
-    const baseDays = plan.days.filter((day) => day.type === "park" && day.park);
-    const alternateDays = alternateDecisionDays(baseDays, plan.alternate_swap?.days || []);
-    return buildTripWeekDecision({
-      baseDays,
-      alternateDays,
-      intelligence: plan.special_event_intelligence,
-      reservations,
-      resortPlan: resorts,
-      profile,
-    });
-  }, [plan, profile, reservations, resorts]);
+  const baseDays = useMemo(
+    () => plan.days.filter((day) => day.type === "park" && day.park),
+    [plan],
+  );
 
-  return <TripWeekDecisionCard decision={decision} />;
+  const alternateDays = useMemo(
+    () => alternateDecisionDays(baseDays, plan.alternate_swap?.days || []),
+    [baseDays, plan.alternate_swap?.days],
+  );
+
+  const decision = useMemo(() => buildTripWeekDecision({
+    baseDays,
+    alternateDays,
+    intelligence: plan.special_event_intelligence,
+    reservations,
+    resortPlan: resorts,
+    profile,
+  }), [baseDays, alternateDays, plan.special_event_intelligence, profile, reservations, resorts]);
+
+  const changes = useMemo(() => buildScenarioChanges(
+    approval.activeScenario,
+    decision.preferredScenario,
+    baseDays,
+    alternateDays,
+    reservations,
+  ), [approval.activeScenario, decision.preferredScenario, baseDays, alternateDays, reservations]);
+
+  return (
+    <TripWeekDecisionCard
+      decision={decision}
+      approval={approval}
+      changes={changes}
+      onApplyScenario={onApplyScenario}
+      onUndo={onUndo}
+      onLockChange={onLockChange}
+    />
+  );
 }

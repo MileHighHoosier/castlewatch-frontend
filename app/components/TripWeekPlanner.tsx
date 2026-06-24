@@ -6,6 +6,7 @@ import SpecialEventIntelligence, {
   SpecialEventIntelligenceData,
   SpecialEventSignal,
 } from "./SpecialEventIntelligence";
+import TripWeekDecisionPanel from "./TripWeekDecisionPanel";
 import TripProfileReservations from "./TripProfileReservations";
 import { TripReservation, loadReservations } from "../lib/tripProfile";
 import {
@@ -323,6 +324,8 @@ export default function TripWeekPlanner() {
         </div>
         <span className="trip-week-status">Provisional</span>
       </div>
+
+      <TripWeekDecisionPanel plan={plan} />
 
       <SpecialEventIntelligence
         intelligence={plan.special_event_intelligence}

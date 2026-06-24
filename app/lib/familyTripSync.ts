@@ -1,4 +1,3 @@
-import { API_BASE_URL } from "./api";
 import {
   DEFAULT_TRIP_PROFILE,
   TripProfile,
@@ -127,8 +126,7 @@ async function parseDocument(response: Response): Promise<FamilyTripDocument> {
 }
 
 function endpoint() {
-  if (!API_BASE_URL) throw new FamilyTripSyncError("CastleWatch backend URL is missing.", 0);
-  return `${API_BASE_URL}/api/family-trip`;
+  return "/api/family-trip";
 }
 
 export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> {

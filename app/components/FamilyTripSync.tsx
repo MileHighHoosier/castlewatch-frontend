@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  AppliedFamilyTrip,
   FamilyTripDocument,
   FamilyTripSyncError,
   applyFamilyTripPayload,
@@ -14,10 +13,6 @@ import {
 } from "../lib/familyTripSync";
 
 const STYLE_ID = "castlewatch-family-sync-style";
-
-type Props = {
-  onRemoteApplied: (state: AppliedFamilyTrip) => void;
-};
 
 type ConfirmAction = "upload" | "download" | null;
 
@@ -62,7 +57,7 @@ function remoteDescription(remote: FamilyTripDocument) {
   return `Shared version ${remote.version} · updated ${updated}.`;
 }
 
-export default function FamilyTripSync({ onRemoteApplied }: Props) {
+export default function FamilyTripSync() {
   const [key, setKey] = useState("");
   const [remote, setRemote] = useState<FamilyTripDocument | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,11 +127,8 @@ export default function FamilyTripSync({ onRemoteApplied }: Props) {
   function download() {
     if (!remote?.payload) return;
     clearMessages();
-    const applied = applyFamilyTripPayload(remote.payload);
-    onRemoteApplied(applied);
-    window.dispatchEvent(new Event("castlewatch-family-trip-applied"));
-    setConfirmAction(null);
-    setSuccess(`Shared version ${remote.version} is now active on this device.`);
+    applyFamilyTripPayload(remote.payload);
+    window.location.reload();
   }
 
   function disconnect() {
@@ -209,7 +201,7 @@ export default function FamilyTripSync({ onRemoteApplied }: Props) {
         {confirmAction === "download" && remote?.payload && (
           <div className="family-sync-confirm">
             <strong>Replace this device’s local trip plan?</strong>
-            <div className="muted">Reservations, resorts, trip details and the active/locked park order on this device will be replaced by shared version {remote.version}.</div>
+            <div className="muted">Reservations, resorts, trip details and the active/locked park order on this device will be replaced by shared version {remote.version}. Trip Week will reload once after confirmation.</div>
             <div className="family-sync-actions">
               <button className="family-sync-button family-sync-button-primary" type="button" onClick={download}>Confirm download</button>
               <button className="family-sync-button" type="button" onClick={() => setConfirmAction(null)}>Cancel</button>

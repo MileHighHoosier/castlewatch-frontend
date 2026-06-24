@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import FamilyTripSync from "./FamilyTripSync";
 import TripWeekDecisionCard, { TripWeekScenarioChange } from "./TripWeekDecisionCard";
-import type { SpecialEventIntelligenceData, SpecialEventSignal } from "./SpecialEventIntelligence";
+import type { SpecialEventIntelligenceData } from "./SpecialEventIntelligence";
 import {
   DEFAULT_TRIP_PROFILE,
   TripProfile,
@@ -171,13 +172,16 @@ export default function TripWeekDecisionPanel({
   ), [approval.activeScenario, decision.preferredScenario, baseDays, alternateDays, reservations]);
 
   return (
-    <TripWeekDecisionCard
-      decision={decision}
-      approval={approval}
-      changes={changes}
-      onApplyScenario={onApplyScenario}
-      onUndo={onUndo}
-      onLockChange={onLockChange}
-    />
+    <>
+      <FamilyTripSync />
+      <TripWeekDecisionCard
+        decision={decision}
+        approval={approval}
+        changes={changes}
+        onApplyScenario={onApplyScenario}
+        onUndo={onUndo}
+        onLockChange={onLockChange}
+      />
+    </>
   );
 }

@@ -81,19 +81,10 @@ export function buildLocalFamilyTripPayload(): FamilyTripPayload {
 }
 
 function normalizePayload(payload: FamilyTripPayload): AppliedFamilyTrip {
-  const tripProfile = {
-    ...DEFAULT_TRIP_PROFILE,
-    ...(payload?.tripProfile || {}),
-  };
+  const tripProfile = { ...DEFAULT_TRIP_PROFILE, ...(payload?.tripProfile || {}) };
   const reservations = Array.isArray(payload?.reservations) ? payload.reservations : [];
-  const resortPlan = {
-    ...DEFAULT_RESORT_PLAN,
-    ...(payload?.resortPlan || {}),
-  };
-  const approval = {
-    ...DEFAULT_TRIP_WEEK_APPROVAL,
-    ...(payload?.approval || {}),
-  };
+  const resortPlan = { ...DEFAULT_RESORT_PLAN, ...(payload?.resortPlan || {}) };
+  const approval = { ...DEFAULT_TRIP_WEEK_APPROVAL, ...(payload?.approval || {}) };
 
   if (approval.activeScenario !== "base" && approval.activeScenario !== "alternate") {
     approval.activeScenario = "base";
@@ -115,32 +106,48 @@ export function applyFamilyTripPayload(payload: FamilyTripPayload): AppliedFamil
 }
 
 async function parseDocument(response: Response): Promise<FamilyTripDocument> {
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text();
+  let data: any = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = {};
+  }
+
+  const fallbackMessage = response.ok
+    ? undefined
+    : `Family sync returned HTTP ${response.status}${rawText ? `: ${rawText.slice(0, 180)}` : "."}`;
+
   return {
     status: typeof data?.status === "string" ? data.status : response.ok ? "ok" : "error",
     version: Number.isInteger(data?.version) ? data.version : 0,
     payload: data?.payload && typeof data.payload === "object" ? data.payload as FamilyTripPayload : null,
     updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null,
-    message: typeof data?.message === "string" ? data.message : undefined,
+    message: typeof data?.message === "string" ? data.message : fallbackMessage,
   };
 }
 
-function endpoint() {
-  return "/api/family-trip";
-}
-
-export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> {
-  const response = await fetch(endpoint(), {
-    method: "GET",
+async function syncRequest(body: Record<string, unknown>): Promise<{ response: Response; document: FamilyTripDocument }> {
+  const response = await fetch("/api/castlewatch-family-sync", {
+    method: "POST",
     cache: "no-store",
     headers: {
       Accept: "application/json",
-      "X-CastleWatch-Key": key.trim(),
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify(body),
   });
   const document = await parseDocument(response);
+  return { response, document };
+}
+
+export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> {
+  const { response, document } = await syncRequest({
+    action: "read",
+    key: key.trim(),
+  });
   if (!response.ok) {
-    throw new FamilyTripSyncError(document.message || "Shared family storage could not be loaded.", response.status, document);
+    throw new FamilyTripSyncError(document.message || `Shared family storage could not be loaded (HTTP ${response.status}).`, response.status, document);
   }
   return document;
 }
@@ -150,19 +157,14 @@ export async function saveFamilyTrip(
   expectedVersion: number,
   payload: FamilyTripPayload,
 ): Promise<FamilyTripDocument> {
-  const response = await fetch(endpoint(), {
-    method: "PUT",
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-CastleWatch-Key": key.trim(),
-    },
-    body: JSON.stringify({ expectedVersion, payload }),
+  const { response, document } = await syncRequest({
+    action: "write",
+    key: key.trim(),
+    expectedVersion,
+    payload,
   });
-  const document = await parseDocument(response);
   if (!response.ok) {
-    throw new FamilyTripSyncError(document.message || "Shared family storage could not be saved.", response.status, document);
+    throw new FamilyTripSyncError(document.message || `Shared family storage could not be saved (HTTP ${response.status}).`, response.status, document);
   }
   return document;
 }

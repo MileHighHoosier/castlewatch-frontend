@@ -52,6 +52,7 @@ export class FamilyTripSyncError extends Error {
 
   constructor(message: string, statusCode: number, document: FamilyTripDocument | null = null) {
     super(message);
+    Object.setPrototypeOf(this, FamilyTripSyncError.prototype);
     this.name = "FamilyTripSyncError";
     this.statusCode = statusCode;
     this.document = document;

@@ -16,6 +16,14 @@ import {
   loadResortPlan,
   saveResortPlan,
 } from "../lib/tripResorts";
+import {
+  DEFAULT_TRIP_WEEK_APPROVAL,
+  TripWeekApprovalState,
+  TripWeekScenarioId,
+  loadTripWeekApproval,
+  saveTripWeekApproval,
+  scenarioLabel,
+} from "../lib/tripWeekApproval";
 
 const STYLE_ID = "castlewatch-trip-week-style";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -77,6 +85,8 @@ function ensureStyle() {
     .trip-week-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
     .trip-week-header h2, .trip-week-header p { margin-top:0; }
     .trip-week-status { border:1px solid rgba(255,184,76,.45); background:rgba(255,184,76,.08); border-radius:999px; padding:5px 10px; font-size:11px; font-weight:900; white-space:nowrap; }
+    .trip-week-status-alternate { border-color:rgba(99,164,255,.42); background:rgba(99,164,255,.08); }
+    .trip-week-status-locked { border-color:rgba(56,217,150,.45); background:rgba(56,217,150,.08); color:rgb(124,239,191); }
     .trip-week-save-note { border:1px solid rgba(99,164,255,.28); background:rgba(99,164,255,.055); border-radius:13px; padding:10px 12px; margin-bottom:14px; }
     .trip-week-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
     .trip-week-day { border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; background:rgba(255,255,255,.025); }
@@ -146,6 +156,24 @@ function dayBadge(day: TripDay) {
   return "Departure";
 }
 
+function activePlanDays(plan: TripWeekPlan, scenario: TripWeekScenarioId) {
+  if (scenario === "base") return plan.days;
+
+  const replacements = new Map((plan.alternate_swap?.days || []).map((day) => [day.date, day]));
+  return plan.days.map((day) => {
+    const replacement = replacements.get(day.date);
+    if (!replacement || day.type !== "park") return day;
+    return {
+      ...day,
+      park: replacement.park,
+      title: replacement.title,
+      subtitle: undefined,
+      forecast: replacement.forecast || day.forecast,
+      special_event_signals: replacement.special_event_signals || day.special_event_signals,
+    };
+  });
+}
+
 function ForecastMetrics({ forecast }: { forecast?: DayForecast }) {
   if (!forecast || forecast.status === "unavailable") {
     return <p className="muted">Historical forecast is temporarily unavailable.</p>;
@@ -203,11 +231,13 @@ export default function TripWeekPlanner() {
   const [calendarRefreshError, setCalendarRefreshError] = useState<string | null>(null);
   const [resortPlan, setResortPlan] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
   const [reservations, setReservations] = useState<TripReservation[]>([]);
+  const [approval, setApproval] = useState<TripWeekApprovalState>({ ...DEFAULT_TRIP_WEEK_APPROVAL });
 
   useEffect(() => {
     ensureStyle();
     setResortPlan(loadResortPlan());
     setReservations(loadReservations());
+    setApproval(loadTripWeekApproval());
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -285,18 +315,58 @@ export default function TripWeekPlanner() {
     saveResortPlan(next);
   }
 
+  function commitApproval(next: TripWeekApprovalState) {
+    setApproval(next);
+    saveTripWeekApproval(next);
+  }
+
+  function applyScenario(scenario: TripWeekScenarioId) {
+    if (approval.locked || approval.activeScenario === scenario) return;
+    commitApproval({
+      ...approval,
+      activeScenario: scenario,
+      previousScenario: approval.activeScenario,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function undoScenario() {
+    if (approval.locked || !approval.previousScenario) return;
+    commitApproval({
+      ...approval,
+      activeScenario: approval.previousScenario,
+      previousScenario: approval.activeScenario,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function changeLock(locked: boolean) {
+    const now = new Date().toISOString();
+    commitApproval({
+      ...approval,
+      locked,
+      lockedAt: locked ? now : null,
+      updatedAt: now,
+    });
+  }
+
+  const displayedDays = useMemo(
+    () => plan ? activePlanDays(plan, approval.activeScenario) : [],
+    [plan, approval.activeScenario],
+  );
+
   const parkDays = useMemo(
-    () => plan?.days.filter((day) => day.type === "park") || [],
-    [plan],
+    () => displayedDays.filter((day) => day.type === "park"),
+    [displayedDays],
   );
 
   const assignedParks = useMemo(() => {
     const mapping: Record<string, string> = {};
-    for (const day of plan?.days || []) {
+    for (const day of displayedDays) {
       if (day.type === "park" && day.park) mapping[day.date] = day.park;
     }
     return mapping;
-  }, [plan]);
+  }, [displayedDays]);
 
   const reservationsByDate = useMemo(() => {
     const mapping: Record<string, TripReservation[]> = {};
@@ -315,6 +385,17 @@ export default function TripWeekPlanner() {
     return <section className="card trip-week-planner"><h2>Columbus Day Week 2027</h2><p className="muted">Trip Week is temporarily unavailable. Reload to retry.</p></section>;
   }
 
+  const statusClass = approval.locked
+    ? "trip-week-status-locked"
+    : approval.activeScenario === "alternate"
+      ? "trip-week-status-alternate"
+      : "";
+  const statusText = approval.locked
+    ? `Locked · ${scenarioLabel(approval.activeScenario)}`
+    : approval.activeScenario === "alternate"
+      ? "Alternate active"
+      : "Provisional base plan";
+
   return (
     <section className="card trip-week-planner">
       <div className="trip-week-header">
@@ -322,10 +403,16 @@ export default function TripWeekPlanner() {
           <h2>{plan.trip_name}</h2>
           <p className="muted">Oct. 9–16, 2027 · one park per day · no park hopping</p>
         </div>
-        <span className="trip-week-status">Provisional</span>
+        <span className={`trip-week-status ${statusClass}`}>{statusText}</span>
       </div>
 
-      <TripWeekDecisionPanel plan={plan} />
+      <TripWeekDecisionPanel
+        plan={plan}
+        approval={approval}
+        onApplyScenario={applyScenario}
+        onUndo={undoScenario}
+        onLockChange={changeLock}
+      />
 
       <SpecialEventIntelligence
         intelligence={plan.special_event_intelligence}
@@ -343,12 +430,12 @@ export default function TripWeekPlanner() {
       />
 
       <div className="trip-week-save-note">
-        <strong>Resort nights are editable</strong>
-        <div className="muted">Change any overnight resort after bookings are made. Choices save automatically on this device and update Getting There routes.</div>
+        <strong>Resort nights and approval status are saved</strong>
+        <div className="muted">The active park order, lock state and overnight resorts save automatically on this device. Getting There routes and reservation conflicts use the active scenario.</div>
       </div>
 
       <div className="trip-week-grid">
-        {plan.days.map((day) => (
+        {displayedDays.map((day) => (
           <article
             className={`trip-week-day ${day.type === "park" ? "trip-week-day-park" : ""} ${day.mnsshp_status ? "trip-week-day-risk" : ""}`}
             key={day.date}
@@ -377,7 +464,7 @@ export default function TripWeekPlanner() {
       </div>
 
       <div className="trip-week-alternate">
-        <h3>MNSSHP alternate swap</h3>
+        <h3>MNSSHP alternate swap{approval.activeScenario === "alternate" ? " · Active" : ""}</h3>
         <p className="muted">{plan.alternate_swap?.condition}</p>
         <p>{plan.alternate_swap?.reason}</p>
         <div className="trip-week-swap-row">
@@ -393,7 +480,7 @@ export default function TripWeekPlanner() {
       </div>
 
       <p className="muted" style={{ marginBottom:0, marginTop:12 }}>
-        {parkDays.length} park days · {reservations.length} reservations tracked · overnight resorts remain editable.
+        {parkDays.length} park days · {reservations.length} reservations tracked · {scenarioLabel(approval.activeScenario)} active · overnight resorts remain editable.
       </p>
     </section>
   );

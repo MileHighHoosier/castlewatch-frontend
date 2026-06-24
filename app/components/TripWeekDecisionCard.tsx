@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import type { TripWeekDecision } from "../lib/tripDecisionEngine";
-import {
-  scenarioLabel,
+import { scenarioLabel } from "../lib/tripWeekApproval";
+import type {
   TripWeekApprovalState,
   TripWeekScenarioId,
 } from "../lib/tripWeekApproval";
@@ -49,6 +49,7 @@ function ensureStyle() {
     .trip-decision-current strong { display:block; }
     .trip-decision-current span { color:var(--muted); font-size:11px; }
     .trip-decision-lock-badge { border:1px solid rgba(56,217,150,.38); border-radius:999px; padding:3px 7px; color:rgb(124,239,191) !important; font-size:9px !important; font-weight:900; white-space:nowrap; }
+    .trip-decision-lock-badge-review { border-color:rgba(255,184,76,.48); color:rgb(255,201,116) !important; }
     .trip-decision-confidence { border:1px solid rgba(255,255,255,.11); border-radius:11px; padding:8px 9px; margin-bottom:10px; background:rgba(0,0,0,.08); }
     .trip-decision-confidence strong { display:block; margin-bottom:2px; }
     .trip-decision-score-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:10px 0; }
@@ -70,6 +71,7 @@ function ensureStyle() {
     .trip-decision-button-primary { border-color:rgba(56,217,150,.44); background:rgba(56,217,150,.11); }
     .trip-decision-button-warning { border-color:rgba(255,184,76,.42); background:rgba(255,184,76,.09); }
     .trip-decision-button-danger { border-color:rgba(255,99,99,.42); background:rgba(255,99,99,.08); }
+    .trip-decision-lock-note { align-self:center; color:var(--muted); font-size:10px; line-height:1.35; }
     .trip-decision-confirm { border:1px solid rgba(99,164,255,.3); border-radius:12px; padding:10px; margin:10px 0; background:rgba(99,164,255,.055); }
     .trip-decision-confirm h4, .trip-decision-confirm p { margin-top:0; }
     .trip-decision-change { border-top:1px solid rgba(255,255,255,.09); padding:8px 0; }
@@ -96,7 +98,17 @@ function ensureStyle() {
   document.head.appendChild(style);
 }
 
+function lockedNeedsReview(decision: TripWeekDecision, approval: TripWeekApprovalState) {
+  return approval.locked && (
+    decision.preferredScenario !== approval.activeScenario
+    || decision.blockers.length > 0
+    || decision.status === "wait"
+    || decision.status === "review"
+  );
+}
+
 function statusLabel(decision: TripWeekDecision, approval: TripWeekApprovalState) {
+  if (lockedNeedsReview(decision, approval)) return "Locked · review needed";
   if (approval.locked) return "Park order locked";
   if (
     decision.preferredScenario === approval.activeScenario
@@ -133,6 +145,11 @@ export default function TripWeekDecisionCard({
   const recommendationCanApply = !approval.locked
     && !recommendationMatchesActive
     && (decision.status === "swap" || decision.status === "keep");
+  const canLock = !approval.locked
+    && recommendationMatchesActive
+    && decision.blockers.length === 0
+    && (decision.status === "swap" || decision.status === "keep");
+  const lockedReview = lockedNeedsReview(decision, approval);
 
   const headline = recommendationMatchesActive
     && (decision.status === "swap" || decision.status === "keep")
@@ -150,6 +167,7 @@ export default function TripWeekDecisionCard({
   }
 
   function lockCurrentScenario() {
+    if (!canLock) return;
     onLockChange(true);
     setLockConfirmOpen(false);
   }
@@ -175,9 +193,17 @@ export default function TripWeekDecisionCard({
       <div className="trip-decision-current">
         <div>
           <strong>Active park order: {scenarioLabel(approval.activeScenario)}</strong>
-          <span>Saved on this device{approval.updatedAt ? ` · updated ${new Date(approval.updatedAt).toLocaleString()}` : ""}</span>
+          <span>
+            Saved on this device
+            {approval.updatedAt ? ` · updated ${new Date(approval.updatedAt).toLocaleString()}` : ""}
+            {approval.lockedAt ? ` · locked ${new Date(approval.lockedAt).toLocaleString()}` : ""}
+          </span>
         </div>
-        {approval.locked && <span className="trip-decision-lock-badge">Family-approved</span>}
+        {approval.locked && (
+          <span className={`trip-decision-lock-badge ${lockedReview ? "trip-decision-lock-badge-review" : ""}`}>
+            {lockedReview ? "Review needed" : "Family-approved"}
+          </span>
+        )}
       </div>
 
       <div className="trip-decision-confidence">
@@ -214,9 +240,21 @@ export default function TripWeekDecisionCard({
 
       {decision.blockers.length > 0 && (
         <div className="trip-decision-blockers">
-          <strong>Why CastleWatch will not automatically lock the week</strong>
+          <strong>Why CastleWatch will not lock the week yet</strong>
           <ul className="trip-decision-list">
             {decision.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {lockedReview && (
+        <div className="trip-decision-blockers">
+          <strong>The locked park order needs a fresh family review</strong>
+          <ul className="trip-decision-list">
+            {!recommendationMatchesActive && <li>Current planning data now favors {scenarioLabel(decision.preferredScenario)}.</li>}
+            {decision.blockers.length > 0 && <li>One or more lock blockers appeared after this order was approved.</li>}
+            {(decision.status === "wait" || decision.status === "review") && <li>CastleWatch no longer has enough certainty to treat the locked order as final.</li>}
+            <li>Unlock the park order before applying or undoing a change.</li>
           </ul>
         </div>
       )}
@@ -232,10 +270,13 @@ export default function TripWeekDecisionCard({
             Undo last park-order change
           </button>
         )}
-        {!approval.locked && (
+        {canLock && (
           <button className="trip-decision-button trip-decision-button-warning" type="button" onClick={() => setLockConfirmOpen(true)}>
             Lock current park order
           </button>
+        )}
+        {!approval.locked && !canLock && (
+          <span className="trip-decision-lock-note">Locking becomes available when the active order matches an actionable recommendation and all blockers are cleared.</span>
         )}
         {approval.locked && (
           <button className="trip-decision-button trip-decision-button-danger" type="button" onClick={() => setUnlockConfirmOpen(true)}>
@@ -267,7 +308,7 @@ export default function TripWeekDecisionCard({
         </div>
       )}
 
-      {lockConfirmOpen && !approval.locked && (
+      {lockConfirmOpen && canLock && (
         <div className="trip-decision-confirm">
           <h4>Lock {scenarioLabel(approval.activeScenario)}?</h4>
           <p className="muted">Locking marks this park order as family-approved and prevents apply or undo actions until it is explicitly unlocked. Reservations and resort selections remain editable.</p>

@@ -92,7 +92,14 @@ function matchingBaseline(
   existing: FamilyTripSyncMetadata | null,
 ) {
   if (!document.payload) return existing;
-  if (fingerprintFamilyTripPayload(document.payload) !== fingerprintFamilyTripPayload(localPayload)) return existing;
+  const remoteFingerprint = fingerprintFamilyTripPayload(document.payload);
+  if (remoteFingerprint !== fingerprintFamilyTripPayload(localPayload)) return existing;
+  if (
+    existing
+    && existing.version === document.version
+    && existing.baselineFingerprint === remoteFingerprint
+  ) return existing;
+
   const metadata = createFamilySyncMetadata(document.version, document.payload);
   saveFamilySyncMetadata(metadata);
   return metadata;

@@ -1,20 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FamilyTripDocument,
+  FamilyTripPayload,
+  FamilyTripSyncAnalysis,
   FamilyTripSyncError,
+  FamilyTripSyncMetadata,
+  analyzeFamilyTripSync,
   applyFamilyTripPayload,
   buildLocalFamilyTripPayload,
+  clearFamilySyncMetadata,
+  createFamilySyncMetadata,
   fetchFamilyTrip,
+  fingerprintFamilyTripPayload,
   loadFamilyKey,
+  loadFamilySyncMetadata,
   saveFamilyKey,
+  saveFamilySyncMetadata,
   saveFamilyTrip,
 } from "../lib/familyTripSync";
 
 const STYLE_ID = "castlewatch-family-sync-style";
+const LOCAL_CHECK_INTERVAL_MS = 1_000;
+const REMOTE_CHECK_INTERVAL_MS = 60_000;
 
 type ConfirmAction = "upload" | "download" | null;
+
+type CheckedSyncState = {
+  document: FamilyTripDocument;
+  localPayload: FamilyTripPayload;
+  metadata: FamilyTripSyncMetadata | null;
+  analysis: FamilyTripSyncAnalysis;
+};
 
 function ensureStyle() {
   if (typeof document === "undefined" || document.getElementById(STYLE_ID)) return;
@@ -38,14 +56,25 @@ function ensureStyle() {
     .family-sync-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
     .family-sync-remote { border:1px solid rgba(255,255,255,.11); border-radius:12px; padding:9px 10px; margin-top:10px; background:rgba(0,0,0,.08); }
     .family-sync-remote strong { display:block; margin-bottom:3px; }
+    .family-sync-awareness { border:1px solid rgba(255,255,255,.13); border-radius:12px; padding:10px; margin-top:10px; background:rgba(0,0,0,.1); }
+    .family-sync-awareness strong { display:block; margin-bottom:4px; }
+    .family-sync-awareness span { display:block; color:var(--muted); font-size:11px; line-height:1.4; }
+    .family-sync-awareness small { display:block; margin-top:7px; color:var(--muted); font-size:9px; }
+    .family-sync-awareness-ready { border-color:rgba(56,217,150,.38); background:rgba(56,217,150,.065); }
+    .family-sync-awareness-local { border-color:rgba(99,164,255,.4); background:rgba(99,164,255,.065); }
+    .family-sync-awareness-remote { border-color:rgba(156,118,255,.42); background:rgba(156,118,255,.07); }
+    .family-sync-awareness-warning { border-color:rgba(255,184,76,.42); background:rgba(255,184,76,.065); }
+    .family-sync-awareness-conflict { border-color:rgba(255,99,99,.46); background:rgba(255,99,99,.075); }
     .family-sync-message { border-radius:10px; padding:8px 9px; margin-top:9px; font-size:11px; line-height:1.4; }
     .family-sync-error { border:1px solid rgba(255,99,99,.38); background:rgba(255,99,99,.07); }
     .family-sync-success { border:1px solid rgba(56,217,150,.34); background:rgba(56,217,150,.06); }
     .family-sync-confirm { border:1px solid rgba(255,184,76,.36); border-radius:12px; padding:10px; margin-top:10px; background:rgba(255,184,76,.06); }
     .family-sync-confirm strong { display:block; margin-bottom:4px; }
+    .family-sync-guard { border:1px solid rgba(255,99,99,.38); border-radius:10px; padding:8px 9px; margin-top:9px; background:rgba(255,99,99,.065); font-size:11px; line-height:1.4; }
     @media (max-width:700px) {
       .family-sync-key-row { grid-template-columns:1fr; }
       .family-sync-actions { display:grid; grid-template-columns:1fr; }
+      .family-sync > summary { align-items:flex-start; }
     }
   `;
   document.head.appendChild(style);
@@ -57,32 +86,152 @@ function remoteDescription(remote: FamilyTripDocument) {
   return `Shared version ${remote.version} · updated ${updated}.`;
 }
 
+function matchingBaseline(
+  document: FamilyTripDocument,
+  localPayload: FamilyTripPayload,
+  existing: FamilyTripSyncMetadata | null,
+) {
+  if (!document.payload) return existing;
+  const remoteFingerprint = fingerprintFamilyTripPayload(document.payload);
+  if (remoteFingerprint !== fingerprintFamilyTripPayload(localPayload)) return existing;
+  if (
+    existing
+    && existing.version === document.version
+    && existing.baselineFingerprint === remoteFingerprint
+  ) return existing;
+
+  const metadata = createFamilySyncMetadata(document.version, document.payload);
+  saveFamilySyncMetadata(metadata);
+  return metadata;
+}
+
+function downloadButtonLabel(analysis: FamilyTripSyncAnalysis) {
+  if (analysis.id === "remote_changes") return "Download newer shared version";
+  if (analysis.id === "conflict" || analysis.id === "local_changes") return "Download shared plan and discard local changes";
+  if (analysis.id === "baseline_required") return "Use shared plan as this device’s baseline";
+  return "Download shared plan";
+}
+
+function uploadButtonLabel(analysis: FamilyTripSyncAnalysis) {
+  if (analysis.id === "local_changes") return "Upload local changes";
+  if (analysis.id === "baseline_required") return "Use this device as the shared baseline";
+  return "Create shared plan from this device";
+}
+
 export default function FamilyTripSync() {
   const [key, setKey] = useState("");
+  const keyRef = useRef("");
   const [remote, setRemote] = useState<FamilyTripDocument | null>(null);
+  const [metadata, setMetadata] = useState<FamilyTripSyncMetadata | null>(null);
+  const [localPayload, setLocalPayload] = useState<FamilyTripPayload | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
 
-  useEffect(() => {
-    ensureStyle();
-    setKey(loadFamilyKey());
-  }, []);
+  const analysis = useMemo(() => {
+    if (!remote || !localPayload) return null;
+    return analyzeFamilyTripSync(localPayload, remote, metadata);
+  }, [localPayload, metadata, remote]);
 
-  function clearMessages() {
+  const clearMessages = useCallback(() => {
     setError(null);
     setSuccess(null);
-  }
+  }, []);
 
-  function handleFailure(value: unknown) {
+  const handleFailure = useCallback((value: unknown) => {
     if (value instanceof FamilyTripSyncError) {
       if (value.document?.status === "version_conflict") setRemote(value.document);
       setError(value.message);
       return;
     }
     setError(value instanceof Error ? value.message : "Shared family storage could not be reached.");
-  }
+  }, []);
+
+  const checkRemote = useCallback(async (
+    requestedKey?: string,
+    announce = false,
+  ): Promise<CheckedSyncState | null> => {
+    const normalizedKey = (requestedKey ?? keyRef.current).trim();
+    if (!normalizedKey) return null;
+
+    setChecking(true);
+    try {
+      const document = await fetchFamilyTrip(normalizedKey);
+      const currentLocal = buildLocalFamilyTripPayload();
+      const storedMetadata = loadFamilySyncMetadata();
+      const nextMetadata = matchingBaseline(document, currentLocal, storedMetadata);
+      const nextAnalysis = analyzeFamilyTripSync(currentLocal, document, nextMetadata);
+
+      keyRef.current = normalizedKey;
+      setKey(normalizedKey);
+      saveFamilyKey(normalizedKey);
+      setRemote(document);
+      setLocalPayload(currentLocal);
+      setMetadata(nextMetadata);
+      setError(null);
+      if (announce) {
+        setSuccess(document.version === 0
+          ? "Connected. Shared storage is ready for its first upload."
+          : `Connected. ${nextAnalysis.label}.`);
+      }
+
+      return {
+        document,
+        localPayload: currentLocal,
+        metadata: nextMetadata,
+        analysis: nextAnalysis,
+      };
+    } catch (checkError) {
+      handleFailure(checkError);
+      return null;
+    } finally {
+      setChecking(false);
+    }
+  }, [handleFailure]);
+
+  useEffect(() => {
+    ensureStyle();
+    const savedKey = loadFamilyKey();
+    keyRef.current = savedKey;
+    setKey(savedKey);
+    setMetadata(loadFamilySyncMetadata());
+    setLocalPayload(buildLocalFamilyTripPayload());
+    if (savedKey) void checkRemote(savedKey, false);
+  }, [checkRemote]);
+
+  useEffect(() => {
+    function refreshLocal() {
+      setLocalPayload(buildLocalFamilyTripPayload());
+    }
+
+    function checkOnFocus() {
+      refreshLocal();
+      if (keyRef.current) void checkRemote(undefined, false);
+    }
+
+    function checkOnVisibility() {
+      if (document.visibilityState === "visible") checkOnFocus();
+    }
+
+    const localInterval = window.setInterval(refreshLocal, LOCAL_CHECK_INTERVAL_MS);
+    const remoteInterval = window.setInterval(() => {
+      if (keyRef.current && document.visibilityState === "visible") void checkRemote(undefined, false);
+    }, REMOTE_CHECK_INTERVAL_MS);
+
+    window.addEventListener("focus", checkOnFocus);
+    window.addEventListener("storage", refreshLocal);
+    document.addEventListener("visibilitychange", checkOnVisibility);
+
+    return () => {
+      window.clearInterval(localInterval);
+      window.clearInterval(remoteInterval);
+      window.removeEventListener("focus", checkOnFocus);
+      window.removeEventListener("storage", refreshLocal);
+      document.removeEventListener("visibilitychange", checkOnVisibility);
+    };
+  }, [checkRemote]);
 
   async function connect() {
     const normalizedKey = key.trim();
@@ -94,63 +243,106 @@ export default function FamilyTripSync() {
     setBusy(true);
     clearMessages();
     setConfirmAction(null);
-    try {
-      const document = await fetchFamilyTrip(normalizedKey);
-      setRemote(document);
-      saveFamilyKey(normalizedKey);
-      setSuccess(document.version === 0 ? "Connected. Shared storage is ready for its first upload." : "Connected to the shared family plan.");
-    } catch (connectError) {
-      setRemote(null);
-      handleFailure(connectError);
-    } finally {
+    await checkRemote(normalizedKey, true);
+    setBusy(false);
+  }
+
+  async function prepareUpload() {
+    setBusy(true);
+    clearMessages();
+    const checked = await checkRemote(undefined, false);
+    if (!checked) {
       setBusy(false);
+      return;
     }
+
+    if (!checked.analysis.canUpload) {
+      if (checked.analysis.id === "conflict") {
+        setError("Upload blocked: both this browser and the shared plan changed. Downloading will discard this browser’s local changes; otherwise leave both copies unchanged until you decide which one to keep.");
+      } else if (checked.analysis.id === "remote_changes") {
+        setError("Upload blocked because a newer shared version exists. Download it before making additional shared changes.");
+      } else {
+        setSuccess("No upload is needed. This device is already up to date.");
+      }
+      setBusy(false);
+      return;
+    }
+
+    setConfirmAction("upload");
+    setBusy(false);
   }
 
   async function upload() {
     if (!remote) return;
     setBusy(true);
     clearMessages();
+    const payload = buildLocalFamilyTripPayload();
     try {
-      const document = await saveFamilyTrip(key, remote.version, buildLocalFamilyTripPayload());
+      const document = await saveFamilyTrip(keyRef.current, remote.version, payload);
+      const nextMetadata = createFamilySyncMetadata(document.version, payload);
+      saveFamilySyncMetadata(nextMetadata);
       setRemote(document);
+      setLocalPayload(payload);
+      setMetadata(nextMetadata);
       setConfirmAction(null);
       setSuccess(`This device was uploaded as shared version ${document.version}.`);
     } catch (uploadError) {
       setConfirmAction(null);
+      if (uploadError instanceof FamilyTripSyncError && uploadError.document) {
+        setRemote(uploadError.document);
+        setLocalPayload(buildLocalFamilyTripPayload());
+      }
       handleFailure(uploadError);
     } finally {
       setBusy(false);
     }
   }
 
+  async function prepareDownload() {
+    setBusy(true);
+    clearMessages();
+    const checked = await checkRemote(undefined, false);
+    if (checked?.document.payload && checked.analysis.canDownload) {
+      setConfirmAction("download");
+    } else if (checked?.analysis.id === "up_to_date") {
+      setSuccess("No download is needed. This device is already up to date.");
+    }
+    setBusy(false);
+  }
+
   function download() {
     if (!remote?.payload) return;
     clearMessages();
+    const nextMetadata = createFamilySyncMetadata(remote.version, remote.payload);
+    saveFamilySyncMetadata(nextMetadata);
     applyFamilyTripPayload(remote.payload);
     window.location.reload();
   }
 
   function disconnect() {
     saveFamilyKey("");
+    clearFamilySyncMetadata();
+    keyRef.current = "";
     setKey("");
     setRemote(null);
+    setMetadata(null);
     setConfirmAction(null);
     clearMessages();
   }
 
   const connected = remote !== null;
+  const disabled = busy || checking;
 
   return (
     <details className="family-sync" open={connected || Boolean(error)}>
       <summary>
         <span>Shared Family Plan</span>
         <span className={`family-sync-status ${connected ? "family-sync-status-connected" : ""}`}>
-          {connected ? `Connected · v${remote.version}` : "Not connected"}
+          {checking && connected ? "Checking…" : connected ? `Connected · v${remote.version}` : "Not connected"}
         </span>
       </summary>
       <div className="family-sync-content">
-        <p className="muted">Use the same private family key on Ryan’s and Katie’s devices. CastleWatch will never replace either copy until you choose upload or download.</p>
+        <p className="muted">CastleWatch checks for newer versions when this page opens or regains focus, but it never uploads or replaces data automatically.</p>
 
         {!connected && (
           <div className="family-sync-key-row">
@@ -160,48 +352,67 @@ export default function FamilyTripSync() {
               autoComplete="current-password"
               placeholder="Family key"
               value={key}
-              onChange={(event) => setKey(event.target.value)}
+              onChange={(event) => {
+                setKey(event.target.value);
+                keyRef.current = event.target.value;
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void connect();
               }}
             />
-            <button className="family-sync-button family-sync-button-primary" type="button" disabled={busy} onClick={() => void connect()}>
+            <button className="family-sync-button family-sync-button-primary" type="button" disabled={disabled} onClick={() => void connect()}>
               {busy ? "Connecting…" : "Connect"}
             </button>
           </div>
         )}
 
-        {connected && remote && (
+        {connected && remote && analysis && (
           <>
             <div className="family-sync-remote">
               <strong>{remote.version === 0 ? "No shared plan yet" : "Shared plan available"}</strong>
               <span className="muted">{remoteDescription(remote)}</span>
             </div>
-            <div className="family-sync-actions">
-              {remote.version === 0 ? (
-                <button className="family-sync-button family-sync-button-primary" type="button" disabled={busy} onClick={() => void upload()}>
-                  Create shared plan from this device
-                </button>
-              ) : (
-                <>
-                  <button className="family-sync-button family-sync-button-primary" type="button" disabled={busy} onClick={() => setConfirmAction("download")}>
-                    Download shared plan
-                  </button>
-                  <button className="family-sync-button family-sync-button-warning" type="button" disabled={busy} onClick={() => setConfirmAction("upload")}>
-                    Replace shared plan with this device
-                  </button>
-                </>
+
+            <div className={`family-sync-awareness family-sync-awareness-${analysis.tone}`}>
+              <strong>{analysis.label}</strong>
+              <span>{analysis.detail}</span>
+              {metadata && (
+                <small>Last synchronized baseline: version {metadata.version} · {new Date(metadata.syncedAt).toLocaleString()}</small>
               )}
-              <button className="family-sync-button" type="button" disabled={busy} onClick={() => void connect()}>Refresh shared status</button>
-              <button className="family-sync-button family-sync-button-danger" type="button" disabled={busy} onClick={disconnect}>Disconnect this device</button>
+            </div>
+
+            {analysis.id === "conflict" && (
+              <div className="family-sync-guard">
+                CastleWatch has disabled uploading. Downloading the shared version will discard this browser’s local changes; otherwise leave both copies unchanged until the preferred version is chosen.
+              </div>
+            )}
+
+            <div className="family-sync-actions">
+              {analysis.canDownload && (
+                <button className="family-sync-button family-sync-button-primary" type="button" disabled={disabled} onClick={() => void prepareDownload()}>
+                  {downloadButtonLabel(analysis)}
+                </button>
+              )}
+              {analysis.canUpload && (
+                <button className="family-sync-button family-sync-button-warning" type="button" disabled={disabled} onClick={() => void prepareUpload()}>
+                  {uploadButtonLabel(analysis)}
+                </button>
+              )}
+              <button className="family-sync-button" type="button" disabled={disabled} onClick={() => void checkRemote(undefined, true)}>
+                {checking ? "Checking…" : "Check shared status now"}
+              </button>
+              <button className="family-sync-button family-sync-button-danger" type="button" disabled={disabled} onClick={disconnect}>Disconnect this device</button>
             </div>
           </>
         )}
 
-        {confirmAction === "download" && remote?.payload && (
+        {confirmAction === "download" && remote?.payload && analysis && (
           <div className="family-sync-confirm">
-            <strong>Replace this device’s local trip plan?</strong>
-            <div className="muted">Reservations, resorts, trip details and the active/locked park order on this device will be replaced by shared version {remote.version}. Trip Week will reload once after confirmation.</div>
+            <strong>{analysis.localChanged ? "Discard this browser’s local changes?" : "Use the shared plan on this device?"}</strong>
+            <div className="muted">
+              Reservations, resorts, trip details and the active/locked park order on this device will be replaced by shared version {remote.version}.
+              {analysis.localChanged ? " Any local changes since the last synchronized baseline will be lost." : ""} Trip Week will reload once after confirmation.
+            </div>
             <div className="family-sync-actions">
               <button className="family-sync-button family-sync-button-primary" type="button" onClick={download}>Confirm download</button>
               <button className="family-sync-button" type="button" onClick={() => setConfirmAction(null)}>Cancel</button>
@@ -209,10 +420,12 @@ export default function FamilyTripSync() {
           </div>
         )}
 
-        {confirmAction === "upload" && remote && (
+        {confirmAction === "upload" && remote && analysis && (
           <div className="family-sync-confirm">
-            <strong>Replace shared version {remote.version}?</strong>
-            <div className="muted">The current data on this device will become the new shared family plan. A stale version cannot overwrite a newer server version.</div>
+            <strong>{analysis.id === "baseline_required" ? `Use this device instead of shared version ${remote.version}?` : `Upload changes over shared version ${remote.version}?`}</strong>
+            <div className="muted">
+              CastleWatch checked the current server version immediately before opening this confirmation. The database will reject the upload if another device saves a newer version before this upload finishes.
+            </div>
             <div className="family-sync-actions">
               <button className="family-sync-button family-sync-button-warning" type="button" disabled={busy} onClick={() => void upload()}>
                 {busy ? "Uploading…" : "Confirm upload"}

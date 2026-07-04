@@ -37,6 +37,41 @@ export type FamilyTripDocument = {
   payload: FamilyTripPayload | null;
   updatedAt: string | null;
   message?: string;
+  restoredFromVersion?: number | null;
+};
+
+export type FamilyTripHistoryEntry = {
+  version: number;
+  createdAt: string | null;
+  restoredFromVersion: number | null;
+  isCurrent: boolean;
+  reservationCount: number;
+  tripName: string;
+  activeScenario: "base" | "alternate" | string;
+  locked: boolean;
+};
+
+export type FamilyTripHistoryDocument = {
+  status: string;
+  currentVersion: number;
+  historyLimit: number;
+  entries: FamilyTripHistoryEntry[];
+  message?: string;
+};
+
+export type FamilyTripHistorySnapshot = {
+  status: string;
+  version: number;
+  payload: FamilyTripPayload;
+  createdAt: string | null;
+  restoredFromVersion: number | null;
+  summary: {
+    reservationCount: number;
+    tripName: string;
+    activeScenario: string;
+    locked: boolean;
+  };
+  message?: string;
 };
 
 export type AppliedFamilyTrip = {
@@ -296,29 +331,13 @@ export function analyzeFamilyTripSync(
   };
 }
 
-async function parseDocument(response: Response): Promise<FamilyTripDocument> {
-  const rawText = await response.text();
-  let data: any = {};
-  try {
-    data = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    data = {};
-  }
+type RawSyncResponse = {
+  response: Response;
+  data: any;
+  rawText: string;
+};
 
-  const fallbackMessage = response.ok
-    ? undefined
-    : `Family sync returned HTTP ${response.status}${rawText ? `: ${rawText.slice(0, 180)}` : "."}`;
-
-  return {
-    status: typeof data?.status === "string" ? data.status : response.ok ? "ok" : "error",
-    version: Number.isInteger(data?.version) ? data.version : 0,
-    payload: data?.payload && typeof data.payload === "object" ? data.payload as FamilyTripPayload : null,
-    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null,
-    message: typeof data?.message === "string" ? data.message : fallbackMessage,
-  };
-}
-
-async function syncRequest(body: Record<string, unknown>): Promise<{ response: Response; document: FamilyTripDocument }> {
+async function rawSyncRequest(body: Record<string, unknown>): Promise<RawSyncResponse> {
   const response = await fetch("/api/castlewatch-family-sync", {
     method: "POST",
     cache: "no-store",
@@ -328,17 +347,40 @@ async function syncRequest(body: Record<string, unknown>): Promise<{ response: R
     },
     body: JSON.stringify(body),
   });
-  const document = await parseDocument(response);
-  return { response, document };
+  const rawText = await response.text();
+  let data: any = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    data = {};
+  }
+  return { response, data, rawText };
+}
+
+function fallbackMessage(response: Response, rawText: string, label: string) {
+  return `${label} returned HTTP ${response.status}${rawText ? `: ${rawText.slice(0, 180)}` : "."}`;
+}
+
+function parseDocument(result: RawSyncResponse): FamilyTripDocument {
+  const { response, data, rawText } = result;
+  return {
+    status: typeof data?.status === "string" ? data.status : response.ok ? "ok" : "error",
+    version: Number.isInteger(data?.version) ? data.version : 0,
+    payload: data?.payload && typeof data.payload === "object" ? data.payload as FamilyTripPayload : null,
+    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null,
+    message: typeof data?.message === "string" ? data.message : response.ok ? undefined : fallbackMessage(response, rawText, "Family sync"),
+    restoredFromVersion: Number.isInteger(data?.restoredFromVersion) ? data.restoredFromVersion : null,
+  };
 }
 
 export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> {
-  const { response, document } = await syncRequest({
+  const result = await rawSyncRequest({
     action: "read",
     key: key.trim(),
   });
-  if (!response.ok) {
-    throw new FamilyTripSyncError(document.message || `Shared family storage could not be loaded (HTTP ${response.status}).`, response.status, document);
+  const document = parseDocument(result);
+  if (!result.response.ok) {
+    throw new FamilyTripSyncError(document.message || `Shared family storage could not be loaded (HTTP ${result.response.status}).`, result.response.status, document);
   }
   return document;
 }
@@ -348,14 +390,83 @@ export async function saveFamilyTrip(
   expectedVersion: number,
   payload: FamilyTripPayload,
 ): Promise<FamilyTripDocument> {
-  const { response, document } = await syncRequest({
+  const result = await rawSyncRequest({
     action: "write",
     key: key.trim(),
     expectedVersion,
     payload,
   });
-  if (!response.ok) {
-    throw new FamilyTripSyncError(document.message || `Shared family storage could not be saved (HTTP ${response.status}).`, response.status, document);
+  const document = parseDocument(result);
+  if (!result.response.ok) {
+    throw new FamilyTripSyncError(document.message || `Shared family storage could not be saved (HTTP ${result.response.status}).`, result.response.status, document);
+  }
+  return document;
+}
+
+export async function fetchFamilyTripHistory(key: string): Promise<FamilyTripHistoryDocument> {
+  const result = await rawSyncRequest({
+    action: "history",
+    key: key.trim(),
+  });
+  const data = result.data;
+  const history: FamilyTripHistoryDocument = {
+    status: typeof data?.status === "string" ? data.status : result.response.ok ? "ok" : "error",
+    currentVersion: Number.isInteger(data?.currentVersion) ? data.currentVersion : 0,
+    historyLimit: Number.isInteger(data?.historyLimit) ? data.historyLimit : 25,
+    entries: Array.isArray(data?.entries) ? data.entries as FamilyTripHistoryEntry[] : [],
+    message: typeof data?.message === "string" ? data.message : result.response.ok ? undefined : fallbackMessage(result.response, result.rawText, "Family history"),
+  };
+  if (!result.response.ok) {
+    throw new FamilyTripSyncError(history.message || `Shared history could not be loaded (HTTP ${result.response.status}).`, result.response.status);
+  }
+  return history;
+}
+
+export async function fetchFamilyTripHistoryVersion(
+  key: string,
+  version: number,
+): Promise<FamilyTripHistorySnapshot> {
+  const result = await rawSyncRequest({
+    action: "history_version",
+    key: key.trim(),
+    version,
+  });
+  const data = result.data;
+  if (!result.response.ok || !data?.payload) {
+    const message = typeof data?.message === "string"
+      ? data.message
+      : fallbackMessage(result.response, result.rawText, "History version");
+    throw new FamilyTripSyncError(message, result.response.status);
+  }
+  return {
+    status: typeof data?.status === "string" ? data.status : "ok",
+    version: Number.isInteger(data?.version) ? data.version : version,
+    payload: data.payload as FamilyTripPayload,
+    createdAt: typeof data?.createdAt === "string" ? data.createdAt : null,
+    restoredFromVersion: Number.isInteger(data?.restoredFromVersion) ? data.restoredFromVersion : null,
+    summary: {
+      reservationCount: Number.isInteger(data?.summary?.reservationCount) ? data.summary.reservationCount : 0,
+      tripName: typeof data?.summary?.tripName === "string" ? data.summary.tripName : "Family trip",
+      activeScenario: typeof data?.summary?.activeScenario === "string" ? data.summary.activeScenario : "base",
+      locked: Boolean(data?.summary?.locked),
+    },
+  };
+}
+
+export async function restoreFamilyTripVersion(
+  key: string,
+  expectedVersion: number,
+  sourceVersion: number,
+): Promise<FamilyTripDocument> {
+  const result = await rawSyncRequest({
+    action: "restore",
+    key: key.trim(),
+    expectedVersion,
+    sourceVersion,
+  });
+  const document = parseDocument(result);
+  if (!result.response.ok) {
+    throw new FamilyTripSyncError(document.message || `Shared history could not be restored (HTTP ${result.response.status}).`, result.response.status, document);
   }
   return document;
 }

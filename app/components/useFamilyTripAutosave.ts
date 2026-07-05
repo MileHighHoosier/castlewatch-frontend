@@ -160,7 +160,7 @@ export default function useFamilyTripAutosave({
       setDetail(`Autosaved as shared version ${saved.version}. A backup snapshot was created.`);
       window.dispatchEvent(new CustomEvent(FAMILY_SYNC_UPDATED_EVENT));
     } catch (error) {
-      if (error instanceof FamilyTripSyncError && error.document) {
+      if (error instanceof FamilyTripSyncError && error.statusCode === 409 && error.document) {
         const latestPayload = buildLocalFamilyTripPayload();
         const latestMetadata = matchingMetadata(error.document, latestPayload);
         const latestAnalysis = analyzeFamilyTripSync(latestPayload, error.document, latestMetadata);
@@ -171,12 +171,10 @@ export default function useFamilyTripAutosave({
           setDetail("The same changes were saved elsewhere. This browser is now up to date.");
           return;
         }
-        if (error.statusCode === 409) {
-          retryCount.current = 0;
-          setPhase("blocked");
-          setDetail(blockedMessage(latestAnalysis));
-          return;
-        }
+        retryCount.current = 0;
+        setPhase("blocked");
+        setDetail(blockedMessage(latestAnalysis));
+        return;
       }
 
       if (isRetryable(error)) {

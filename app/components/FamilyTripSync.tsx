@@ -20,6 +20,7 @@ import {
   saveFamilySyncMetadata,
   saveFamilyTrip,
 } from "../lib/familyTripSync";
+import useFamilyTripAutosave, { FAMILY_SYNC_UPDATED_EVENT } from "./useFamilyTripAutosave";
 
 const STYLE_ID = "castlewatch-family-sync-style";
 const LOCAL_CHECK_INTERVAL_MS = 1_000;
@@ -71,6 +72,17 @@ function ensureStyle() {
     .family-sync-confirm { border:1px solid rgba(255,184,76,.36); border-radius:12px; padding:10px; margin-top:10px; background:rgba(255,184,76,.06); }
     .family-sync-confirm strong { display:block; margin-bottom:4px; }
     .family-sync-guard { border:1px solid rgba(255,99,99,.38); border-radius:10px; padding:8px 9px; margin-top:9px; background:rgba(255,99,99,.065); font-size:11px; line-height:1.4; }
+    .family-autosave { border:1px solid rgba(255,255,255,.13); border-radius:12px; padding:10px; margin-top:10px; background:rgba(0,0,0,.09); }
+    .family-autosave-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .family-autosave-top strong { display:block; }
+    .family-autosave-toggle { border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:5px 9px; background:rgba(255,255,255,.045); color:inherit; font:inherit; font-size:10px; font-weight:900; cursor:pointer; white-space:nowrap; }
+    .family-autosave-toggle-on { border-color:rgba(56,217,150,.42); color:rgb(124,239,191); background:rgba(56,217,150,.08); }
+    .family-autosave-state { display:block; margin-top:8px; font-weight:900; font-size:12px; }
+    .family-autosave-detail { display:block; margin-top:3px; color:var(--muted); font-size:10px; line-height:1.45; }
+    .family-autosave-time { display:block; margin-top:6px; color:var(--muted); font-size:9px; }
+    .family-autosave-ready, .family-autosave-saved { border-color:rgba(56,217,150,.38); background:rgba(56,217,150,.055); }
+    .family-autosave-pending, .family-autosave-saving, .family-autosave-retrying { border-color:rgba(99,164,255,.4); background:rgba(99,164,255,.055); }
+    .family-autosave-blocked, .family-autosave-failed { border-color:rgba(255,99,99,.42); background:rgba(255,99,99,.06); }
     @media (max-width:700px) {
       .family-sync-key-row { grid-template-columns:1fr; }
       .family-sync-actions { display:grid; grid-template-columns:1fr; }
@@ -149,6 +161,28 @@ export default function FamilyTripSync() {
     setError(value instanceof Error ? value.message : "Shared family storage could not be reached.");
   }, []);
 
+  const handleAutosaveSyncState = useCallback((
+    document: FamilyTripDocument,
+    payload: FamilyTripPayload,
+    nextMetadata: FamilyTripSyncMetadata | null,
+  ) => {
+    setRemote(document);
+    setLocalPayload(payload);
+    setMetadata(nextMetadata);
+    setError(null);
+  }, []);
+
+  const connected = remote !== null;
+  const autosave = useFamilyTripAutosave({
+    connected,
+    familyKey: keyRef.current,
+    localPayload,
+    remote,
+    analysis,
+    suspended: busy || checking || confirmAction !== null,
+    onSyncState: handleAutosaveSyncState,
+  });
+
   const checkRemote = useCallback(async (
     requestedKey?: string,
     announce = false,
@@ -203,7 +237,11 @@ export default function FamilyTripSync() {
 
   useEffect(() => {
     function refreshLocal() {
-      setLocalPayload(buildLocalFamilyTripPayload());
+      const next = buildLocalFamilyTripPayload();
+      setLocalPayload((current) => {
+        if (current && fingerprintFamilyTripPayload(current) === fingerprintFamilyTripPayload(next)) return current;
+        return next;
+      });
     }
 
     function checkOnFocus() {
@@ -286,6 +324,7 @@ export default function FamilyTripSync() {
       setMetadata(nextMetadata);
       setConfirmAction(null);
       setSuccess(`This device was uploaded as shared version ${document.version}.`);
+      window.dispatchEvent(new CustomEvent(FAMILY_SYNC_UPDATED_EVENT));
     } catch (uploadError) {
       setConfirmAction(null);
       if (uploadError instanceof FamilyTripSyncError && uploadError.document) {
@@ -320,6 +359,7 @@ export default function FamilyTripSync() {
   }
 
   function disconnect() {
+    autosave.setEnabled(false);
     saveFamilyKey("");
     clearFamilySyncMetadata();
     keyRef.current = "";
@@ -330,8 +370,9 @@ export default function FamilyTripSync() {
     clearMessages();
   }
 
-  const connected = remote !== null;
   const disabled = busy || checking;
+  const autosaveTime = autosave.lastSavedAt ? new Date(autosave.lastSavedAt).toLocaleString() : null;
+  const retryTime = autosave.nextAttemptAt ? new Date(autosave.nextAttemptAt).toLocaleTimeString() : null;
 
   return (
     <details className="family-sync" open={connected || Boolean(error)}>
@@ -342,7 +383,9 @@ export default function FamilyTripSync() {
         </span>
       </summary>
       <div className="family-sync-content">
-        <p className="muted">CastleWatch checks for newer versions when this page opens or regains focus, but it never uploads or replaces data automatically.</p>
+        <p className="muted">
+          CastleWatch checks for newer versions when this page opens or regains focus. Guarded autosave is off by default on each browser, and manual upload and download always remain available.
+        </p>
 
         {!connected && (
           <div className="family-sync-key-row">
@@ -381,9 +424,28 @@ export default function FamilyTripSync() {
               )}
             </div>
 
+            <div className={`family-autosave family-autosave-${autosave.phase}`}>
+              <div className="family-autosave-top">
+                <strong>Guarded autosave</strong>
+                <button
+                  className={`family-autosave-toggle ${autosave.enabled ? "family-autosave-toggle-on" : ""}`}
+                  type="button"
+                  aria-pressed={autosave.enabled}
+                  disabled={busy || checking}
+                  onClick={() => autosave.setEnabled(!autosave.enabled)}
+                >
+                  {autosave.enabled ? "Enabled on this browser" : "Off"}
+                </button>
+              </div>
+              <span className="family-autosave-state">{autosave.label}</span>
+              <span className="family-autosave-detail">{autosave.detail}</span>
+              {autosaveTime && <small className="family-autosave-time">Last autosave: {autosaveTime}</small>}
+              {retryTime && <small className="family-autosave-time">Next attempt: {retryTime}</small>}
+            </div>
+
             {analysis.id === "conflict" && (
               <div className="family-sync-guard">
-                CastleWatch has disabled uploading. Downloading the shared version will discard this browser’s local changes; otherwise leave both copies unchanged until the preferred version is chosen.
+                CastleWatch has disabled uploading and autosave. Downloading the shared version will discard this browser’s local changes; otherwise leave both copies unchanged until the preferred version is chosen.
               </div>
             )}
 

@@ -19,10 +19,48 @@ test("operations report parser normalizes missing values safely", () => {
   assert.equal(report.storage.currentVersion, 11);
   assert.equal(report.storage.currentPayloadBytes, 4096);
   assert.equal(report.storage.historyLimit, 25);
+  assert.equal(report.monthlyProjection.projectionDays, 30);
+  assert.equal(report.monthlyProjection.reliability, "early_estimate");
+  assert.equal(report.costEstimates.estimatedFullReadsPerRailwayEgressDollar, null);
   assert.equal(report.controls.readOnlyReport, false);
   assert.deepEqual(report.warnings, [
     { level: "warning", code: "payload_growing", message: "Growing" },
   ]);
+});
+
+test("operations parser preserves monthly projection and guardrail values", () => {
+  const report = parseFamilyTripOperationsReport({
+    status: "ok",
+    monthlyProjection: {
+      projectionDays: 30,
+      observedDailyVersionRate: 1.43,
+      projectedGuardedAutosaves: 43,
+      projectedRailwayEgressBytesFromAutosaves: 440320,
+      illustrativeFamilyReadChecks: 60,
+      illustrativeFamilyRailwayEgressBytes: 747520,
+      illustrativeFamilyRailwayEgressUsd: 0.0000348,
+      reliability: "moderate",
+      note: "Projection note",
+    },
+    costEstimates: {
+      estimatedFullReadsPerRailwayEgressDollar: 100000,
+      estimatedGuardedAutosavesPerRailwayEgressDollar: 50000,
+    },
+    controls: {
+      monthlyEgressWarningBytes: 1073741824,
+      monthlyEgressCriticalBytes: 10737418240,
+    },
+  });
+
+  assert.equal(report.monthlyProjection.observedDailyVersionRate, 1.43);
+  assert.equal(report.monthlyProjection.projectedGuardedAutosaves, 43);
+  assert.equal(report.monthlyProjection.illustrativeFamilyReadChecks, 60);
+  assert.equal(report.monthlyProjection.illustrativeFamilyRailwayEgressUsd, 0.0000348);
+  assert.equal(report.monthlyProjection.reliability, "moderate");
+  assert.equal(report.costEstimates.estimatedFullReadsPerRailwayEgressDollar, 100000);
+  assert.equal(report.costEstimates.estimatedGuardedAutosavesPerRailwayEgressDollar, 50000);
+  assert.equal(report.controls.monthlyEgressWarningBytes, 1073741824);
+  assert.equal(report.controls.monthlyEgressCriticalBytes, 10737418240);
 });
 
 test("operations client sends a protected read-only proxy action", async () => {
@@ -44,9 +82,22 @@ test("operations client sends a protected read-only proxy action", async () => {
       },
       activity: { versionsRetained: 7 },
       transferEstimates: { estimatedRailwayEgressBytesPerFullRead: 4224 },
-      costEstimates: { estimatedRailwayEgressUsdPerFullRead: 0.0000001967 },
+      monthlyProjection: {
+        projectionDays: 30,
+        projectedGuardedAutosaves: 15,
+        illustrativeFamilyReadChecks: 60,
+        reliability: "moderate",
+      },
+      costEstimates: {
+        estimatedRailwayEgressUsdPerFullRead: 0.0000001967,
+        estimatedFullReadsPerRailwayEgressDollar: 5083884,
+      },
       pricingAssumptions: { railwayNetworkEgressUsdPerGiB: 0.05 },
-      controls: { readOnlyReport: true, telemetryRowsWritten: false },
+      controls: {
+        readOnlyReport: true,
+        telemetryRowsWritten: false,
+        monthlyEgressWarningBytes: 1073741824,
+      },
       warnings: [],
     }), {
       status: 200,
@@ -64,6 +115,9 @@ test("operations client sends a protected read-only proxy action", async () => {
       key: "family-key",
     });
     assert.equal(report.storage.currentVersion, 11);
+    assert.equal(report.monthlyProjection.projectedGuardedAutosaves, 15);
+    assert.equal(report.monthlyProjection.illustrativeFamilyReadChecks, 60);
+    assert.equal(report.costEstimates.estimatedFullReadsPerRailwayEgressDollar, 5083884);
     assert.equal(report.controls.readOnlyReport, true);
     assert.equal(report.controls.telemetryRowsWritten, false);
   } finally {

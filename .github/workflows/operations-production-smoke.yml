@@ -1,0 +1,71 @@
+name: Operations production smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/api/castlewatch-family-sync/route.ts"
+      - "app/lib/familyTripOperations.ts"
+      - ".github/workflows/operations-production-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operations-production-smoke
+  cancel-in-progress: true
+
+jobs:
+  operations-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PRODUCTION_URL: ${{ vars.CASTLEWATCH_PRODUCTION_URL || 'https://castlewatch-frontend.vercel.app' }}
+    steps:
+      - name: Verify Vercel reaches Railway operations route
+        shell: bash
+        run: |
+          set -u
+          endpoint="${PRODUCTION_URL%/}/api/castlewatch-family-sync"
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+
+          for attempt in $(seq 1 24); do
+            http_status="$(curl --silent --show-error \
+              --output "$body_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/json' \
+              --header 'Content-Type: application/json' \
+              --data "{\"action\":\"operations\",\"key\":\"castlewatch-smoke-invalid-${GITHUB_RUN_ID}\"}" \
+              "$endpoint" || true)"
+
+            if [ "$http_status" = "401" ] && python - "$body_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              data = json.load(source)
+
+          if data.get("status") != "unauthorized":
+              raise SystemExit(1)
+          message = str(data.get("message", "")).lower()
+          if "family key" not in message and "unauthorized" not in message:
+              raise SystemExit(1)
+          PY
+            then
+              echo "Production smoke passed on attempt ${attempt}."
+              echo "Vercel reached Railway, the operations route exists, and the family-key guard rejected the intentionally invalid key."
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/24 returned HTTP ${http_status}. Waiting for production deployment..."
+            cat "$body_file" || true
+            echo
+            sleep 15
+          done
+
+          echo "Production operations smoke failed after 24 attempts."
+          exit 1

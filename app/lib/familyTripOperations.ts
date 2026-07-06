@@ -33,10 +33,23 @@ export type FamilyTripOperationsReport = {
     estimatedRailwayEgressBytesPerGuardedAutosave: number;
     note: string;
   };
+  monthlyProjection: {
+    projectionDays: number;
+    observedDailyVersionRate: number;
+    projectedGuardedAutosaves: number;
+    projectedRailwayEgressBytesFromAutosaves: number;
+    illustrativeFamilyReadChecks: number;
+    illustrativeFamilyRailwayEgressBytes: number;
+    illustrativeFamilyRailwayEgressUsd: number;
+    reliability: string;
+    note: string;
+  };
   costEstimates: {
     estimatedRailwayEgressUsdPerFullRead: number;
     estimatedRailwayEgressUsdPerGuardedAutosave: number;
     estimatedRailwayVolumeUsdPerMonthAtHistoryLimit: number;
+    estimatedFullReadsPerRailwayEgressDollar: number | null;
+    estimatedGuardedAutosavesPerRailwayEgressDollar: number | null;
     note: string;
   };
   pricingAssumptions: {
@@ -50,6 +63,8 @@ export type FamilyTripOperationsReport = {
     telemetryRowsWritten: boolean;
     historyLimit: number;
     payloadLimitBytes: number;
+    monthlyEgressWarningBytes: number;
+    monthlyEgressCriticalBytes: number;
   };
   warnings: FamilyTripOperationsWarning[];
   message?: string;
@@ -70,12 +85,20 @@ function numberValue(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function nullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
 function nullableString(value: unknown) {
   return typeof value === "string" ? value : null;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, any> : {};
 }
 
 function parseWarnings(value: unknown): FamilyTripOperationsWarning[] {
@@ -95,13 +118,14 @@ function parseWarnings(value: unknown): FamilyTripOperationsWarning[] {
 }
 
 export function parseFamilyTripOperationsReport(data: unknown): FamilyTripOperationsReport {
-  const root = data && typeof data === "object" ? data as Record<string, any> : {};
-  const storage = root.storage && typeof root.storage === "object" ? root.storage : {};
-  const activity = root.activity && typeof root.activity === "object" ? root.activity : {};
-  const transfer = root.transferEstimates && typeof root.transferEstimates === "object" ? root.transferEstimates : {};
-  const costs = root.costEstimates && typeof root.costEstimates === "object" ? root.costEstimates : {};
-  const pricing = root.pricingAssumptions && typeof root.pricingAssumptions === "object" ? root.pricingAssumptions : {};
-  const controls = root.controls && typeof root.controls === "object" ? root.controls : {};
+  const root = objectValue(data);
+  const storage = objectValue(root.storage);
+  const activity = objectValue(root.activity);
+  const transfer = objectValue(root.transferEstimates);
+  const monthly = objectValue(root.monthlyProjection);
+  const costs = objectValue(root.costEstimates);
+  const pricing = objectValue(root.pricingAssumptions);
+  const controls = objectValue(root.controls);
 
   return {
     status: stringValue(root.status, "error"),
@@ -132,10 +156,23 @@ export function parseFamilyTripOperationsReport(data: unknown): FamilyTripOperat
       estimatedRailwayEgressBytesPerGuardedAutosave: numberValue(transfer.estimatedRailwayEgressBytesPerGuardedAutosave),
       note: stringValue(transfer.note),
     },
+    monthlyProjection: {
+      projectionDays: numberValue(monthly.projectionDays, 30),
+      observedDailyVersionRate: numberValue(monthly.observedDailyVersionRate),
+      projectedGuardedAutosaves: numberValue(monthly.projectedGuardedAutosaves),
+      projectedRailwayEgressBytesFromAutosaves: numberValue(monthly.projectedRailwayEgressBytesFromAutosaves),
+      illustrativeFamilyReadChecks: numberValue(monthly.illustrativeFamilyReadChecks),
+      illustrativeFamilyRailwayEgressBytes: numberValue(monthly.illustrativeFamilyRailwayEgressBytes),
+      illustrativeFamilyRailwayEgressUsd: numberValue(monthly.illustrativeFamilyRailwayEgressUsd),
+      reliability: stringValue(monthly.reliability, "early_estimate"),
+      note: stringValue(monthly.note),
+    },
     costEstimates: {
       estimatedRailwayEgressUsdPerFullRead: numberValue(costs.estimatedRailwayEgressUsdPerFullRead),
       estimatedRailwayEgressUsdPerGuardedAutosave: numberValue(costs.estimatedRailwayEgressUsdPerGuardedAutosave),
       estimatedRailwayVolumeUsdPerMonthAtHistoryLimit: numberValue(costs.estimatedRailwayVolumeUsdPerMonthAtHistoryLimit),
+      estimatedFullReadsPerRailwayEgressDollar: nullableNumber(costs.estimatedFullReadsPerRailwayEgressDollar),
+      estimatedGuardedAutosavesPerRailwayEgressDollar: nullableNumber(costs.estimatedGuardedAutosavesPerRailwayEgressDollar),
       note: stringValue(costs.note),
     },
     pricingAssumptions: {
@@ -149,6 +186,8 @@ export function parseFamilyTripOperationsReport(data: unknown): FamilyTripOperat
       telemetryRowsWritten: Boolean(controls.telemetryRowsWritten),
       historyLimit: numberValue(controls.historyLimit, 25),
       payloadLimitBytes: numberValue(controls.payloadLimitBytes),
+      monthlyEgressWarningBytes: numberValue(controls.monthlyEgressWarningBytes),
+      monthlyEgressCriticalBytes: numberValue(controls.monthlyEgressCriticalBytes),
     },
     warnings: parseWarnings(root.warnings),
     message: typeof root.message === "string" ? root.message : undefined,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-type SyncAction = "read" | "write" | "history" | "history_version" | "restore";
+type SyncAction = "read" | "write" | "history" | "history_version" | "restore" | "operations";
 
 type SyncRequestBody = {
   action?: SyncAction;
@@ -31,7 +31,8 @@ function validAction(value: unknown): value is SyncAction {
     || value === "write"
     || value === "history"
     || value === "history_version"
-    || value === "restore";
+    || value === "restore"
+    || value === "operations";
 }
 
 export async function POST(request: NextRequest) {
@@ -89,6 +90,8 @@ export async function POST(request: NextRequest) {
       expectedVersion: body.expectedVersion,
       sourceVersion: body.sourceVersion,
     });
+  } else if (action === "operations") {
+    upstreamPath = "/api/family-trip/operations";
   }
 
   try {

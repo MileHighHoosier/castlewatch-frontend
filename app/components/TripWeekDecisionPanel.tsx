@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import FamilyTripHistory from "./FamilyTripHistory";
 import FamilyTripSync from "./FamilyTripSync";
+import OperationsLink from "./OperationsLink";
 import TripWeekDecisionCard, { TripWeekScenarioChange } from "./TripWeekDecisionCard";
 import type { SpecialEventIntelligenceData } from "./SpecialEventIntelligence";
 import {
@@ -175,6 +176,7 @@ export default function TripWeekDecisionPanel({
   return (
     <>
       <FamilyTripSync />
+      <OperationsLink />
       <FamilyTripHistory />
       <TripWeekDecisionCard
         decision={decision}

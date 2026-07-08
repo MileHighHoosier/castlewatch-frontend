@@ -1,3 +1,5 @@
+export const FAMILY_DEVICE_ACCESS_STORAGE_KEY = "castlewatch.family-device-access.v1";
+
 export type FamilyTripDeviceAuth = {
   key?: string;
   deviceToken?: string;
@@ -27,6 +29,14 @@ export type FamilyTripInviteRecord = {
   expiresAt: string | null;
   createdAt: string | null;
   acceptedAt: string | null;
+};
+
+export type StoredFamilyDeviceAccess = {
+  deviceToken: string;
+  deviceId: string | null;
+  displayName: string;
+  role: FamilyTripDeviceRole;
+  savedAt: string;
 };
 
 export type FamilyTripDevicesResponse = {
@@ -153,6 +163,48 @@ export function parseFamilyTripDeviceResponse(data: unknown): FamilyTripDeviceRe
     device: parseDevice(root.device),
     message: typeof root.message === "string" ? root.message : undefined,
   };
+}
+
+export function loadFamilyDeviceAccess(): StoredFamilyDeviceAccess | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = objectValue(JSON.parse(raw));
+    const deviceToken = stringValue(parsed.deviceToken).trim();
+    if (!deviceToken) return null;
+    return {
+      deviceToken,
+      deviceId: nullableString(parsed.deviceId),
+      displayName: stringValue(parsed.displayName, "This device"),
+      role: stringValue(parsed.role, "editor"),
+      savedAt: stringValue(parsed.savedAt, new Date().toISOString()),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveFamilyDeviceAccess(deviceToken: string, device?: FamilyTripDeviceRecord | null) {
+  if (typeof window === "undefined") return;
+  const normalized = deviceToken.trim();
+  if (!normalized) {
+    window.localStorage.removeItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
+    return;
+  }
+  const record: StoredFamilyDeviceAccess = {
+    deviceToken: normalized,
+    deviceId: device?.id || null,
+    displayName: device?.displayName || "This device",
+    role: device?.role || "editor",
+    savedAt: new Date().toISOString(),
+  };
+  window.localStorage.setItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify(record));
+}
+
+export function clearFamilyDeviceAccess() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
 }
 
 type RawDeviceResponse = {

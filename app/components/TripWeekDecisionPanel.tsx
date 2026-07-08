@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import FamilyTripDevices from "./FamilyTripDevices";
 import FamilyTripHistory from "./FamilyTripHistory";
 import FamilyTripSync from "./FamilyTripSync";
 import OperationsLink from "./OperationsLink";
@@ -177,6 +178,7 @@ export default function TripWeekDecisionPanel({
     <>
       <FamilyTripSync />
       <OperationsLink />
+      <FamilyTripDevices />
       <FamilyTripHistory />
       <TripWeekDecisionCard
         decision={decision}

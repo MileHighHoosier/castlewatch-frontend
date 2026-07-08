@@ -99,8 +99,8 @@ export default function FamilyTripDevices() {
     setFamilyKey(loadFamilyKey());
     const stored = loadFamilyDeviceAccess();
     setLocalDevice(stored);
-    if (!acceptName && stored?.displayName) setAcceptName(stored.displayName);
-  }, [acceptName]);
+    if (stored?.displayName) setAcceptName(stored.displayName);
+  }, []);
 
   const auth = useMemo(() => deviceAuth(familyKey, localDevice), [familyKey, localDevice]);
   const canManage = Boolean(auth);
@@ -201,13 +201,14 @@ export default function FamilyTripDevices() {
     clearMessages();
     try {
       const response = await renameFamilyTripDevice(auth, device.id, displayName);
-      if (response.device) {
-        setDevices((current) => current.map((entry) => entry.id === response.device?.id ? response.device : entry));
-        if (localDevice?.deviceId === response.device.id) {
-          saveFamilyDeviceAccess(localDevice.deviceToken, response.device);
+      const nextDevice = response.device;
+      if (nextDevice) {
+        setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
+        if (localDevice?.deviceId === nextDevice.id) {
+          saveFamilyDeviceAccess(localDevice.deviceToken, nextDevice);
           setLocalDevice(loadFamilyDeviceAccess());
         }
-        setSuccess(`${response.device.displayName} was renamed.`);
+        setSuccess(`${nextDevice.displayName} was renamed.`);
       }
     } catch (renameError) {
       setError(errorMessage(renameError));
@@ -224,13 +225,14 @@ export default function FamilyTripDevices() {
     clearMessages();
     try {
       const response = await revokeFamilyTripDevice(auth, device.id);
-      if (response.device) {
-        setDevices((current) => current.map((entry) => entry.id === response.device?.id ? response.device : entry));
-        if (localDevice?.deviceId === response.device.id) {
+      const nextDevice = response.device;
+      if (nextDevice) {
+        setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
+        if (localDevice?.deviceId === nextDevice.id) {
           clearFamilyDeviceAccess();
           setLocalDevice(null);
         }
-        setSuccess(`${response.device.displayName} was revoked.`);
+        setSuccess(`${nextDevice.displayName} was revoked.`);
       }
     } catch (revokeError) {
       setError(errorMessage(revokeError));

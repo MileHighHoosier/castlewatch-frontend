@@ -1,0 +1,88 @@
+name: Device management production smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/api/castlewatch-family-sync/route.ts"
+      - "app/lib/familyTripDevices.ts"
+      - "app/components/FamilyTripDevices.tsx"
+      - ".github/workflows/device-management-production-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-management-production-smoke
+  cancel-in-progress: true
+
+jobs:
+  device-management-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      PRODUCTION_URL: ${{ vars.CASTLEWATCH_PRODUCTION_URL || 'https://castlewatch-frontend.vercel.app' }}
+    steps:
+      - name: Verify Vercel reaches Railway device-management routes safely
+        shell: bash
+        run: |
+          set -u
+          endpoint="${PRODUCTION_URL%/}/api/castlewatch-family-sync"
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+
+          check_json_status() {
+            local expected_status="$1"
+            local expected_json_status="$2"
+            local request_body="$3"
+            local label="$4"
+
+            http_status="$(curl --silent --show-error \
+              --output "$body_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/json' \
+              --header 'Content-Type: application/json' \
+              --data "$request_body" \
+              "$endpoint" || true)"
+
+            if [ "$http_status" != "$expected_status" ]; then
+              echo "$label returned HTTP $http_status, expected $expected_status."
+              cat "$body_file" || true
+              echo
+              return 1
+            fi
+
+            python - "$body_file" "$expected_json_status" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              data = json.load(source)
+
+          expected = sys.argv[2]
+          if data.get("status") != expected:
+              raise SystemExit(f"expected JSON status {expected!r}, got {data.get('status')!r}")
+          PY
+          }
+
+          invalid_key="castlewatch-device-smoke-invalid-${GITHUB_RUN_ID}"
+          for attempt in $(seq 1 24); do
+            if \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_list\",\"key\":\"${invalid_key}\"}" "device list guard" && \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_invite_create\",\"key\":\"${invalid_key}\",\"role\":\"editor\",\"label\":\"Smoke test\"}" "invite creation guard" && \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_invite_accept\",\"inviteToken\":\"cwinv_not-a-real-token\",\"deviceName\":\"Smoke device\"}" "invite acceptance guard"
+            then
+              echo "Production device-management smoke passed on attempt ${attempt}."
+              echo "Vercel reached Railway, device-management routes exist, and intentionally invalid credentials/tokens were rejected without creating an invite or device."
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/24 did not pass yet. Waiting for production deployment..."
+            sleep 15
+          done
+
+          echo "Production device-management smoke failed after 24 attempts."
+          exit 1

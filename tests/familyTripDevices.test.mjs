@@ -1,15 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  FAMILY_DEVICE_ACCESS_STORAGE_KEY,
   FamilyTripDeviceError,
   acceptFamilyTripInvite,
+  clearFamilyDeviceAccess,
   createFamilyTripInvite,
   listFamilyTripDevices,
+  loadFamilyDeviceAccess,
   parseFamilyTripAcceptInviteResponse,
   parseFamilyTripDevicesResponse,
   parseFamilyTripInviteResponse,
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
+  saveFamilyDeviceAccess,
 } from "../app/lib/familyTripDevices.ts";
 
 test("device list parser keeps safe device metadata", () => {
@@ -78,6 +82,49 @@ test("invite and accept parsers preserve one-time tokens only at top level", () 
   assert.equal(accepted.deviceToken, "cwdev_once");
   assert.equal(accepted.device?.displayName, "Katie iPhone");
   assert.equal(JSON.stringify(accepted.device).includes("cwdev_once"), false);
+});
+
+test("local device access storage keeps token local and clears safely", () => {
+  const previousWindow = globalThis.window;
+  const store = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key),
+    },
+  };
+
+  try {
+    saveFamilyDeviceAccess("  cwdev_local  ", {
+      id: "device-1",
+      displayName: "Katie iPhone",
+      role: "editor",
+      status: "active",
+      tokenPrefix: "dev123",
+      createdAt: null,
+      lastSeenAt: null,
+      lastReadAt: null,
+      lastWriteAt: null,
+      revokedAt: null,
+    });
+    const storedRaw = store.get(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
+    assert.ok(storedRaw.includes("cwdev_local"));
+    const access = loadFamilyDeviceAccess();
+    assert.equal(access?.deviceToken, "cwdev_local");
+    assert.equal(access?.deviceId, "device-1");
+    assert.equal(access?.displayName, "Katie iPhone");
+    assert.equal(access?.role, "editor");
+
+    clearFamilyDeviceAccess();
+    assert.equal(loadFamilyDeviceAccess(), null);
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = previousWindow;
+    }
+  }
 });
 
 test("device clients send typed proxy actions", async () => {

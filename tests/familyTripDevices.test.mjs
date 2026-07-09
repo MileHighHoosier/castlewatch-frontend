@@ -4,11 +4,13 @@ import {
   FAMILY_DEVICE_ACCESS_STORAGE_KEY,
   FamilyTripDeviceError,
   acceptFamilyTripInvite,
+  checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   createFamilyTripInvite,
   listFamilyTripDevices,
   loadFamilyDeviceAccess,
   parseFamilyTripAcceptInviteResponse,
+  parseFamilyTripDeviceAccessResponse,
   parseFamilyTripDevicesResponse,
   parseFamilyTripInviteResponse,
   renameFamilyTripDevice,
@@ -46,6 +48,42 @@ test("device list parser keeps safe device metadata", () => {
   assert.equal(parsed.devices[0].tokenPrefix, "abc123");
   assert.equal(Object.hasOwn(parsed.devices[0], "token_hash"), false);
   assert.equal(Object.hasOwn(parsed.devices[0], "rawToken"), false);
+});
+
+test("access parser keeps family-key and revoked-token states explicit", () => {
+  const familyKey = parseFamilyTripDeviceAccessResponse({
+    status: "ok",
+    authState: "family_key",
+    role: "owner",
+    canManageDevices: true,
+    canWriteSharedPlan: true,
+    migrationRecommended: true,
+    message: "Using family key.",
+  });
+  assert.equal(familyKey.authState, "family_key");
+  assert.equal(familyKey.role, "owner");
+  assert.equal(familyKey.canManageDevices, true);
+  assert.equal(familyKey.migrationRecommended, true);
+  assert.equal(familyKey.device, null);
+
+  const revoked = parseFamilyTripDeviceAccessResponse({
+    status: "revoked",
+    authState: "revoked_device_token",
+    canManageDevices: false,
+    canWriteSharedPlan: false,
+    device: {
+      id: "device-1",
+      displayName: "Safari Test",
+      role: "editor",
+      status: "revoked",
+      tokenPrefix: "dev123",
+      token_hash: "must-not-leak",
+    },
+  });
+  assert.equal(revoked.authState, "revoked_device_token");
+  assert.equal(revoked.device?.status, "revoked");
+  assert.equal(revoked.role, "editor");
+  assert.equal(Object.hasOwn(revoked.device ?? {}, "token_hash"), false);
 });
 
 test("invite and accept parsers preserve one-time tokens only at top level", () => {
@@ -133,6 +171,17 @@ test("device clients send typed proxy actions", async () => {
   globalThis.fetch = async (url, options) => {
     captured.push({ url, options, body: JSON.parse(options.body) });
     const action = JSON.parse(options.body).action;
+    if (action === "device_access_check") {
+      return new Response(JSON.stringify({
+        status: "ok",
+        authState: "device_token",
+        role: "editor",
+        device: { id: "device-1", displayName: "Katie iPhone", role: "editor", status: "active" },
+        canManageDevices: false,
+        canWriteSharedPlan: true,
+        migrationRecommended: false,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (action === "device_list") {
       return new Response(JSON.stringify({
         status: "ok",
@@ -160,6 +209,7 @@ test("device clients send typed proxy actions", async () => {
   };
 
   try {
+    await checkFamilyTripDeviceAccess({ deviceToken: " device-token " });
     await listFamilyTripDevices({ key: " family-key " });
     await createFamilyTripInvite({ deviceToken: " owner-device " }, { role: "editor", label: "Katie" });
     await acceptFamilyTripInvite(" cwinv_once ", " Katie iPhone ");
@@ -172,37 +222,62 @@ test("device clients send typed proxy actions", async () => {
       "/api/castlewatch-family-sync",
       "/api/castlewatch-family-sync",
       "/api/castlewatch-family-sync",
+      "/api/castlewatch-family-sync",
     ]);
     assert.deepEqual(captured.map((call) => call.body.action), [
+      "device_access_check",
       "device_list",
       "device_invite_create",
       "device_invite_accept",
       "device_rename",
       "device_revoke",
     ]);
-    assert.deepEqual(captured[0].body, { action: "device_list", key: "family-key" });
-    assert.deepEqual(captured[1].body, {
+    assert.deepEqual(captured[0].body, { action: "device_access_check", deviceToken: "device-token" });
+    assert.deepEqual(captured[1].body, { action: "device_list", key: "family-key" });
+    assert.deepEqual(captured[2].body, {
       action: "device_invite_create",
       deviceToken: "owner-device",
       role: "editor",
       label: "Katie",
     });
-    assert.deepEqual(captured[2].body, {
+    assert.deepEqual(captured[3].body, {
       action: "device_invite_accept",
       inviteToken: "cwinv_once",
       deviceName: "Katie iPhone",
     });
-    assert.deepEqual(captured[3].body, {
+    assert.deepEqual(captured[4].body, {
       action: "device_rename",
       key: "family-key",
       deviceId: "device-2",
       displayName: "Katie iPhone 2",
     });
-    assert.deepEqual(captured[4].body, {
+    assert.deepEqual(captured[5].body, {
       action: "device_revoke",
       deviceToken: "owner-device",
       deviceId: "device-2",
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("access client returns revoked state without throwing", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: "revoked",
+    authState: "revoked_device_token",
+    message: "This saved device token was revoked. Reconnect with a new invite or use the family key.",
+    canManageDevices: false,
+    canWriteSharedPlan: false,
+    migrationRecommended: false,
+    device: { id: "device-2", displayName: "Safari Test", role: "editor", status: "revoked" },
+  }), { status: 401, headers: { "Content-Type": "application/json" } });
+
+  try {
+    const result = await checkFamilyTripDeviceAccess({ deviceToken: "revoked-device" });
+    assert.equal(result.status, "revoked");
+    assert.equal(result.authState, "revoked_device_token");
+    assert.equal(result.device?.status, "revoked");
   } finally {
     globalThis.fetch = originalFetch;
   }

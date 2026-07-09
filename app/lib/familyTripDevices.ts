@@ -39,6 +39,19 @@ export type StoredFamilyDeviceAccess = {
   savedAt: string;
 };
 
+export type FamilyTripDeviceAccessState = "family_key" | "device_token" | "revoked_device_token" | "unknown";
+
+export type FamilyTripDeviceAccessResponse = {
+  status: string;
+  authState: FamilyTripDeviceAccessState;
+  role: FamilyTripDeviceRole;
+  device: FamilyTripDeviceRecord | null;
+  canManageDevices: boolean;
+  canWriteSharedPlan: boolean;
+  migrationRecommended: boolean;
+  message?: string;
+};
+
 export type FamilyTripDevicesResponse = {
   status: string;
   devices: FamilyTripDeviceRecord[];
@@ -86,6 +99,10 @@ function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function booleanValue(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function nullableString(value: unknown) {
   return typeof value === "string" ? value : null;
 }
@@ -121,6 +138,21 @@ function parseInvite(value: unknown): FamilyTripInviteRecord | null {
     expiresAt: nullableString(record.expiresAt),
     createdAt: nullableString(record.createdAt),
     acceptedAt: nullableString(record.acceptedAt),
+  };
+}
+
+export function parseFamilyTripDeviceAccessResponse(data: unknown): FamilyTripDeviceAccessResponse {
+  const root = objectValue(data);
+  const authState = stringValue(root.authState, "unknown") as FamilyTripDeviceAccessState;
+  return {
+    status: stringValue(root.status, "error"),
+    authState,
+    role: stringValue(root.role, root.device && typeof root.device === "object" ? stringValue((root.device as Record<string, unknown>).role, "") : ""),
+    device: parseDevice(root.device),
+    canManageDevices: booleanValue(root.canManageDevices),
+    canWriteSharedPlan: booleanValue(root.canWriteSharedPlan),
+    migrationRecommended: booleanValue(root.migrationRecommended),
+    message: typeof root.message === "string" ? root.message : undefined,
   };
 }
 
@@ -251,6 +283,18 @@ function throwIfFailed(result: RawDeviceResponse, label: string) {
   if (!result.response.ok) {
     throw new FamilyTripDeviceError(errorMessage(result, label), result.response.status, result.data);
   }
+}
+
+export async function checkFamilyTripDeviceAccess(auth: FamilyTripDeviceAuth): Promise<FamilyTripDeviceAccessResponse> {
+  const result = await rawDeviceRequest({
+    action: "device_access_check",
+    ...authPayload(auth),
+  });
+  const parsed = parseFamilyTripDeviceAccessResponse(result.data);
+  if (!result.response.ok && parsed.authState !== "revoked_device_token") {
+    throw new FamilyTripDeviceError(errorMessage(result, "Device access check"), result.response.status, result.data);
+  }
+  return parsed;
 }
 
 export async function listFamilyTripDevices(auth: FamilyTripDeviceAuth): Promise<FamilyTripDevicesResponse> {

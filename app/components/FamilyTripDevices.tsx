@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  FamilyTripDeviceAccessResponse,
   FamilyTripDeviceAuth,
   FamilyTripDeviceError,
   FamilyTripDeviceRecord,
   StoredFamilyDeviceAccess,
   acceptFamilyTripInvite,
+  checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   createFamilyTripInvite,
   listFamilyTripDevices,
@@ -46,6 +48,8 @@ function ensureStyle() {
     .family-devices-message { border-radius:10px; padding:8px 9px; margin-top:9px; font-size:11px; line-height:1.4; }
     .family-devices-error { border:1px solid rgba(255,99,99,.38); background:rgba(255,99,99,.07); }
     .family-devices-success { border:1px solid rgba(56,217,150,.34); background:rgba(56,217,150,.06); }
+    .family-devices-access { border:1px solid rgba(142,197,255,.28); border-radius:12px; padding:10px; margin-top:10px; background:rgba(142,197,255,.055); }
+    .family-devices-warning { border:1px solid rgba(255,184,76,.36); border-radius:12px; padding:10px; margin-top:10px; background:rgba(255,184,76,.08); }
     .family-devices-revoke-confirm { border:1px solid rgba(255,184,76,.36); border-radius:12px; padding:10px; margin-top:10px; background:rgba(255,184,76,.08); }
     .family-devices-revoke-confirm strong { margin-bottom:4px; }
     .family-devices-local { border:1px solid rgba(56,217,150,.32); border-radius:12px; padding:10px; margin-top:10px; background:rgba(56,217,150,.055); }
@@ -81,9 +85,19 @@ function errorMessage(value: unknown) {
   return "Device management could not be reached.";
 }
 
+function accessLabel(access: FamilyTripDeviceAccessResponse | null, familyKey: string, localDevice: StoredFamilyDeviceAccess | null) {
+  if (access?.authState === "family_key") return "Connected by family key";
+  if (access?.authState === "device_token") return "Connected by device token";
+  if (access?.authState === "revoked_device_token") return "Saved token revoked";
+  if (localDevice) return `Saved token: ${localDevice.displayName}`;
+  if (familyKey.trim()) return "Family key available";
+  return "Invite ready";
+}
+
 export default function FamilyTripDevices() {
   const [familyKey, setFamilyKey] = useState("");
   const [localDevice, setLocalDevice] = useState<StoredFamilyDeviceAccess | null>(null);
+  const [accessState, setAccessState] = useState<FamilyTripDeviceAccessResponse | null>(null);
   const [devices, setDevices] = useState<FamilyTripDeviceRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -106,12 +120,45 @@ export default function FamilyTripDevices() {
   }, []);
 
   const auth = useMemo(() => deviceAuth(familyKey, localDevice), [familyKey, localDevice]);
-  const canManage = Boolean(auth);
+  const canAttemptAuthenticatedAction = Boolean(auth);
   const disabled = Boolean(busy);
+  const familyKeyOnly = Boolean(familyKey.trim()) && !localDevice;
 
   function clearMessages() {
     setError(null);
     setSuccess(null);
+  }
+
+  async function checkAccessState() {
+    if (!auth) {
+      setAccessState(null);
+      setError("This browser is not connected. Use the family key or accept an invite.");
+      return;
+    }
+
+    setBusy("access");
+    clearMessages();
+    try {
+      const response = await checkFamilyTripDeviceAccess(auth);
+      setAccessState(response);
+      if (response.authState === "revoked_device_token") {
+        if (localDevice && (!response.device || response.device.id === localDevice.deviceId)) {
+          clearFamilyDeviceAccess();
+          setLocalDevice(null);
+        }
+        setError(response.message || "This saved device token was revoked. Reconnect with a new invite or use the family key.");
+      } else if (response.authState === "family_key") {
+        setSuccess("This browser is connected by the family key owner path. Keep it enabled until device access is fully verified.");
+      } else if (response.authState === "device_token") {
+        setSuccess(response.device
+          ? `${response.device.displayName} is connected by device token as ${response.role}.`
+          : "This browser is connected by device token.");
+      }
+    } catch (accessError) {
+      setError(errorMessage(accessError));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function refreshDevices() {
@@ -181,6 +228,16 @@ export default function FamilyTripDevices() {
       if (response.deviceToken) {
         saveFamilyDeviceAccess(response.deviceToken, response.device);
         setLocalDevice(loadFamilyDeviceAccess());
+        setAccessState(response.device ? {
+          status: "ok",
+          authState: "device_token",
+          role: response.device.role,
+          device: response.device,
+          canManageDevices: response.device.role === "owner",
+          canWriteSharedPlan: response.device.role === "owner" || response.device.role === "editor",
+          migrationRecommended: false,
+          message: "This browser is connected with a device token.",
+        } : null);
       }
       setAcceptToken("");
       setSuccess(response.device
@@ -241,6 +298,16 @@ export default function FamilyTripDevices() {
         if (localDevice?.deviceId === nextDevice.id) {
           clearFamilyDeviceAccess();
           setLocalDevice(null);
+          setAccessState({
+            status: "revoked",
+            authState: "revoked_device_token",
+            role: nextDevice.role,
+            device: nextDevice,
+            canManageDevices: false,
+            canWriteSharedPlan: false,
+            migrationRecommended: false,
+            message: "This saved device token was revoked. Reconnect with a new invite or use the family key.",
+          });
         }
         try {
           const latest = await listFamilyTripDevices(auth);
@@ -260,6 +327,7 @@ export default function FamilyTripDevices() {
   function clearLocalDevice() {
     clearFamilyDeviceAccess();
     setLocalDevice(null);
+    setAccessState(null);
     setSuccess("Saved device token cleared from this browser. The server-side device record was not revoked.");
     setError(null);
   }
@@ -269,13 +337,20 @@ export default function FamilyTripDevices() {
       <summary>
         <span>Family devices</span>
         <span className="family-devices-status">
-          {localDevice ? `This browser: ${localDevice.displayName}` : familyKey ? "Family key available" : "Invite ready"}
+          {accessLabel(accessState, familyKey, localDevice)}
         </span>
       </summary>
       <div className="family-devices-content">
         <p className="muted">
           Manage device access manually. This panel does not poll, does not send texts, and does not change or disable the current family key.
         </p>
+
+        {familyKeyOnly && (
+          <div className="family-devices-warning">
+            <strong>Migration prep</strong>
+            <span className="family-devices-meta">This browser is still using the family key owner path. Before any future family-key retirement, connect this browser with a device invite. The family key remains enabled for recovery.</span>
+          </div>
+        )}
 
         {localDevice && (
           <div className="family-devices-local">
@@ -287,11 +362,24 @@ export default function FamilyTripDevices() {
           </div>
         )}
 
+        {accessState && (
+          <div className={accessState.authState === "revoked_device_token" ? "family-devices-message family-devices-error" : "family-devices-access"}>
+            <strong>Access state: {accessLabel(accessState, familyKey, localDevice)}</strong>
+            <span className="family-devices-meta">
+              {accessState.message || "Access state checked."}
+              {accessState.device ? ` Device: ${accessState.device.displayName} · ${accessState.device.role} · ${accessState.device.status}.` : ""}
+            </span>
+          </div>
+        )}
+
         {error && <div className="family-devices-message family-devices-error">{error}</div>}
         {success && <div className="family-devices-message family-devices-success">{success}</div>}
 
         <div className="family-devices-actions">
-          <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled || !canManage} onClick={() => void refreshDevices()}>
+          <button className="family-devices-button" type="button" disabled={disabled || !canAttemptAuthenticatedAction} onClick={() => void checkAccessState()}>
+            {busy === "access" ? "Checking…" : "Check access state"}
+          </button>
+          <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled || !canAttemptAuthenticatedAction} onClick={() => void refreshDevices()}>
             {busy === "refresh" ? "Refreshing…" : "Refresh device list"}
           </button>
         </div>
@@ -357,7 +445,7 @@ export default function FamilyTripDevices() {
               </select>
             </div>
             <div className="family-devices-actions">
-              <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled || !canManage} onClick={() => void createInvite()}>
+              <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled || !canAttemptAuthenticatedAction} onClick={() => void createInvite()}>
                 {busy === "invite" ? "Creating…" : "Create invite"}
               </button>
             </div>

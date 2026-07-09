@@ -46,6 +46,8 @@ function ensureStyle() {
     .family-devices-message { border-radius:10px; padding:8px 9px; margin-top:9px; font-size:11px; line-height:1.4; }
     .family-devices-error { border:1px solid rgba(255,99,99,.38); background:rgba(255,99,99,.07); }
     .family-devices-success { border:1px solid rgba(56,217,150,.34); background:rgba(56,217,150,.06); }
+    .family-devices-revoke-confirm { border:1px solid rgba(255,184,76,.36); border-radius:12px; padding:10px; margin-top:10px; background:rgba(255,184,76,.08); }
+    .family-devices-revoke-confirm strong { margin-bottom:4px; }
     .family-devices-local { border:1px solid rgba(56,217,150,.32); border-radius:12px; padding:10px; margin-top:10px; background:rgba(56,217,150,.055); }
     .family-devices-local strong { display:block; margin-bottom:4px; }
     .family-devices-meta { display:block; color:var(--muted); font-size:10px; line-height:1.45; }
@@ -93,6 +95,7 @@ export default function FamilyTripDevices() {
   const [acceptToken, setAcceptToken] = useState("");
   const [acceptName, setAcceptName] = useState("");
   const [renameValues, setRenameValues] = useState<Record<string, string>>({});
+  const [pendingRevokeDeviceId, setPendingRevokeDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
     ensureStyle();
@@ -123,6 +126,7 @@ export default function FamilyTripDevices() {
       const response = await listFamilyTripDevices(auth);
       setDevices(response.devices);
       setLoaded(true);
+      setPendingRevokeDeviceId(null);
       setRenameValues((current) => {
         const next = { ...current };
         for (const device of response.devices) {
@@ -217,9 +221,14 @@ export default function FamilyTripDevices() {
     }
   }
 
+  function requestRevokeDevice(device: FamilyTripDeviceRecord) {
+    clearMessages();
+    setPendingRevokeDeviceId(device.id);
+    setSuccess(`Press Confirm revoke to revoke ${device.displayName}.`);
+  }
+
   async function revokeDevice(device: FamilyTripDeviceRecord) {
     if (!auth) return;
-    if (typeof window !== "undefined" && !window.confirm(`Revoke ${device.displayName}? That device will lose access on its next request.`)) return;
 
     setBusy(`revoke-${device.id}`);
     clearMessages();
@@ -228,9 +237,16 @@ export default function FamilyTripDevices() {
       const nextDevice = response.device;
       if (nextDevice) {
         setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
+        setPendingRevokeDeviceId(null);
         if (localDevice?.deviceId === nextDevice.id) {
           clearFamilyDeviceAccess();
           setLocalDevice(null);
+        }
+        try {
+          const latest = await listFamilyTripDevices(auth);
+          setDevices(latest.devices);
+        } catch {
+          // The revoke response already updated the local list; a failed follow-up refresh should not hide success.
         }
         setSuccess(`${nextDevice.displayName} was revoked.`);
       }
@@ -271,6 +287,9 @@ export default function FamilyTripDevices() {
           </div>
         )}
 
+        {error && <div className="family-devices-message family-devices-error">{error}</div>}
+        {success && <div className="family-devices-message family-devices-success">{success}</div>}
+
         <div className="family-devices-actions">
           <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled || !canManage} onClick={() => void refreshDevices()}>
             {busy === "refresh" ? "Refreshing…" : "Refresh device list"}
@@ -301,10 +320,24 @@ export default function FamilyTripDevices() {
                       <button className="family-devices-button" type="button" disabled={disabled} onClick={() => void renameDevice(device)}>
                         {busy === `rename-${device.id}` ? "Renaming…" : "Rename"}
                       </button>
-                      <button className="family-devices-button family-devices-button-danger" type="button" disabled={disabled} onClick={() => void revokeDevice(device)}>
-                        {busy === `revoke-${device.id}` ? "Revoking…" : "Revoke"}
+                      <button className="family-devices-button family-devices-button-danger" type="button" disabled={disabled} onClick={() => requestRevokeDevice(device)}>
+                        Revoke
                       </button>
                     </div>
+                    {pendingRevokeDeviceId === device.id && (
+                      <div className="family-devices-revoke-confirm">
+                        <strong>Confirm revoke</strong>
+                        <span className="family-devices-meta">{device.displayName} will lose device-token access on its next request. The family key stays enabled.</span>
+                        <div className="family-devices-actions">
+                          <button className="family-devices-button family-devices-button-danger" type="button" disabled={disabled} onClick={() => void revokeDevice(device)}>
+                            {busy === `revoke-${device.id}` ? "Revoking…" : "Confirm revoke"}
+                          </button>
+                          <button className="family-devices-button" type="button" disabled={disabled} onClick={() => setPendingRevokeDeviceId(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -351,9 +384,6 @@ export default function FamilyTripDevices() {
             </div>
           </div>
         </div>
-
-        {error && <div className="family-devices-message family-devices-error">{error}</div>}
-        {success && <div className="family-devices-message family-devices-success">{success}</div>}
       </div>
     </details>
   );

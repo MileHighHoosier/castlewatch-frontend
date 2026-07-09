@@ -9,6 +9,7 @@ type SyncAction =
   | "history_version"
   | "restore"
   | "operations"
+  | "device_access_check"
   | "device_list"
   | "device_invite_create"
   | "device_invite_accept"
@@ -51,6 +52,7 @@ function validAction(value: unknown): value is SyncAction {
     || value === "history_version"
     || value === "restore"
     || value === "operations"
+    || value === "device_access_check"
     || value === "device_list"
     || value === "device_invite_create"
     || value === "device_invite_accept"
@@ -141,6 +143,8 @@ export async function POST(request: NextRequest) {
     });
   } else if (action === "operations") {
     upstreamPath = "/api/family-trip/operations";
+  } else if (action === "device_access_check") {
+    upstreamPath = "/api/family-trip/devices/access";
   } else if (action === "device_list") {
     upstreamPath = "/api/family-trip/devices";
   } else if (action === "device_invite_create") {

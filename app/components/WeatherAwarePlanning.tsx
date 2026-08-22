@@ -2,15 +2,21 @@
 
 import { useEffect } from "react";
 import { fetchWeatherAdvisory } from "../lib/api";
+import {
+  resolveWeatherRefresh,
+  type WeatherAdvisorySnapshot,
+  type WeatherFreshness,
+  type WeatherMode,
+} from "../lib/weatherReliability";
 
 const STORAGE_KEY = "castlewatch.weatherRiskMode.v1";
+const MODE_SOURCE_KEY = "castlewatch.weatherRiskModeSource.v1";
 const AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
 const AUTO_ADVISORY_HEADLINE_KEY = "castlewatch.weatherAutoAdvisoryHeadline.v1";
 const AUTO_ADVISORY_CHECKED_KEY = "castlewatch.weatherAutoAdvisoryChecked.v1";
+const AUTO_ADVISORY_FRESHNESS_KEY = "castlewatch.weatherAutoAdvisoryFreshness.v1";
 const MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
 const STYLE_ID = "castlewatch-weather-aware-style";
-
-type WeatherMode = "normal" | "hot" | "storm";
 
 const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; note: string }> = {
   normal: {
@@ -41,10 +47,30 @@ function isWeatherMode(value: string | null): value is WeatherMode {
   return value === "hot" || value === "storm" || value === "normal";
 }
 
-function getAutoAdvisoryMode(): WeatherMode | null {
+function getAutoAdvisoryMode(): "hot" | "storm" | null {
   const saved = window.localStorage.getItem(AUTO_ADVISORY_KEY);
   if (saved === "hot" || saved === "storm") return saved;
   return null;
+}
+
+function getWeatherModeSource(): "manual" | "auto" | null {
+  const saved = window.localStorage.getItem(MODE_SOURCE_KEY);
+  return saved === "manual" || saved === "auto" ? saved : null;
+}
+
+function getAutoAdvisoryFreshness(): WeatherFreshness | null {
+  const saved = window.localStorage.getItem(AUTO_ADVISORY_FRESHNESS_KEY);
+  if (saved === "current" || saved === "stale" || saved === "unknown") return saved;
+  return null;
+}
+
+function getAutoAdvisorySnapshot(): WeatherAdvisorySnapshot {
+  return {
+    mode: getAutoAdvisoryMode(),
+    headline: window.localStorage.getItem(AUTO_ADVISORY_HEADLINE_KEY),
+    lastSuccessfulCheck: window.localStorage.getItem(AUTO_ADVISORY_CHECKED_KEY),
+    freshness: getAutoAdvisoryFreshness() || "unknown",
+  };
 }
 
 function isManualOverrideActive() {
@@ -65,6 +91,7 @@ function getWeatherMode(): WeatherMode {
 
 function setWeatherMode(mode: WeatherMode, source: "manual" | "auto" = "manual") {
   window.localStorage.setItem(STORAGE_KEY, mode);
+  window.localStorage.setItem(MODE_SOURCE_KEY, source);
 
   if (source === "manual" && mode === "normal") {
     window.localStorage.setItem(MANUAL_OVERRIDE_DATE_KEY, todayKey());
@@ -75,36 +102,66 @@ function setWeatherMode(mode: WeatherMode, source: "manual" | "auto" = "manual")
   }
 }
 
-function setAutoAdvisory(mode: WeatherMode | null, headline?: string) {
-  if (mode === "hot" || mode === "storm") {
-    window.localStorage.setItem(AUTO_ADVISORY_KEY, mode);
-    if (headline) window.localStorage.setItem(AUTO_ADVISORY_HEADLINE_KEY, headline);
+function storeAutoAdvisory(snapshot: WeatherAdvisorySnapshot) {
+  if (snapshot.mode === "hot" || snapshot.mode === "storm") {
+    window.localStorage.setItem(AUTO_ADVISORY_KEY, snapshot.mode);
+    if (snapshot.headline) {
+      window.localStorage.setItem(AUTO_ADVISORY_HEADLINE_KEY, snapshot.headline);
+    }
   } else {
     window.localStorage.removeItem(AUTO_ADVISORY_KEY);
     window.localStorage.removeItem(AUTO_ADVISORY_HEADLINE_KEY);
   }
-  window.localStorage.setItem(AUTO_ADVISORY_CHECKED_KEY, new Date().toISOString());
+
+  window.localStorage.setItem(AUTO_ADVISORY_FRESHNESS_KEY, snapshot.freshness);
+  if (snapshot.lastSuccessfulCheck) {
+    window.localStorage.setItem(AUTO_ADVISORY_CHECKED_KEY, snapshot.lastSuccessfulCheck);
+  }
 }
 
 function autoAdvisoryHeadline() {
   return window.localStorage.getItem(AUTO_ADVISORY_HEADLINE_KEY) || "official advisory";
 }
 
+function lastSuccessfulWeatherCheck() {
+  const value = window.localStorage.getItem(AUTO_ADVISORY_CHECKED_KEY);
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 async function refreshAutoAdvisory() {
   const result = await fetchWeatherAdvisory();
   const data = result.data;
+  const priorAutoMode = getAutoAdvisoryMode();
+  const decision = resolveWeatherRefresh({
+    requestOk: result.ok && Boolean(data),
+    data: data ? {
+      advisoryActive: data.advisoryActive,
+      mode: data.mode,
+      headline: data.headline || data.advisoryType || data.source || null,
+    } : null,
+    prior: getAutoAdvisorySnapshot(),
+    nowIso: new Date().toISOString(),
+  });
 
-  if (!result.ok || !data || data.advisoryActive !== true) {
-    setAutoAdvisory(null);
-    renderWeatherAwarePlanning();
-    return;
+  storeAutoAdvisory(decision.snapshot);
+
+  if (decision.clearPreviouslyAutomaticMode) {
+    const source = getWeatherModeSource();
+    const savedMode = window.localStorage.getItem(STORAGE_KEY);
+    const looksLikeLegacyAutoMode = !source && priorAutoMode && savedMode === priorAutoMode;
+    if (source === "auto" || looksLikeLegacyAutoMode) {
+      setWeatherMode("normal", "auto");
+    }
   }
 
-  if (data.mode === "hot" || data.mode === "storm") {
-    setAutoAdvisory(data.mode, data.headline || data.advisoryType || data.source);
-    if (!isManualOverrideActive()) setWeatherMode(data.mode, "auto");
-    renderWeatherAwarePlanning();
+  if (decision.applyAutomaticMode && decision.snapshot.mode && !isManualOverrideActive()) {
+    setWeatherMode(decision.snapshot.mode, "auto");
   }
+
+  renderWeatherAwarePlanning();
 }
 
 function ensureWeatherStyle() {
@@ -157,6 +214,11 @@ function ensureWeatherStyle() {
     .weather-aware-card-storm {
       border-color: rgba(165, 180, 252, 0.62);
       background: linear-gradient(135deg, rgba(129, 140, 248, 0.16), rgba(255, 255, 255, 0.04));
+    }
+
+    .weather-aware-card-stale {
+      border-color: rgba(251, 191, 36, 0.66);
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(255, 255, 255, 0.04));
     }
 
     .weather-aware-card h3 {
@@ -262,6 +324,38 @@ function resetWeatherPlanPresentation(panel: Element) {
   nextCard.querySelectorAll<HTMLElement>(".weather-guard-badge").forEach((badge) => badge.remove());
 }
 
+function insertWeatherCard(row: Element, className: string, title: string, summary: string) {
+  const card = document.createElement("div");
+  card.className = `weather-aware-card ${className}`.trim();
+
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  card.appendChild(heading);
+
+  const paragraph = document.createElement("p");
+  paragraph.className = "weather-aware-summary";
+  paragraph.textContent = summary;
+  card.appendChild(paragraph);
+
+  row.insertAdjacentElement("afterend", card);
+}
+
+function degradedWeatherSummary() {
+  const autoMode = getAutoAdvisoryMode();
+  const lastCheck = lastSuccessfulWeatherCheck();
+  const checkText = lastCheck ? ` Last successful check: ${lastCheck}.` : "";
+
+  if (autoMode) {
+    const risk = autoMode === "hot" ? "heat" : "storm";
+    if (isManualOverrideActive()) {
+      return `Automatic weather data is stale. The last known ${risk} advisory is retained, but today's manual Weather OK override remains active.${checkText}`;
+    }
+    return `Automatic weather data is stale. CastleWatch is retaining the last known ${risk} guard until a successful check confirms conditions changed.${checkText}`;
+  }
+
+  return `Automatic weather data is unavailable. CastleWatch is not treating the failed check as confirmation that conditions are normal; manual weather controls remain available.${checkText}`;
+}
+
 function renderWeatherAwarePlanning() {
   ensureWeatherStyle();
   const panel = planPanel();
@@ -273,6 +367,9 @@ function renderWeatherAwarePlanning() {
   panel.querySelector(".weather-aware-note")?.remove();
 
   const activeMode = getWeatherMode();
+  const freshness = getAutoAdvisoryFreshness();
+  const degradedWeather = freshness === "stale" || freshness === "unknown";
+
   if (shouldForceSafeWeatherMode(activeMode)) {
     forceCoolDownMode(panel);
   }
@@ -284,7 +381,19 @@ function renderWeatherAwarePlanning() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `weather-aware-button ${mode === activeMode ? "weather-aware-button-active" : ""}`;
-    button.innerHTML = `<span style="font-size:18px;line-height:1;">${option.icon}</span><strong style="font-size:12px;line-height:1.1;">${option.label}</strong>`;
+
+    const icon = document.createElement("span");
+    icon.style.fontSize = "18px";
+    icon.style.lineHeight = "1";
+    icon.textContent = option.icon;
+    button.appendChild(icon);
+
+    const label = document.createElement("strong");
+    label.style.fontSize = "12px";
+    label.style.lineHeight = "1.1";
+    label.textContent = option.label;
+    button.appendChild(label);
+
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -298,6 +407,9 @@ function renderWeatherAwarePlanning() {
 
   if (activeMode === "normal" || panel.classList.contains("emergency-break-active")) {
     resetWeatherPlanPresentation(panel);
+    if (degradedWeather) {
+      insertWeatherCard(row, "weather-aware-card-stale", "⚠️ Weather status unavailable", degradedWeatherSummary());
+    }
     return;
   }
 
@@ -305,14 +417,22 @@ function renderWeatherAwarePlanning() {
 
   const option = WEATHER_MODES[activeMode];
   const autoAdvisory = getAutoAdvisoryMode();
-  const sourceText = autoAdvisory === activeMode && !isManualOverrideActive() ? ` · auto: ${autoAdvisoryHeadline()}` : "";
-  const card = document.createElement("div");
-  card.className = `weather-aware-card weather-aware-card-${activeMode}`;
-  card.innerHTML = `
-    <h3>${option.icon} Weather guard: ${option.title}${sourceText}</h3>
-    <p class="weather-aware-summary">${option.note}</p>
-  `;
-  row.insertAdjacentElement("afterend", card);
+  const isAutomatic = autoAdvisory === activeMode && !isManualOverrideActive();
+  const sourceText = isAutomatic
+    ? freshness === "stale" || freshness === "unknown"
+      ? ` · last known: ${autoAdvisoryHeadline()}`
+      : ` · auto: ${autoAdvisoryHeadline()}`
+    : "";
+  const staleText = degradedWeather
+    ? " Weather check unavailable; retaining the last known guard until a successful update."
+    : "";
+
+  insertWeatherCard(
+    row,
+    `weather-aware-card-${activeMode}${degradedWeather ? " weather-aware-card-stale" : ""}`,
+    `${option.icon} Weather guard: ${option.title}${sourceText}`,
+    `${option.note}${staleText}`,
+  );
 }
 
 export default function WeatherAwarePlanning() {

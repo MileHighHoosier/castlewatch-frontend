@@ -1,241 +1,159 @@
-# CastleWatch Phase One Frontend
+# CastleWatch 2027 Frontend
 
-This is a clean Next.js starter frontend for CastleWatch.
+CastleWatch is a mobile-first, private-family Walt Disney World planning and trip-operations application for the October 9-16, 2027 trip.
 
-It is designed for:
+This repository contains the **Next.js frontend deployed on Vercel**. The companion backend is [`MileHighHoosier/castlewatch-2027`](https://github.com/MileHighHoosier/castlewatch-2027), which runs Flask on Railway with Railway PostgreSQL.
 
-- Vercel frontend hosting
-- Railway backend API
-- Railway Postgres behind the backend
-- Mobile-first use during a Disney trip
-- Phase One testing before advanced heat maps and predictions
+CastleWatch is an unofficial personal planning tool and is not affiliated with, endorsed by, or sponsored by Disney.
 
----
+## Current architecture
 
-## What this filepack gives you
-
-- A working Next.js app structure
-- A homepage dashboard
-- Backend status check
-- API connection test
-- Ride data fetch test
-- Placeholder heat map cards
-- Clear environment variable setup
-
----
-
-## Recommended architecture
-
-```txt
-Phone / Browser
-  ↓
-Vercel Next.js frontend
-  ↓
-Railway backend API
-  ↓
-Railway Postgres database
+```text
+iPhone / browser
+      |
+      v
+Vercel - Next.js frontend (this repo)
+      |
+      | HTTPS JSON APIs / Next.js proxy routes
+      v
+Railway - Flask backend
+MileHighHoosier/castlewatch-2027
+      |
+      v
+Railway PostgreSQL
 ```
 
-Vercel should display the website.
+## Current capabilities
 
-Railway should handle:
-- API routes
-- database connection
-- ride wait-time collection
-- future prediction logic
-- future heat-map calculations
+The frontend is well beyond its original Phase One starter state. Major implemented areas include:
 
----
+- four-park live dashboard,
+- current ride waits and park/area pressure views,
+- Live Plan recommendation modes,
+- shows, activities and character layers,
+- emergency break/leave-park support,
+- weather-aware planning,
+- manual Lightning Lane window tracking,
+- Trip Week planner for October 2027,
+- editable overnight resorts,
+- Getting There transportation/leave-by guidance,
+- reservation entry/conflict awareness,
+- historical crowd/date signals,
+- special-event/calendar intelligence presentation,
+- base-vs-alternate Trip Week decision engine,
+- user-approved scenario apply/undo/lock behavior,
+- shared family plan synchronization,
+- shared version history and restore,
+- operations/usage support,
+- account/device invitation, naming and revocation foundations.
 
-## Step 1: Create a new GitHub frontend repo
+## Current development phase
 
-Create a new repo such as:
+CastleWatch is in **Rebaseline & Stabilization**, not a new feature sprint.
 
-```txt
-castlewatch-frontend
+The current goal is to establish authoritative documentation, resolve high-priority security/reliability issues, improve regression coverage, and finish or deliberately freeze the incomplete account/device migration before adding major new product features.
+
+After stabilization, the next major product objective is to **complete Trip Week Phase 2 - Unified Recommendation Engine**. The engine already exists in partial form; it should not be restarted from scratch.
+
+## Canonical project documentation
+
+The backend repository contains the cross-repository source-of-truth documents:
+
+- [`PROJECT_STATE.md`](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/PROJECT_STATE.md) - current implementation state, known gaps and exact priorities.
+- [`ARCHITECTURE.md`](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/ARCHITECTURE.md) - production boundaries, data flows and migration constraints.
+- [`ROADMAP.md`](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/ROADMAP.md) - rebaseline/stabilization sequence and later product phases.
+- [`AGENTS.md`](AGENTS.md) - instructions for coding agents working in this frontend repository.
+
+> Note: until the rebaseline documentation PRs are merged, the cross-repository links above point to the future `main` locations; review-branch copies are authoritative for the current Section 1 review.
+
+## Frontend entry points
+
+The application begins at:
+
+```text
+app/page.tsx
+  -> app/components/DashboardShell.tsx
 ```
 
-Upload these files into that repo.
+Primary areas include:
 
-Do not mix this into your backend repo unless you intentionally want a monorepo.
+- `app/components/ParkCommandCenter.tsx` - live park dashboard and planning experience.
+- `app/components/TripWeekPlanner.tsx` - trip-week presentation and scenario controls.
+- `app/components/TripWeekDecisionPanel.tsx` - assembles browser-local decision inputs.
+- `app/lib/tripDecisionEngine.ts` - base-vs-alternate Trip Week scoring/recommendation.
+- `app/components/TransportationPlanner.tsx` - Getting There routes and leave-by guidance.
+- `app/lib/tripProfile.ts` - trip profile, reservations and reservation transportation calculations.
+- `app/lib/familyTripSync.ts` - browser/shared trip synchronization.
+- `app/lib/familyTripDevices.ts` - device credential and invitation models.
+- `app/api/castlewatch-family-sync/route.ts` - protected family-operation proxy to Railway.
 
----
+## Local development
 
-## Step 2: Install locally, optional
-
-If using a computer:
+Install dependencies:
 
 ```bash
-npm install
+npm ci
+```
+
+Run locally:
+
+```bash
 npm run dev
 ```
 
-Then open:
+Build production frontend:
 
-```txt
-http://localhost:3000
+```bash
+npm run build
 ```
 
----
+Run automated frontend tests:
 
-## Step 3: Add the Railway backend URL locally
-
-Copy `.env.example` to `.env.local`.
-
-Then add your public Railway backend URL:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=https://YOUR-RAILWAY-BACKEND.up.railway.app
+```bash
+npm test
 ```
 
-Important:
+## Backend connection
 
-Use the public Railway app URL, not the private Postgres URL.
+The frontend currently resolves its Railway backend URL from the existing environment-variable compatibility path, primarily:
 
-Wrong:
-
-```txt
-postgresql://...
-postgres.railway.internal
-```
-
-Correct:
-
-```txt
-https://your-backend-name.up.railway.app
-```
-
----
-
-## Step 4: Deploy to Vercel
-
-In Vercel:
-
-1. Add New Project
-2. Import your GitHub frontend repo
-3. Framework Preset should detect Next.js
-4. Add this environment variable:
-
-```txt
+```text
 NEXT_PUBLIC_API_BASE_URL
 ```
 
-Value:
+See `.env.example` and the current source before changing environment-variable behavior.
 
-```txt
-https://YOUR-RAILWAY-BACKEND.up.railway.app
-```
+Do not put database URLs, family keys, device tokens or invite tokens into committed frontend environment files.
 
-5. Deploy
+## Shared family access warning
 
----
+CastleWatch's Accounts / Invitations / Device Management migration is **not complete**.
 
-## Step 5: Backend endpoints this frontend tries
+- `CASTLEWATCH_FAMILY_KEY` must remain available for current shared-plan/recovery behavior.
+- A device token must not be assumed to replace the family key for all shared-plan actions.
+- Do not add or enable legacy-family-key retirement until owner-device, dual-authorization, revocation/recovery and production-verification gates are satisfied and explicitly approved.
 
-This filepack checks several common endpoint names so it is forgiving while you are still building.
+See the backend `PROJECT_STATE.md`, `ARCHITECTURE.md`, and account/device design documents for the current migration state.
 
-Status checks try:
+## Forecast interpretation
 
-```txt
-/
- /health
- /api/health
- /status
-```
+CastleWatch's current future-date crowd signals are based on historical observations and same-weekday/time-of-day evidence. They are useful directional planning inputs, but they are **not precise 2027 crowd forecasts**. Prediction Phase 2 remains future work.
 
-Ride data checks try:
+## Deployment
 
-```txt
-/api/rides
-/rides
-/api/wait-times
-/wait-times
-```
+- Frontend: Vercel.
+- Backend: Railway.
+- Database: Railway PostgreSQL.
 
-If your backend uses different routes, edit:
+A successful deployment only proves that the service built/deployed. Critical family-sync, device-management and trip-day behavior still requires automated and production functional verification.
 
-```txt
-app/lib/api.ts
-```
+## Contribution / agent rule
 
----
+Before a cross-cutting change:
 
-## Phase One goal
-
-Phase One is successful when:
-
-- Vercel site loads
-- Backend status says connected
-- API test succeeds
-- Ride data loads or shows a clear missing-endpoint message
-- You understand where frontend ends and backend begins
-
----
-
-## What Phase Two should add
-
-After Phase One works:
-
-- Real park selector
-- Magic Kingdom / Hollywood Studios / Epcot / Animal Kingdom views
-- Historical wait-time charting
-- Area demand scores
-- Forecasted ride demand
-- Real heat map visual layer
-- Mobile recommendations while inside the parks
-
----
-
-## Troubleshooting
-
-### Backend says not connected
-
-Check that your Vercel environment variable is:
-
-```txt
-NEXT_PUBLIC_API_BASE_URL
-```
-
-Not:
-
-```txt
-DATABASE_URL
-```
-
-Not:
-
-```txt
-POSTGRES_URL
-```
-
-Not:
-
-```txt
-RAILWAY_PRIVATE_DOMAIN
-```
-
-### Ride data does not load
-
-That is okay if the backend does not yet expose a rides endpoint.
-
-The frontend will still prove whether the backend is reachable.
-
-### Vercel deploy fails
-
-Make sure your repo contains:
-
-```txt
-package.json
-app/page.tsx
-app/layout.tsx
-```
-
----
-
-## Suggested next prompt for ChatGPT
-
-After uploading this to GitHub and deploying to Vercel, ask:
-
-```txt
-My CastleWatch Phase One frontend is deployed. Here is my Vercel URL and Railway backend URL. Help me test each connection step.
-```
+1. read `AGENTS.md`,
+2. inspect both CastleWatch repositories,
+3. check the canonical backend project-state/architecture/roadmap documents,
+4. distinguish live production code from legacy scaffolding,
+5. add or update tests for behavioral changes,
+6. keep changes incremental and reversible.

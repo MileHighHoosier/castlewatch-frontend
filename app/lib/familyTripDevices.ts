@@ -1,5 +1,7 @@
 export const FAMILY_DEVICE_ACCESS_STORAGE_KEY = "castlewatch.family-device-access.v1";
 
+const MAX_CREDENTIAL_LENGTH = 512;
+
 export type FamilyTripDeviceAuth = {
   key?: string;
   deviceToken?: string;
@@ -107,6 +109,15 @@ function nullableString(value: unknown) {
   return typeof value === "string" ? value : null;
 }
 
+export function normalizeCredentialToken(value: unknown, expectedPrefix: "cwdev_" | "cwinv_") {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_CREDENTIAL_LENGTH) return "";
+  if (!normalized.startsWith(expectedPrefix)) return "";
+  if (/\s/.test(normalized) || /[\u0000-\u001f\u007f]/.test(normalized)) return "";
+  return normalized;
+}
+
 function parseDevice(value: unknown): FamilyTripDeviceRecord | null {
   const record = objectValue(value);
   const id = stringValue(record.id);
@@ -172,7 +183,7 @@ export function parseFamilyTripInviteResponse(data: unknown): FamilyTripInviteRe
   const root = objectValue(data);
   return {
     status: stringValue(root.status, "error"),
-    inviteToken: stringValue(root.inviteToken),
+    inviteToken: normalizeCredentialToken(root.inviteToken, "cwinv_"),
     invite: parseInvite(root.invite),
     message: typeof root.message === "string" ? root.message : undefined,
   };
@@ -182,7 +193,7 @@ export function parseFamilyTripAcceptInviteResponse(data: unknown): FamilyTripAc
   const root = objectValue(data);
   return {
     status: stringValue(root.status, "error"),
-    deviceToken: stringValue(root.deviceToken),
+    deviceToken: normalizeCredentialToken(root.deviceToken, "cwdev_"),
     device: parseDevice(root.device),
     message: typeof root.message === "string" ? root.message : undefined,
   };
@@ -203,7 +214,7 @@ export function loadFamilyDeviceAccess(): StoredFamilyDeviceAccess | null {
     const raw = window.localStorage.getItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
     if (!raw) return null;
     const parsed = objectValue(JSON.parse(raw));
-    const deviceToken = stringValue(parsed.deviceToken).trim();
+    const deviceToken = normalizeCredentialToken(parsed.deviceToken, "cwdev_");
     if (!deviceToken) return null;
     return {
       deviceToken,
@@ -219,7 +230,7 @@ export function loadFamilyDeviceAccess(): StoredFamilyDeviceAccess | null {
 
 export function saveFamilyDeviceAccess(deviceToken: string, device?: FamilyTripDeviceRecord | null) {
   if (typeof window === "undefined") return;
-  const normalized = deviceToken.trim();
+  const normalized = normalizeCredentialToken(deviceToken, "cwdev_");
   if (!normalized) {
     window.localStorage.removeItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
     return;
@@ -242,7 +253,6 @@ export function clearFamilyDeviceAccess() {
 type RawDeviceResponse = {
   response: Response;
   data: unknown;
-  rawText: string;
 };
 
 async function rawDeviceRequest(body: Record<string, unknown>): Promise<RawDeviceResponse> {
@@ -264,19 +274,19 @@ async function rawDeviceRequest(body: Record<string, unknown>): Promise<RawDevic
     data = {};
   }
 
-  return { response, data, rawText };
+  return { response, data };
 }
 
 function authPayload(auth: FamilyTripDeviceAuth) {
   const key = typeof auth.key === "string" ? auth.key.trim() : "";
-  const deviceToken = typeof auth.deviceToken === "string" ? auth.deviceToken.trim() : "";
+  const deviceToken = normalizeCredentialToken(auth.deviceToken, "cwdev_");
   return key ? { key } : { deviceToken };
 }
 
 function errorMessage(result: RawDeviceResponse, fallbackLabel: string) {
   const root = objectValue(result.data);
   return stringValue(root.message)
-    || `${fallbackLabel} returned HTTP ${result.response.status}${result.rawText ? `: ${result.rawText.slice(0, 180)}` : "."}`;
+    || `${fallbackLabel} returned HTTP ${result.response.status}.`;
 }
 
 function throwIfFailed(result: RawDeviceResponse, label: string) {
@@ -326,9 +336,14 @@ export async function acceptFamilyTripInvite(
   inviteToken: string,
   deviceName: string,
 ): Promise<FamilyTripAcceptInviteResponse> {
+  const normalizedInviteToken = normalizeCredentialToken(inviteToken, "cwinv_");
+  if (!normalizedInviteToken) {
+    throw new FamilyTripDeviceError("Invite token format is invalid.", 400);
+  }
+
   const result = await rawDeviceRequest({
     action: "device_invite_accept",
-    inviteToken: inviteToken.trim(),
+    inviteToken: normalizedInviteToken,
     deviceName: deviceName.trim(),
   });
   const parsed = parseFamilyTripAcceptInviteResponse(result.data);

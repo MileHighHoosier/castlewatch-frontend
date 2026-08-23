@@ -279,7 +279,7 @@ async function rawDeviceRequest(body: Record<string, unknown>): Promise<RawDevic
 
 function authPayload(auth: FamilyTripDeviceAuth) {
   const key = typeof auth.key === "string" ? auth.key.trim() : "";
-  const deviceToken = normalizeCredentialToken(auth.deviceToken, "cwdev_");
+  const deviceToken = typeof auth.deviceToken === "string" ? auth.deviceToken.trim() : "";
   return key ? { key } : { deviceToken };
 }
 

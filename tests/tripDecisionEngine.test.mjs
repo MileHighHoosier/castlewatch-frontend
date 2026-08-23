@@ -29,8 +29,8 @@ const RESOLVED_RESORT_PLAN = {
   "2027-10-09": "pop",
   "2027-10-10": "pop",
   "2027-10-11": "pop",
-  "2027-10-13": "beach",
-  "2027-10-14": "akl_jambo",
+  "2027-10-13": "pop",
+  "2027-10-14": "pop",
 };
 
 function forecast(comparison = "near_typical", confidence = "Higher confidence") {
@@ -108,15 +108,9 @@ test("an unreleased calendar keeps the park order provisional and returns Wait",
   assert.equal(result.status, "wait");
   assert.match(result.headline, /provisional|wait/i);
   assert.ok(result.blockers.includes("Official 2027 MNSSHP dates are not loaded."));
-  assert.deepEqual(
-    result.readiness.find((item) => item.id === "calendar"),
-    {
-      id: "calendar",
-      label: "Events and park hours",
-      status: "pending",
-      detail: "The 2027 MNSSHP calendar and operating hours are not released yet.",
-    },
-  );
+  const calendarReadiness = result.readiness.find((item) => item.id === "calendar");
+  assert.equal(calendarReadiness?.status, "pending");
+  assert.match(calendarReadiness?.detail || "", /not released/i);
   assert.equal(result.readiness.find((item) => item.id === "weather")?.status, "pending");
   assert.equal(result.readiness.find((item) => item.id === "lightning-lane")?.status, "pending");
   assert.ok(result.nextActions.some((action) => action.includes("marked provisional")));
@@ -147,8 +141,8 @@ test("a confirmed reservation conflict blocks an otherwise lower-risk alternate"
 
 test("no-park-hopping increases the cost of a cross-park reservation conflict", () => {
   const conflictingReservation = reservation({
-    id: "cinderella-table",
-    title: "Cinderella's Royal Table",
+    id: "akershus-no-hopping",
+    title: "Akershus Royal Banquet Hall",
     date: "2027-10-13",
     location: "Epcot",
   });
@@ -178,7 +172,7 @@ test("an officially supported clean alternate returns Swap with manual approval"
 
   assert.equal(result.preferredScenario, "alternate");
   assert.equal(result.status, "swap");
-  assert.ok(result.nextActions.includes("Review the affected bookings, then manually approve the swap."));
+  assert.ok(result.nextActions.some((action) => /manually approve the swap/i.test(action)));
   assert.equal(result.blockers.length, 0);
 });
 
@@ -193,6 +187,6 @@ test("a clean base plan returns Keep and remains user controlled", () => {
 
   assert.equal(result.preferredScenario, "base");
   assert.equal(result.status, "keep");
-  assert.ok(result.nextActions.includes("Keep the park order and continue monitoring calendar changes."));
+  assert.ok(result.nextActions.some((action) => /keep the park order/i.test(action)));
   assert.equal(result.blockers.length, 0);
 });

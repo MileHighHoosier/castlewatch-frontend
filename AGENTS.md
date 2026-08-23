@@ -14,6 +14,8 @@ Before cross-cutting or architectural changes, inspect both repositories. The ba
 - `PROJECT_STATE.md`
 - `ARCHITECTURE.md`
 - `ROADMAP.md`
+- `DEPENDENCY_POLICY.md` before any dependency/runtime change
+- `DEPENDENCY_BASELINE.md` when evaluating or rolling back dependency/runtime changes
 
 Do not use old chat history as the source of truth when current code/documentation disagrees.
 
@@ -29,6 +31,7 @@ Do not use old chat history as the source of truth when current code/documentati
 8. Be cautious with `localStorage` credentials and dynamic `innerHTML`; prefer declarative React rendering and safe text rendering.
 9. Avoid adding more DOM polling/global patching when a React state/event approach is practical.
 10. Update documentation when a change alters architecture, roadmap status or the current project state.
+11. Keep dependency/runtime changes isolated and follow the backend `DEPENDENCY_POLICY.md`; keep direct versions exact, commit synchronized `package-lock.json`, and do not bundle opportunistic upgrades into unrelated work.
 
 ## Account/device migration safety gate
 
@@ -55,6 +58,7 @@ Some existing features use imperative DOM augmentation, injected styles, global 
 
 - run `npm test`,
 - run the production Next.js build,
+- for dependency/runtime changes, use `npm ci` from the committed lockfile and verify the exact upgrade/rollback rules in backend `DEPENDENCY_POLICY.md`,
 - verify relevant mobile flows,
 - verify no credential/token was exposed,
 - check whether the backend repository needs a coordinated change,

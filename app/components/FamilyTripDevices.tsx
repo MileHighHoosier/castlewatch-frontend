@@ -8,11 +8,15 @@ import {
   FamilyTripDeviceRecord,
   StoredFamilyDeviceAccess,
   acceptFamilyTripInvite,
+  bootstrapFamilyOwnerDevice,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
+  clearProtectedFamilyDeviceAccess,
   createFamilyTripInvite,
+  hasLegacyFamilyDeviceAccess,
   listFamilyTripDevices,
   loadFamilyDeviceAccess,
+  migrateLegacyFamilyDeviceAccess,
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
   saveFamilyDeviceAccess,
@@ -71,11 +75,12 @@ function formatDate(value: string | null) {
   return date.toLocaleString();
 }
 
-function deviceAuth(familyKey: string, localDevice: StoredFamilyDeviceAccess | null): FamilyTripDeviceAuth | null {
+type CredentialMode = "family_key" | "device_cookie" | null;
+
+function deviceAuth(familyKey: string, credentialMode: CredentialMode): FamilyTripDeviceAuth | null {
+  if (credentialMode === "device_cookie") return { mode: "device_cookie" };
   const key = familyKey.trim();
-  if (key) return { key };
-  const deviceToken = localDevice?.deviceToken.trim() || "";
-  if (deviceToken) return { deviceToken };
+  if (credentialMode === "family_key" && key) return { mode: "family_key", key };
   return null;
 }
 
@@ -85,11 +90,20 @@ function errorMessage(value: unknown) {
   return "Device management could not be reached.";
 }
 
-function accessLabel(access: FamilyTripDeviceAccessResponse | null, familyKey: string, localDevice: StoredFamilyDeviceAccess | null) {
+function accessLabel(
+  access: FamilyTripDeviceAccessResponse | null,
+  familyKey: string,
+  localDevice: StoredFamilyDeviceAccess | null,
+  credentialMode: CredentialMode,
+) {
   if (access?.authState === "family_key") return "Connected by family key";
-  if (access?.authState === "device_token") return "Connected by device token";
-  if (access?.authState === "revoked_device_token") return "Saved token revoked";
-  if (localDevice) return `Saved token: ${localDevice.displayName}`;
+  if (access?.authState === "device_token") return "Connected by protected device credential";
+  if (access?.authState === "revoked_device_token") return "Protected credential revoked";
+  if (credentialMode === "device_cookie") return localDevice
+    ? `Protected device: ${localDevice.displayName}`
+    : "Protected device selected";
+  if (credentialMode === "family_key" && familyKey.trim()) return "Family-key recovery selected";
+  if (localDevice) return `Protected device available: ${localDevice.displayName}`;
   if (familyKey.trim()) return "Family key available";
   return "Invite ready";
 }
@@ -97,6 +111,7 @@ function accessLabel(access: FamilyTripDeviceAccessResponse | null, familyKey: s
 export default function FamilyTripDevices() {
   const [familyKey, setFamilyKey] = useState("");
   const [localDevice, setLocalDevice] = useState<StoredFamilyDeviceAccess | null>(null);
+  const [credentialMode, setCredentialMode] = useState<CredentialMode>(null);
   const [accessState, setAccessState] = useState<FamilyTripDeviceAccessResponse | null>(null);
   const [devices, setDevices] = useState<FamilyTripDeviceRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -108,18 +123,51 @@ export default function FamilyTripDevices() {
   const [inviteToken, setInviteToken] = useState("");
   const [acceptToken, setAcceptToken] = useState("");
   const [acceptName, setAcceptName] = useState("");
+  const [bootstrapName, setBootstrapName] = useState("Owner browser");
+  const [bootstrapConfirmation, setBootstrapConfirmation] = useState(false);
   const [renameValues, setRenameValues] = useState<Record<string, string>>({});
   const [pendingRevokeDeviceId, setPendingRevokeDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     ensureStyle();
-    setFamilyKey(loadFamilyKey());
+    const key = loadFamilyKey();
+    setFamilyKey(key);
     const stored = loadFamilyDeviceAccess();
     setLocalDevice(stored);
     if (stored?.displayName) setAcceptName(stored.displayName);
+    if (!hasLegacyFamilyDeviceAccess()) {
+      setCredentialMode(stored ? "device_cookie" : key.trim() ? "family_key" : null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setBusy("migration");
+    void migrateLegacyFamilyDeviceAccess()
+      .then((response) => {
+        if (cancelled || !response) return;
+        const migrated = loadFamilyDeviceAccess();
+        setLocalDevice(migrated);
+        setCredentialMode("device_cookie");
+        setAccessState(response);
+        setSuccess("The legacy browser token was moved into protected server-managed storage and removed from local storage.");
+      })
+      .catch((migrationError) => {
+        if (cancelled) return;
+        setCredentialMode(null);
+        setError(`${errorMessage(migrationError)} The old local token was retained because protected storage was not established.`);
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const auth = useMemo(() => deviceAuth(familyKey, localDevice), [familyKey, localDevice]);
+  const auth = useMemo(() => deviceAuth(familyKey, credentialMode), [familyKey, credentialMode]);
   const canAttemptAuthenticatedAction = Boolean(auth);
   const disabled = Boolean(busy);
   const familyKeyOnly = Boolean(familyKey.trim()) && !localDevice;
@@ -146,13 +194,14 @@ export default function FamilyTripDevices() {
           clearFamilyDeviceAccess();
           setLocalDevice(null);
         }
-        setError(response.message || "This saved device token was revoked. Reconnect with a new invite or use the family key.");
+        setCredentialMode(null);
+        setError(response.message || "This protected device credential was revoked. Reconnect with a new invite or select family-key recovery.");
       } else if (response.authState === "family_key") {
         setSuccess("This browser is connected by the family key owner path. Keep it enabled until device access is fully verified.");
       } else if (response.authState === "device_token") {
         setSuccess(response.device
-          ? `${response.device.displayName} is connected by device token as ${response.role}.`
-          : "This browser is connected by device token.");
+          ? `${response.device.displayName} is connected by protected device credential as ${response.role}.`
+          : "This browser is connected by protected device credential.");
       }
     } catch (accessError) {
       setError(errorMessage(accessError));
@@ -225,24 +274,22 @@ export default function FamilyTripDevices() {
     clearMessages();
     try {
       const response = await acceptFamilyTripInvite(token, acceptName.trim() || "This device");
-      if (response.deviceToken) {
-        saveFamilyDeviceAccess(response.deviceToken, response.device);
-        setLocalDevice(loadFamilyDeviceAccess());
-        setAccessState(response.device ? {
-          status: "ok",
-          authState: "device_token",
-          role: response.device.role,
-          device: response.device,
-          canManageDevices: response.device.role === "owner",
-          canWriteSharedPlan: response.device.role === "owner" || response.device.role === "editor",
-          migrationRecommended: false,
-          message: "This browser is connected with a device token.",
-        } : null);
-      }
+      setLocalDevice(loadFamilyDeviceAccess());
+      setCredentialMode("device_cookie");
+      setAccessState(response.device ? {
+        status: "ok",
+        authState: "device_token",
+        role: response.device.role,
+        device: response.device,
+        canManageDevices: response.device.role === "owner",
+        canWriteSharedPlan: response.device.role === "owner" || response.device.role === "editor",
+        migrationRecommended: false,
+        message: "This browser is connected with a protected device credential.",
+      } : null);
       setAcceptToken("");
       setSuccess(response.device
-        ? `${response.device.displayName} was connected and saved on this browser.`
-        : "This browser was connected and saved.");
+        ? `${response.device.displayName} was connected in protected browser storage.`
+        : "This browser was connected in protected storage.");
     } catch (acceptError) {
       setError(errorMessage(acceptError));
     } finally {
@@ -266,7 +313,7 @@ export default function FamilyTripDevices() {
       if (nextDevice) {
         setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
         if (localDevice?.deviceId === nextDevice.id) {
-          saveFamilyDeviceAccess(localDevice.deviceToken, nextDevice);
+          saveFamilyDeviceAccess(nextDevice);
           setLocalDevice(loadFamilyDeviceAccess());
         }
         setSuccess(`${nextDevice.displayName} was renamed.`);
@@ -296,8 +343,9 @@ export default function FamilyTripDevices() {
         setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
         setPendingRevokeDeviceId(null);
         if (localDevice?.deviceId === nextDevice.id) {
-          clearFamilyDeviceAccess();
+          await clearProtectedFamilyDeviceAccess();
           setLocalDevice(null);
+          setCredentialMode(null);
           setAccessState({
             status: "revoked",
             authState: "revoked_device_token",
@@ -306,7 +354,7 @@ export default function FamilyTripDevices() {
             canManageDevices: false,
             canWriteSharedPlan: false,
             migrationRecommended: false,
-            message: "This saved device token was revoked. Reconnect with a new invite or use the family key.",
+            message: "This protected device credential was revoked. Reconnect with a new invite or use family-key recovery.",
           });
         }
         try {
@@ -324,12 +372,53 @@ export default function FamilyTripDevices() {
     }
   }
 
-  function clearLocalDevice() {
-    clearFamilyDeviceAccess();
-    setLocalDevice(null);
-    setAccessState(null);
-    setSuccess("Saved device token cleared from this browser. The server-side device record was not revoked.");
-    setError(null);
+  async function clearLocalDevice() {
+    setBusy("clear");
+    clearMessages();
+    try {
+      await clearProtectedFamilyDeviceAccess();
+      setLocalDevice(null);
+      setCredentialMode(null);
+      setAccessState(null);
+      setSuccess("The protected browser credential was cleared. The server-side device record was not revoked.");
+    } catch (clearError) {
+      setError(errorMessage(clearError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmOwnerBootstrap() {
+    if (!familyKey.trim()) {
+      setError("The family key is required to bootstrap the owner device.");
+      return;
+    }
+    setBusy("bootstrap");
+    clearMessages();
+    try {
+      const response = await bootstrapFamilyOwnerDevice(
+        familyKey,
+        bootstrapName.trim() || "Owner browser",
+      );
+      setLocalDevice(loadFamilyDeviceAccess());
+      setCredentialMode("device_cookie");
+      setBootstrapConfirmation(false);
+      setAccessState(response.device ? {
+        status: "ok",
+        authState: "device_token",
+        role: response.device.role,
+        device: response.device,
+        canManageDevices: true,
+        canWriteSharedPlan: true,
+        migrationRecommended: false,
+        message: "This browser is connected as the protected owner device.",
+      } : null);
+      setSuccess(`${response.device?.displayName || "Owner device"} was established in protected browser storage.`);
+    } catch (bootstrapError) {
+      setError(errorMessage(bootstrapError));
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -337,34 +426,73 @@ export default function FamilyTripDevices() {
       <summary>
         <span>Family devices</span>
         <span className="family-devices-status">
-          {accessLabel(accessState, familyKey, localDevice)}
+          {accessLabel(accessState, familyKey, localDevice, credentialMode)}
         </span>
       </summary>
       <div className="family-devices-content">
         <p className="muted">
-          Manage device access manually. This panel does not poll, does not send texts, and does not change or disable the current family key.
+          Manage device access manually. Device-management requests use the credential selected below; normal shared-plan sync still uses the family key. This panel does not poll, send texts, or disable the family key.
         </p>
+
+        {(familyKey.trim() || localDevice || credentialMode === "device_cookie") && (
+          <div className="family-devices-access">
+            <strong>Credential selection</strong>
+            <span className="family-devices-meta">CastleWatch sends exactly one credential per device-management request and never falls back silently.</span>
+            <div className="family-devices-actions">
+              {(localDevice || credentialMode === "device_cookie") && (
+                <button
+                  className={`family-devices-button ${credentialMode === "device_cookie" ? "family-devices-button-primary" : ""}`}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setCredentialMode("device_cookie");
+                    setAccessState(null);
+                    clearMessages();
+                  }}
+                >
+                  Use protected device
+                </button>
+              )}
+              {familyKey.trim() && (
+                <button
+                  className={`family-devices-button ${credentialMode === "family_key" ? "family-devices-button-warning" : ""}`}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setCredentialMode("family_key");
+                    setAccessState(null);
+                    clearMessages();
+                  }}
+                >
+                  Use family-key recovery
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {familyKeyOnly && (
           <div className="family-devices-warning">
-            <strong>Migration prep</strong>
-            <span className="family-devices-meta">This browser is still using the family key owner path. Before any future family-key retirement, connect this browser with a device invite. The family key remains enabled for recovery.</span>
+            <strong>Owner bootstrap available</strong>
+            <span className="family-devices-meta">This browser can establish the first owner device through the explicit family-key recovery action below. The family key remains configured and enabled.</span>
           </div>
         )}
 
         {localDevice && (
           <div className="family-devices-local">
-            <strong>This browser has a saved device token</strong>
-            <span className="family-devices-meta">{localDevice.displayName} · {localDevice.role} · saved {formatDate(localDevice.savedAt)}</span>
+            <strong>This browser has a protected device credential</strong>
+            <span className="family-devices-meta">{localDevice.displayName} · {localDevice.role} · protected {formatDate(localDevice.savedAt)}. Local storage contains safe metadata only.</span>
             <div className="family-devices-actions">
-              <button className="family-devices-button" type="button" onClick={clearLocalDevice}>Clear saved token from this browser</button>
+              <button className="family-devices-button" type="button" disabled={disabled} onClick={() => void clearLocalDevice()}>
+                {busy === "clear" ? "Clearing…" : "Clear protected credential from this browser"}
+              </button>
             </div>
           </div>
         )}
 
         {accessState && (
           <div className={accessState.authState === "revoked_device_token" ? "family-devices-message family-devices-error" : "family-devices-access"}>
-            <strong>Access state: {accessLabel(accessState, familyKey, localDevice)}</strong>
+            <strong>Access state: {accessLabel(accessState, familyKey, localDevice, credentialMode)}</strong>
             <span className="family-devices-meta">
               {accessState.message || "Access state checked."}
               {accessState.device ? ` Device: ${accessState.device.displayName} · ${accessState.device.role} · ${accessState.device.status}.` : ""}
@@ -434,9 +562,42 @@ export default function FamilyTripDevices() {
         )}
 
         <div className="family-devices-grid">
+          {familyKey.trim() && (
+            <div className="family-devices-card">
+              <strong>Bootstrap owner device</strong>
+              <span className="family-devices-meta">Use this explicit one-time recovery action only for the first active owner device, or after revoking a previous owner device. The device credential goes directly into a Secure, HttpOnly, SameSite=Strict cookie and is never displayed or written to local storage.</span>
+              <div className="family-devices-fields">
+                <input value={bootstrapName} onChange={(event) => setBootstrapName(event.target.value)} aria-label="Owner device name" placeholder="Owner browser" />
+                <button
+                  className="family-devices-button family-devices-button-warning"
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    clearMessages();
+                    setBootstrapConfirmation(true);
+                  }}
+                >
+                  Bootstrap owner
+                </button>
+              </div>
+              {bootstrapConfirmation && (
+                <div className="family-devices-revoke-confirm">
+                  <strong>Confirm owner bootstrap</strong>
+                  <span className="family-devices-meta">Create the protected owner credential for {bootstrapName.trim() || "Owner browser"}? The family key will remain enabled for recovery.</span>
+                  <div className="family-devices-actions">
+                    <button className="family-devices-button family-devices-button-primary" type="button" disabled={disabled} onClick={() => void confirmOwnerBootstrap()}>
+                      {busy === "bootstrap" ? "Establishing…" : "Confirm bootstrap"}
+                    </button>
+                    <button className="family-devices-button" type="button" disabled={disabled} onClick={() => setBootstrapConfirmation(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="family-devices-card">
             <strong>Create invite</strong>
-            <span className="family-devices-meta">Use the family key owner path to make a 7-day invite for another browser or phone.</span>
+            <span className="family-devices-meta">Use the explicitly selected owner credential to make a 7-day editor or viewer invite for another browser or phone. Owner credentials are created only by the bootstrap action.</span>
             <div className="family-devices-fields">
               <input value={inviteLabel} onChange={(event) => setInviteLabel(event.target.value)} aria-label="Invite label" placeholder="Katie iPhone" />
               <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")} aria-label="Invite role">
@@ -460,7 +621,7 @@ export default function FamilyTripDevices() {
 
           <div className="family-devices-card">
             <strong>Accept invite on this browser</strong>
-            <span className="family-devices-meta">Paste an invite token here on the phone or browser you want to connect. The resulting device token is saved locally and not displayed.</span>
+            <span className="family-devices-meta">Paste an invite token here on the phone or browser you want to connect. The resulting device credential goes directly into protected server-managed cookie storage; browser JavaScript receives safe device metadata only.</span>
             <div className="family-devices-fields">
               <input value={acceptName} onChange={(event) => setAcceptName(event.target.value)} aria-label="This device name" placeholder="This device name" />
               <input value={acceptToken} onChange={(event) => setAcceptToken(event.target.value)} aria-label="Invite token" placeholder="Invite token" />

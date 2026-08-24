@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "app/api/castlewatch-family-sync/route.ts"
+      - "app/lib/familyTripDeviceProxy.ts"
       - "app/lib/familyTripDevices.ts"
       - "app/components/FamilyTripDevices.tsx"
       - ".github/workflows/device-management-production-smoke.yml"
@@ -30,6 +31,7 @@ jobs:
         run: |
           set -u
           endpoint="${PRODUCTION_URL%/}/api/castlewatch-family-sync"
+          origin="${PRODUCTION_URL%/}"
           body_file="$(mktemp)"
           trap 'rm -f "$body_file"' EXIT
 
@@ -45,6 +47,8 @@ jobs:
               --request POST \
               --header 'Accept: application/json' \
               --header 'Content-Type: application/json' \
+              --header "Origin: ${origin}" \
+              --header 'Sec-Fetch-Site: same-origin' \
               --data "$request_body" \
               "$endpoint" || true)"
 
@@ -71,8 +75,9 @@ jobs:
           invalid_key="castlewatch-device-smoke-invalid-${GITHUB_RUN_ID}"
           for attempt in $(seq 1 24); do
             if \
-              check_json_status "401" "unauthorized" "{\"action\":\"device_list\",\"key\":\"${invalid_key}\"}" "device list guard" && \
-              check_json_status "401" "unauthorized" "{\"action\":\"device_invite_create\",\"key\":\"${invalid_key}\",\"role\":\"editor\",\"label\":\"Smoke test\"}" "invite creation guard" && \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_list\",\"authMode\":\"family_key\",\"key\":\"${invalid_key}\"}" "device list guard" && \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_invite_create\",\"authMode\":\"family_key\",\"key\":\"${invalid_key}\",\"role\":\"editor\",\"label\":\"Smoke test\"}" "invite creation guard" && \
+              check_json_status "401" "unauthorized" "{\"action\":\"device_owner_bootstrap\",\"authMode\":\"family_key\",\"key\":\"${invalid_key}\",\"deviceName\":\"Smoke owner\"}" "owner bootstrap guard" && \
               check_json_status "401" "unauthorized" "{\"action\":\"device_invite_accept\",\"inviteToken\":\"cwinv_not-a-real-token\",\"deviceName\":\"Smoke device\"}" "invite acceptance guard"
             then
               echo "Production device-management smoke passed on attempt ${attempt}."

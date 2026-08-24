@@ -8,7 +8,7 @@ const STYLE_ID = "castlewatch-family-device-credential-diagnostic-style";
 
 type CredentialState = {
   hasFamilyKey: boolean;
-  hasDeviceToken: boolean;
+  hasProtectedDeviceMetadata: boolean;
   syncedVersion: number | null;
   syncedAt: string | null;
 };
@@ -30,7 +30,7 @@ function readCredentialState(): CredentialState {
   const metadata = loadFamilySyncMetadata();
   return {
     hasFamilyKey: Boolean(loadFamilyKey().trim()),
-    hasDeviceToken: Boolean(loadFamilyDeviceAccess()?.deviceToken.trim()),
+    hasProtectedDeviceMetadata: Boolean(loadFamilyDeviceAccess()),
     syncedVersion: metadata?.version ?? null,
     syncedAt: metadata?.syncedAt ?? null,
   };
@@ -39,7 +39,7 @@ function readCredentialState(): CredentialState {
 export default function FamilyTripDeviceCredentialDiagnostic() {
   const [state, setState] = useState<CredentialState>(() => ({
     hasFamilyKey: false,
-    hasDeviceToken: false,
+    hasProtectedDeviceMetadata: false,
     syncedVersion: null,
     syncedAt: null,
   }));
@@ -63,7 +63,7 @@ export default function FamilyTripDeviceCredentialDiagnostic() {
     };
   }, []);
 
-  if (!state.syncedVersion || state.hasFamilyKey || state.hasDeviceToken) return null;
+  if (!state.syncedVersion || state.hasFamilyKey || state.hasProtectedDeviceMetadata) return null;
 
   const syncedAt = state.syncedAt ? new Date(state.syncedAt).toLocaleString() : null;
 
@@ -71,7 +71,7 @@ export default function FamilyTripDeviceCredentialDiagnostic() {
     <div className="family-device-credential-diagnostic">
       <strong>Device management needs a credential</strong>
       <span>
-        This browser has a synchronized shared-plan baseline, but Family devices does not have the family key or a saved device token available. Shared-plan data may still look up to date from the last sync, but device management needs the family key owner path or an accepted device invite.
+        This browser has a synchronized shared-plan baseline, but Family devices does not have the family key or protected-device metadata available. Shared-plan data may still look up to date from the last sync, but device management needs explicit family-key recovery or an accepted device invite.
       </span>
       <small>
         Last shared-plan baseline: version {state.syncedVersion}{syncedAt ? ` · ${syncedAt}` : ""}.

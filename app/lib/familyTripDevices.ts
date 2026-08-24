@@ -2,10 +2,9 @@ export const FAMILY_DEVICE_ACCESS_STORAGE_KEY = "castlewatch.family-device-acces
 
 const MAX_CREDENTIAL_LENGTH = 512;
 
-export type FamilyTripDeviceAuth = {
-  key?: string;
-  deviceToken?: string;
-};
+export type FamilyTripDeviceAuth =
+  | { mode: "family_key"; key: string }
+  | { mode: "device_cookie" };
 
 export type FamilyTripDeviceRole = "owner" | "editor" | "viewer" | string;
 
@@ -34,12 +33,18 @@ export type FamilyTripInviteRecord = {
 };
 
 export type StoredFamilyDeviceAccess = {
-  deviceToken: string;
   deviceId: string | null;
   displayName: string;
   role: FamilyTripDeviceRole;
   savedAt: string;
+  storage: "protected_cookie";
 };
+
+type LegacyStoredFamilyDeviceAccess = Omit<StoredFamilyDeviceAccess, "storage"> & {
+  deviceToken: string;
+};
+
+let legacyMigrationInFlight: Promise<FamilyTripDeviceAccessResponse | null> | null = null;
 
 export type FamilyTripDeviceAccessState = "family_key" | "device_token" | "revoked_device_token" | "unknown";
 
@@ -69,7 +74,6 @@ export type FamilyTripInviteResponse = {
 
 export type FamilyTripAcceptInviteResponse = {
   status: string;
-  deviceToken: string;
   device: FamilyTripDeviceRecord | null;
   message?: string;
 };
@@ -193,7 +197,6 @@ export function parseFamilyTripAcceptInviteResponse(data: unknown): FamilyTripAc
   const root = objectValue(data);
   return {
     status: stringValue(root.status, "error"),
-    deviceToken: normalizeCredentialToken(root.deviceToken, "cwdev_"),
     device: parseDevice(root.device),
     message: typeof root.message === "string" ? root.message : undefined,
   };
@@ -208,39 +211,59 @@ export function parseFamilyTripDeviceResponse(data: unknown): FamilyTripDeviceRe
   };
 }
 
-export function loadFamilyDeviceAccess(): StoredFamilyDeviceAccess | null {
+function readStorageRecord() {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = objectValue(JSON.parse(raw));
-    const deviceToken = normalizeCredentialToken(parsed.deviceToken, "cwdev_");
-    if (!deviceToken) return null;
-    return {
-      deviceToken,
-      deviceId: nullableString(parsed.deviceId),
-      displayName: stringValue(parsed.displayName, "This device"),
-      role: stringValue(parsed.role, "editor"),
-      savedAt: stringValue(parsed.savedAt, new Date().toISOString()),
-    };
+    return raw ? objectValue(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
 }
 
-export function saveFamilyDeviceAccess(deviceToken: string, device?: FamilyTripDeviceRecord | null) {
+function storedMetadata(record: Record<string, any>): StoredFamilyDeviceAccess {
+  return {
+    deviceId: nullableString(record.deviceId),
+    displayName: stringValue(record.displayName, "This device"),
+    role: stringValue(record.role, "editor"),
+    savedAt: stringValue(record.savedAt, new Date().toISOString()),
+    storage: "protected_cookie",
+  };
+}
+
+function loadLegacyFamilyDeviceAccess(): LegacyStoredFamilyDeviceAccess | null {
+  const parsed = readStorageRecord();
+  if (!parsed) return null;
+  const deviceToken = normalizeCredentialToken(parsed.deviceToken, "cwdev_");
+  if (!deviceToken) return null;
+  const metadata = storedMetadata(parsed);
+  return {
+    deviceToken,
+    deviceId: metadata.deviceId,
+    displayName: metadata.displayName,
+    role: metadata.role,
+    savedAt: metadata.savedAt,
+  };
+}
+
+export function hasLegacyFamilyDeviceAccess() {
+  return Boolean(loadLegacyFamilyDeviceAccess());
+}
+
+export function loadFamilyDeviceAccess(): StoredFamilyDeviceAccess | null {
+  const parsed = readStorageRecord();
+  if (!parsed) return null;
+  return parsed.storage === "protected_cookie" ? storedMetadata(parsed) : null;
+}
+
+export function saveFamilyDeviceAccess(device: FamilyTripDeviceRecord) {
   if (typeof window === "undefined") return;
-  const normalized = normalizeCredentialToken(deviceToken, "cwdev_");
-  if (!normalized) {
-    window.localStorage.removeItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
-    return;
-  }
   const record: StoredFamilyDeviceAccess = {
-    deviceToken: normalized,
-    deviceId: device?.id || null,
-    displayName: device?.displayName || "This device",
-    role: device?.role || "editor",
+    deviceId: device.id,
+    displayName: device.displayName || "This device",
+    role: device.role || "editor",
     savedAt: new Date().toISOString(),
+    storage: "protected_cookie",
   };
   window.localStorage.setItem(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify(record));
 }
@@ -259,6 +282,7 @@ async function rawDeviceRequest(body: Record<string, unknown>): Promise<RawDevic
   const response = await fetch("/api/castlewatch-family-sync", {
     method: "POST",
     cache: "no-store",
+    credentials: "same-origin",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -278,9 +302,12 @@ async function rawDeviceRequest(body: Record<string, unknown>): Promise<RawDevic
 }
 
 function authPayload(auth: FamilyTripDeviceAuth) {
-  const key = typeof auth.key === "string" ? auth.key.trim() : "";
-  const deviceToken = typeof auth.deviceToken === "string" ? auth.deviceToken.trim() : "";
-  return key ? { key } : { deviceToken };
+  if (auth.mode === "family_key") {
+    const key = auth.key.trim();
+    if (!key) throw new FamilyTripDeviceError("The family key is missing.", 400);
+    return { authMode: "family_key", key };
+  }
+  return { authMode: "device_cookie" };
 }
 
 function errorMessage(result: RawDeviceResponse, fallbackLabel: string) {
@@ -296,10 +323,7 @@ function throwIfFailed(result: RawDeviceResponse, label: string) {
 }
 
 export async function checkFamilyTripDeviceAccess(auth: FamilyTripDeviceAuth): Promise<FamilyTripDeviceAccessResponse> {
-  const result = await rawDeviceRequest({
-    action: "device_access_check",
-    ...authPayload(auth),
-  });
+  const result = await rawDeviceRequest({ action: "device_access_check", ...authPayload(auth) });
   const parsed = parseFamilyTripDeviceAccessResponse(result.data);
   if (!result.response.ok && parsed.authState !== "revoked_device_token") {
     throw new FamilyTripDeviceError(errorMessage(result, "Device access check"), result.response.status, result.data);
@@ -308,10 +332,7 @@ export async function checkFamilyTripDeviceAccess(auth: FamilyTripDeviceAuth): P
 }
 
 export async function listFamilyTripDevices(auth: FamilyTripDeviceAuth): Promise<FamilyTripDevicesResponse> {
-  const result = await rawDeviceRequest({
-    action: "device_list",
-    ...authPayload(auth),
-  });
+  const result = await rawDeviceRequest({ action: "device_list", ...authPayload(auth) });
   const parsed = parseFamilyTripDevicesResponse(result.data);
   throwIfFailed(result, "Device list");
   return parsed;
@@ -340,7 +361,6 @@ export async function acceptFamilyTripInvite(
   if (!normalizedInviteToken) {
     throw new FamilyTripDeviceError("Invite token format is invalid.", 400);
   }
-
   const result = await rawDeviceRequest({
     action: "device_invite_accept",
     inviteToken: normalizedInviteToken,
@@ -348,7 +368,63 @@ export async function acceptFamilyTripInvite(
   });
   const parsed = parseFamilyTripAcceptInviteResponse(result.data);
   throwIfFailed(result, "Invite acceptance");
+  if (!parsed.device) {
+    throw new FamilyTripDeviceError("Invite acceptance did not return safe device metadata.", 502, result.data);
+  }
+  saveFamilyDeviceAccess(parsed.device);
   return parsed;
+}
+
+export async function bootstrapFamilyOwnerDevice(
+  familyKey: string,
+  deviceName: string,
+): Promise<FamilyTripDeviceResponse> {
+  const key = familyKey.trim();
+  if (!key) throw new FamilyTripDeviceError("The family key is missing.", 400);
+  const result = await rawDeviceRequest({
+    action: "device_owner_bootstrap",
+    authMode: "family_key",
+    key,
+    deviceName: deviceName.trim(),
+  });
+  const parsed = parseFamilyTripDeviceResponse(result.data);
+  throwIfFailed(result, "Owner device bootstrap");
+  if (!parsed.device) {
+    throw new FamilyTripDeviceError("Owner bootstrap did not return safe device metadata.", 502, result.data);
+  }
+  saveFamilyDeviceAccess(parsed.device);
+  return parsed;
+}
+
+export function migrateLegacyFamilyDeviceAccess(): Promise<FamilyTripDeviceAccessResponse | null> {
+  if (legacyMigrationInFlight) return legacyMigrationInFlight;
+
+  legacyMigrationInFlight = (async () => {
+    const legacy = loadLegacyFamilyDeviceAccess();
+    if (!legacy) return null;
+
+    const result = await rawDeviceRequest({
+      action: "device_credential_migrate",
+      deviceToken: legacy.deviceToken,
+    });
+    const parsed = parseFamilyTripDeviceAccessResponse(result.data);
+    throwIfFailed(result, "Protected credential migration");
+    if (parsed.authState !== "device_token" || !parsed.device) {
+      throw new FamilyTripDeviceError("Protected credential migration was not acknowledged by the server.", 502, result.data);
+    }
+    saveFamilyDeviceAccess(parsed.device);
+    return parsed;
+  })();
+
+  return legacyMigrationInFlight.finally(() => {
+    legacyMigrationInFlight = null;
+  });
+}
+
+export async function clearProtectedFamilyDeviceAccess() {
+  const result = await rawDeviceRequest({ action: "device_credential_clear" });
+  throwIfFailed(result, "Protected credential clear");
+  clearFamilyDeviceAccess();
 }
 
 export async function renameFamilyTripDevice(

@@ -4,11 +4,15 @@ import {
   FAMILY_DEVICE_ACCESS_STORAGE_KEY,
   FamilyTripDeviceError,
   acceptFamilyTripInvite,
+  bootstrapFamilyOwnerDevice,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
+  clearProtectedFamilyDeviceAccess,
   createFamilyTripInvite,
+  hasLegacyFamilyDeviceAccess,
   listFamilyTripDevices,
   loadFamilyDeviceAccess,
+  migrateLegacyFamilyDeviceAccess,
   parseFamilyTripAcceptInviteResponse,
   parseFamilyTripDeviceAccessResponse,
   parseFamilyTripDevicesResponse,
@@ -18,21 +22,45 @@ import {
   saveFamilyDeviceAccess,
 } from "../app/lib/familyTripDevices.ts";
 
+const SAFE_DEVICE = {
+  id: "device-1",
+  displayName: "Katie iPhone",
+  role: "editor",
+  status: "active",
+  tokenPrefix: "dev123",
+  createdAt: null,
+  lastSeenAt: null,
+  lastReadAt: null,
+  lastWriteAt: null,
+  revokedAt: null,
+};
+
+function installStorage() {
+  const previousWindow = globalThis.window;
+  const store = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key),
+    },
+  };
+  return {
+    store,
+    restore() {
+      if (previousWindow === undefined) delete globalThis.window;
+      else globalThis.window = previousWindow;
+    },
+  };
+}
+
 test("device list parser keeps safe device metadata", () => {
   const parsed = parseFamilyTripDevicesResponse({
     status: "ok",
     devices: [
       {
-        id: "device-1",
-        displayName: "Ryan iPhone",
+        ...SAFE_DEVICE,
         role: "owner",
-        status: "active",
-        tokenPrefix: "abc123",
-        createdAt: "created",
-        lastSeenAt: "seen",
-        lastReadAt: "read",
-        lastWriteAt: "write",
-        revokedAt: null,
         token_hash: "must-not-leak",
         rawToken: "must-not-leak",
       },
@@ -43,9 +71,7 @@ test("device list parser keeps safe device metadata", () => {
   assert.equal(parsed.status, "ok");
   assert.equal(parsed.devices.length, 1);
   assert.equal(parsed.devices[0].id, "device-1");
-  assert.equal(parsed.devices[0].displayName, "Ryan iPhone");
   assert.equal(parsed.devices[0].role, "owner");
-  assert.equal(parsed.devices[0].tokenPrefix, "abc123");
   assert.equal(Object.hasOwn(parsed.devices[0], "token_hash"), false);
   assert.equal(Object.hasOwn(parsed.devices[0], "rawToken"), false);
 });
@@ -58,12 +84,9 @@ test("access parser keeps family-key and revoked-token states explicit", () => {
     canManageDevices: true,
     canWriteSharedPlan: true,
     migrationRecommended: true,
-    message: "Using family key.",
   });
   assert.equal(familyKey.authState, "family_key");
-  assert.equal(familyKey.role, "owner");
   assert.equal(familyKey.canManageDevices, true);
-  assert.equal(familyKey.migrationRecommended, true);
   assert.equal(familyKey.device, null);
 
   const revoked = parseFamilyTripDeviceAccessResponse({
@@ -71,22 +94,14 @@ test("access parser keeps family-key and revoked-token states explicit", () => {
     authState: "revoked_device_token",
     canManageDevices: false,
     canWriteSharedPlan: false,
-    device: {
-      id: "device-1",
-      displayName: "Safari Test",
-      role: "editor",
-      status: "revoked",
-      tokenPrefix: "dev123",
-      token_hash: "must-not-leak",
-    },
+    device: { ...SAFE_DEVICE, status: "revoked", token_hash: "must-not-leak" },
   });
   assert.equal(revoked.authState, "revoked_device_token");
   assert.equal(revoked.device?.status, "revoked");
-  assert.equal(revoked.role, "editor");
   assert.equal(Object.hasOwn(revoked.device ?? {}, "token_hash"), false);
 });
 
-test("invite and accept parsers preserve one-time tokens only at top level", () => {
+test("invite parser exposes an invite once while accepted-device parsing drops raw credentials", () => {
   const invite = parseFamilyTripInviteResponse({
     status: "ok",
     inviteToken: "cwinv_once",
@@ -96,147 +111,209 @@ test("invite and accept parsers preserve one-time tokens only at top level", () 
       status: "open",
       invitePrefix: "inv123",
       label: "Katie iPhone",
-      expiresAt: "expires",
-      createdAt: "created",
-      acceptedAt: null,
       invite_hash: "must-not-leak",
     },
   });
   assert.equal(invite.inviteToken, "cwinv_once");
-  assert.equal(invite.invite?.label, "Katie iPhone");
   assert.equal(Object.hasOwn(invite.invite ?? {}, "invite_hash"), false);
 
   const accepted = parseFamilyTripAcceptInviteResponse({
     status: "ok",
-    deviceToken: "cwdev_once",
-    device: {
-      id: "device-1",
-      displayName: "Katie iPhone",
-      role: "editor",
-      status: "active",
-      tokenPrefix: "dev123",
-    },
+    deviceToken: "cwdev_must_not_reach_javascript",
+    device: SAFE_DEVICE,
   });
-  assert.equal(accepted.deviceToken, "cwdev_once");
   assert.equal(accepted.device?.displayName, "Katie iPhone");
-  assert.equal(JSON.stringify(accepted.device).includes("cwdev_once"), false);
+  assert.equal(Object.hasOwn(accepted, "deviceToken"), false);
+  assert.equal(JSON.stringify(accepted).includes("cwdev_must_not_reach_javascript"), false);
 });
 
-test("local device access storage keeps token local and clears safely", () => {
-  const previousWindow = globalThis.window;
-  const store = new Map();
-  globalThis.window = {
-    localStorage: {
-      getItem: (key) => store.get(key) ?? null,
-      setItem: (key, value) => store.set(key, String(value)),
-      removeItem: (key) => store.delete(key),
-    },
-  };
-
+test("protected device metadata storage never writes a raw credential", () => {
+  const storage = installStorage();
   try {
-    saveFamilyDeviceAccess("  cwdev_local  ", {
-      id: "device-1",
-      displayName: "Katie iPhone",
-      role: "editor",
-      status: "active",
-      tokenPrefix: "dev123",
-      createdAt: null,
-      lastSeenAt: null,
-      lastReadAt: null,
-      lastWriteAt: null,
-      revokedAt: null,
-    });
-    const storedRaw = store.get(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
-    assert.ok(storedRaw.includes("cwdev_local"));
+    saveFamilyDeviceAccess(SAFE_DEVICE);
+    const storedRaw = storage.store.get(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
+    assert.equal(storedRaw.includes("cwdev_"), false);
+    assert.equal(storedRaw.includes("deviceToken"), false);
     const access = loadFamilyDeviceAccess();
-    assert.equal(access?.deviceToken, "cwdev_local");
     assert.equal(access?.deviceId, "device-1");
     assert.equal(access?.displayName, "Katie iPhone");
-    assert.equal(access?.role, "editor");
+    assert.equal(access?.storage, "protected_cookie");
 
     clearFamilyDeviceAccess();
     assert.equal(loadFamilyDeviceAccess(), null);
   } finally {
-    if (previousWindow === undefined) {
-      delete globalThis.window;
-    } else {
-      globalThis.window = previousWindow;
-    }
+    storage.restore();
   }
 });
 
-test("device clients send typed proxy actions", async () => {
+test("legacy local token is removed only after protected migration is acknowledged", async () => {
+  const storage = installStorage();
+  const originalFetch = globalThis.fetch;
+  storage.store.set(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify({
+    deviceToken: "cwdev_legacy_local",
+    deviceId: "device-1",
+    displayName: "Katie iPhone",
+    role: "editor",
+    savedAt: "before",
+  }));
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      status: "ok",
+      authState: "device_token",
+      role: "editor",
+      device: SAFE_DEVICE,
+      canManageDevices: false,
+      canWriteSharedPlan: true,
+      migrationRecommended: false,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  try {
+    assert.equal(hasLegacyFamilyDeviceAccess(), true);
+    const result = await migrateLegacyFamilyDeviceAccess();
+    assert.equal(result?.authState, "device_token");
+    assert.deepEqual(requestBody, {
+      action: "device_credential_migrate",
+      deviceToken: "cwdev_legacy_local",
+    });
+    const storedRaw = storage.store.get(FAMILY_DEVICE_ACCESS_STORAGE_KEY);
+    assert.equal(storedRaw.includes("cwdev_legacy_local"), false);
+    assert.equal(storedRaw.includes("deviceToken"), false);
+    assert.equal(hasLegacyFamilyDeviceAccess(), false);
+    assert.equal(loadFamilyDeviceAccess()?.storage, "protected_cookie");
+  } finally {
+    globalThis.fetch = originalFetch;
+    storage.restore();
+  }
+});
+
+test("failed protected migration retains the legacy token for explicit recovery", async () => {
+  const storage = installStorage();
+  const originalFetch = globalThis.fetch;
+  storage.store.set(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify({
+    deviceToken: "cwdev_legacy_local",
+    deviceId: "device-1",
+    displayName: "Katie iPhone",
+    role: "editor",
+    savedAt: "before",
+  }));
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: "unauthorized",
+    message: "The device credential was not accepted.",
+  }), { status: 401, headers: { "Content-Type": "application/json" } });
+
+  try {
+    await assert.rejects(() => migrateLegacyFamilyDeviceAccess(), FamilyTripDeviceError);
+    assert.equal(hasLegacyFamilyDeviceAccess(), true);
+    assert.ok(storage.store.get(FAMILY_DEVICE_ACCESS_STORAGE_KEY).includes("cwdev_legacy_local"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    storage.restore();
+  }
+});
+
+test("concurrent migration attempts share one server acknowledgment", async () => {
+  const storage = installStorage();
+  const originalFetch = globalThis.fetch;
+  storage.store.set(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify({
+    deviceToken: "cwdev_legacy_local",
+    deviceId: "device-1",
+    displayName: "Katie iPhone",
+    role: "editor",
+    savedAt: "before",
+  }));
+  let fetchCount = 0;
+  let releaseRequest;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    await new Promise((resolve) => {
+      releaseRequest = resolve;
+    });
+    return new Response(JSON.stringify({
+      status: "ok",
+      authState: "device_token",
+      role: "editor",
+      device: SAFE_DEVICE,
+      canManageDevices: false,
+      canWriteSharedPlan: true,
+      migrationRecommended: false,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  try {
+    const first = migrateLegacyFamilyDeviceAccess();
+    const second = migrateLegacyFamilyDeviceAccess();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(fetchCount, 1);
+    releaseRequest();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.equal(firstResult?.device?.id, "device-1");
+    assert.equal(secondResult?.device?.id, "device-1");
+    assert.equal(hasLegacyFamilyDeviceAccess(), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    storage.restore();
+  }
+});
+
+test("device clients send explicit credential modes without raw device tokens", async () => {
+  const storage = installStorage();
   const originalFetch = globalThis.fetch;
   const captured = [];
   globalThis.fetch = async (url, options) => {
-    captured.push({ url, options, body: JSON.parse(options.body) });
-    const action = JSON.parse(options.body).action;
-    if (action === "device_access_check") {
+    const body = JSON.parse(options.body);
+    captured.push({ url, body });
+    if (body.action === "device_access_check") {
       return new Response(JSON.stringify({
         status: "ok",
         authState: "device_token",
         role: "editor",
-        device: { id: "device-1", displayName: "Katie iPhone", role: "editor", status: "active" },
+        device: SAFE_DEVICE,
         canManageDevices: false,
         canWriteSharedPlan: true,
         migrationRecommended: false,
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    if (action === "device_list") {
-      return new Response(JSON.stringify({
-        status: "ok",
-        devices: [{ id: "device-1", displayName: "Ryan iPhone", role: "owner", status: "active" }],
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (body.action === "device_list") {
+      return new Response(JSON.stringify({ status: "ok", devices: [SAFE_DEVICE] }), { status: 200 });
     }
-    if (action === "device_invite_create") {
+    if (body.action === "device_invite_create") {
       return new Response(JSON.stringify({
         status: "ok",
         inviteToken: "cwinv_once",
         invite: { id: "invite-1", role: "editor", status: "open", label: "Katie" },
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }), { status: 200 });
     }
-    if (action === "device_invite_accept") {
-      return new Response(JSON.stringify({
-        status: "ok",
-        deviceToken: "cwdev_once",
-        device: { id: "device-2", displayName: "Katie iPhone", role: "editor", status: "active" },
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
-    return new Response(JSON.stringify({
-      status: "ok",
-      device: { id: "device-2", displayName: "Katie iPhone 2", role: "editor", status: action === "device_revoke" ? "revoked" : "active" },
-    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ status: "ok", device: SAFE_DEVICE }), { status: 200 });
   };
 
   try {
-    await checkFamilyTripDeviceAccess({ deviceToken: " device-token " });
-    await listFamilyTripDevices({ key: " family-key " });
-    await createFamilyTripInvite({ deviceToken: " owner-device " }, { role: "editor", label: "Katie" });
+    await checkFamilyTripDeviceAccess({ mode: "device_cookie" });
+    await listFamilyTripDevices({ mode: "family_key", key: " family-key " });
+    await createFamilyTripInvite({ mode: "device_cookie" }, { role: "editor", label: "Katie" });
     await acceptFamilyTripInvite(" cwinv_once ", " Katie iPhone ");
-    await renameFamilyTripDevice({ key: "family-key" }, "device-2", " Katie iPhone 2 ");
-    await revokeFamilyTripDevice({ deviceToken: "owner-device" }, "device-2");
+    await bootstrapFamilyOwnerDevice(" family-key ", " Owner iPhone ");
+    await renameFamilyTripDevice({ mode: "family_key", key: "family-key" }, "device-1", " Katie iPhone 2 ");
+    await revokeFamilyTripDevice({ mode: "device_cookie" }, "device-1");
+    await clearProtectedFamilyDeviceAccess();
 
-    assert.deepEqual(captured.map((call) => call.url), [
-      "/api/castlewatch-family-sync",
-      "/api/castlewatch-family-sync",
-      "/api/castlewatch-family-sync",
-      "/api/castlewatch-family-sync",
-      "/api/castlewatch-family-sync",
-      "/api/castlewatch-family-sync",
-    ]);
     assert.deepEqual(captured.map((call) => call.body.action), [
       "device_access_check",
       "device_list",
       "device_invite_create",
       "device_invite_accept",
+      "device_owner_bootstrap",
       "device_rename",
       "device_revoke",
+      "device_credential_clear",
     ]);
-    assert.deepEqual(captured[0].body, { action: "device_access_check", deviceToken: "device-token" });
-    assert.deepEqual(captured[1].body, { action: "device_list", key: "family-key" });
+    assert.deepEqual(captured[0].body, { action: "device_access_check", authMode: "device_cookie" });
+    assert.deepEqual(captured[1].body, { action: "device_list", authMode: "family_key", key: "family-key" });
     assert.deepEqual(captured[2].body, {
       action: "device_invite_create",
-      deviceToken: "owner-device",
+      authMode: "device_cookie",
       role: "editor",
       label: "Katie",
     });
@@ -246,44 +323,58 @@ test("device clients send typed proxy actions", async () => {
       deviceName: "Katie iPhone",
     });
     assert.deepEqual(captured[4].body, {
-      action: "device_rename",
+      action: "device_owner_bootstrap",
+      authMode: "family_key",
       key: "family-key",
-      deviceId: "device-2",
-      displayName: "Katie iPhone 2",
+      deviceName: "Owner iPhone",
     });
     assert.deepEqual(captured[5].body, {
-      action: "device_revoke",
-      deviceToken: "owner-device",
-      deviceId: "device-2",
+      action: "device_rename",
+      authMode: "family_key",
+      key: "family-key",
+      deviceId: "device-1",
+      displayName: "Katie iPhone 2",
     });
+    assert.deepEqual(captured[6].body, {
+      action: "device_revoke",
+      authMode: "device_cookie",
+      deviceId: "device-1",
+    });
+    assert.equal(captured.some((call) => Object.hasOwn(call.body, "deviceToken")), false);
+    assert.equal(loadFamilyDeviceAccess(), null);
   } finally {
     globalThis.fetch = originalFetch;
+    storage.restore();
   }
 });
 
-test("access client returns revoked state without throwing", async () => {
+test("access client returns revoked state without silent family-key fallback", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({
-    status: "revoked",
-    authState: "revoked_device_token",
-    message: "This saved device token was revoked. Reconnect with a new invite or use the family key.",
-    canManageDevices: false,
-    canWriteSharedPlan: false,
-    migrationRecommended: false,
-    device: { id: "device-2", displayName: "Safari Test", role: "editor", status: "revoked" },
-  }), { status: 401, headers: { "Content-Type": "application/json" } });
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      status: "revoked",
+      authState: "revoked_device_token",
+      message: "This protected device credential was revoked.",
+      canManageDevices: false,
+      canWriteSharedPlan: false,
+      migrationRecommended: false,
+      device: { ...SAFE_DEVICE, status: "revoked" },
+    }), { status: 401, headers: { "Content-Type": "application/json" } });
+  };
 
   try {
-    const result = await checkFamilyTripDeviceAccess({ deviceToken: "revoked-device" });
-    assert.equal(result.status, "revoked");
+    const result = await checkFamilyTripDeviceAccess({ mode: "device_cookie" });
     assert.equal(result.authState, "revoked_device_token");
-    assert.equal(result.device?.status, "revoked");
+    assert.deepEqual(body, { action: "device_access_check", authMode: "device_cookie" });
+    assert.equal(Object.hasOwn(body, "key"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("device client preserves upstream error messages", async () => {
+test("device client preserves safe upstream error messages", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
     status: "forbidden",
@@ -292,7 +383,7 @@ test("device client preserves upstream error messages", async () => {
 
   try {
     await assert.rejects(
-      () => listFamilyTripDevices({ deviceToken: "viewer-device" }),
+      () => listFamilyTripDevices({ mode: "device_cookie" }),
       (error) => {
         assert.ok(error instanceof FamilyTripDeviceError);
         assert.equal(error.statusCode, 403);

@@ -232,8 +232,9 @@ async function run() {
           await waitFor(() => document.querySelector(".command-center h2")?.textContent === "Magic Kingdom", "initial park dashboard");
           const topButtons = Array.from(document.querySelectorAll(".top-park-button"));
           if (topButtons.length !== 6) throw new Error("Expected six primary navigation buttons");
-          if (Math.min(...topButtons.map((button) => button.getBoundingClientRect().height)) < 44) {
-            throw new Error("Primary navigation touch target is smaller than 44px");
+          const minimumTopButtonHeight = Math.min(...topButtons.map((button) => button.getBoundingClientRect().height));
+          if (minimumTopButtonHeight < 44) {
+            throw new Error("Primary navigation touch target is " + minimumTopButtonHeight + "px at viewport " + window.innerWidth + "px");
           }
           const navColumns = getComputedStyle(document.querySelector(".top-park-banner")).gridTemplateColumns.split(" ").length;
           if (navColumns !== 3) throw new Error("Mobile primary navigation did not collapse to three columns");

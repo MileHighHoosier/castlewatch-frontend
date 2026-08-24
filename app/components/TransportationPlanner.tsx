@@ -12,6 +12,10 @@ import {
   previousDate,
   saveResortPlan,
 } from "../lib/tripResorts";
+import {
+  projectTransportationArrival,
+  transportationLeaveBy,
+} from "../lib/transportationPlanning";
 
 const STYLE_ID = "castlewatch-getting-there-style";
 const TRIP_REQUEST_TIMEOUT_MS = 12_000;
@@ -113,19 +117,6 @@ function ensureStyle() {
 
 function formatDay(dateValue: string) {
   return new Date(`${dateValue}T12:00:00`).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
-}
-
-function minutesFromTime(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  return (hours || 0) * 60 + (minutes || 0);
-}
-
-function timeFromMinutes(total: number) {
-  const normalized = ((total % 1440) + 1440) % 1440;
-  const hours = Math.floor(normalized / 60);
-  const minutes = normalized % 60;
-  const suffix = hours >= 12 ? "PM" : "AM";
-  return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${suffix}`;
 }
 
 function busToPark(date: string, title: string, resort: ResortOption, park: string, note?: string): RoutePlan {
@@ -373,13 +364,10 @@ export default function TransportationPlanner() {
   }
 
   const totalPlanningMinutes = route.walkToStop + route.travelMax + route.arrivalBuffer;
-  const leaveBy = timeFromMinutes(minutesFromTime(targetTime) - totalPlanningMinutes);
+  const leaveBy = transportationLeaveBy(targetTime, route);
   const busProjection = useMemo(() => {
     if (!nextBus) return null;
-    const departure = minutesFromTime(nextBus);
-    const earliest = departure + route.travelMin + route.arrivalBuffer;
-    const latest = departure + route.travelMax + route.arrivalBuffer;
-    return { range:`${timeFromMinutes(earliest)}–${timeFromMinutes(latest)}`, onTime:latest <= minutesFromTime(targetTime) };
+    return projectTransportationArrival(nextBus, targetTime, route);
   }, [nextBus, route, targetTime]);
 
   const originLabel = selectedDate === "2027-10-12"

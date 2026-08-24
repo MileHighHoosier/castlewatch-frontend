@@ -8,7 +8,10 @@ const WEATHER_AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
 const WEATHER_MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
 const STYLE_ID = "castlewatch-emergency-break-style";
 
-const PARK_BREAK_PLANS: Record<string, { title: string; reason: string; steps: string[]; note: string }> = {
+export type EmergencyWeatherRisk = "normal" | "hot" | "storm";
+export type EmergencyBreakPlan = { title: string; reason: string; steps: string[]; note: string };
+
+const PARK_BREAK_PLANS: Record<string, EmergencyBreakPlan> = {
   "magic kingdom": {
     title: "Exit to Main Street or the resort loop",
     reason: "Emergency break mode stops ride-pushing and prioritizes shade, bathrooms, water, stroller reset, transportation, or leaving the park.",
@@ -63,17 +66,28 @@ function isManualWeatherOverrideActive() {
   return window.localStorage.getItem(WEATHER_MANUAL_OVERRIDE_DATE_KEY) === todayKey();
 }
 
-function activeWeatherRisk() {
-  const autoAdvisory = window.localStorage.getItem(WEATHER_AUTO_ADVISORY_KEY);
-  if ((autoAdvisory === "hot" || autoAdvisory === "storm") && !isManualWeatherOverrideActive()) return autoAdvisory;
-
-  const saved = window.localStorage.getItem(WEATHER_STORAGE_KEY);
-  if (saved === "hot" || saved === "storm") return saved;
+export function resolveEmergencyWeatherRisk(
+  autoAdvisory: string | null,
+  savedMode: string | null,
+  manualOverrideActive: boolean,
+): EmergencyWeatherRisk {
+  if ((autoAdvisory === "hot" || autoAdvisory === "storm") && !manualOverrideActive) return autoAdvisory;
+  if (savedMode === "hot" || savedMode === "storm") return savedMode;
   return "normal";
 }
 
+function activeWeatherRisk() {
+  const autoAdvisory = window.localStorage.getItem(WEATHER_AUTO_ADVISORY_KEY);
+  const saved = window.localStorage.getItem(WEATHER_STORAGE_KEY);
+  return resolveEmergencyWeatherRisk(autoAdvisory, saved, isManualWeatherOverrideActive());
+}
+
+export function isEmergencyModeValueActive(value: string | null) {
+  return value === "on";
+}
+
 function isEmergencyActive() {
-  return window.localStorage.getItem(STORAGE_KEY) === "on";
+  return isEmergencyModeValueActive(window.localStorage.getItem(STORAGE_KEY));
 }
 
 function setEmergencyActive(active: boolean) {
@@ -145,23 +159,43 @@ function resetLightningLaneTracker(planPanel: Element) {
   tracker.querySelector(".emergency-break-ll-note")?.remove();
 }
 
-function parkPlan() {
-  const park = activeParkName().toLowerCase();
+export function emergencyBreakPlanForPark(parkName: string) {
+  const park = parkName.trim().toLowerCase();
   return PARK_BREAK_PLANS[park] || PARK_BREAK_PLANS["magic kingdom"];
 }
 
-function weatherRiskNote() {
-  const risk = activeWeatherRisk();
+function parkPlan() {
+  return emergencyBreakPlanForPark(activeParkName());
+}
+
+export function emergencyWeatherGuidance(risk: EmergencyWeatherRisk) {
   if (risk === "hot") {
-    return `<div class="history-summary emergency-weather-note"><strong>Heat active:</strong> Use shade, A/C, water, and the shortest exit route. Do not chase one more ride.</div>`;
+    return "Use shade, A/C, water, and the shortest exit route. Do not chase one more ride.";
   }
   if (risk === "storm") {
-    return `<div class="history-summary emergency-weather-note"><strong>Storm active:</strong> Move indoors or to safe shelter before making another plan.</div>`;
+    return "Move indoors or to safe shelter before making another plan.";
   }
   return "";
 }
 
+function weatherRiskNote(risk: EmergencyWeatherRisk) {
+  const guidance = emergencyWeatherGuidance(risk);
+  if (!guidance) return "";
+  const label = risk === "hot" ? "Heat active" : "Storm active";
+  return `<div class="history-summary emergency-weather-note"><strong>${label}:</strong> ${guidance}</div>`;
+}
+
+export function shouldRefreshEmergencyContent(
+  currentPlanTitle: string | undefined,
+  currentWeatherRisk: string | undefined,
+  nextPlan: EmergencyBreakPlan,
+  nextWeatherRisk: EmergencyWeatherRisk,
+) {
+  return currentPlanTitle !== nextPlan.title || currentWeatherRisk !== nextWeatherRisk;
+}
+
 function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: string; steps: string[]; note: string }) {
+  const weatherRisk = activeWeatherRisk();
   card.className = "emergency-break-card";
   card.innerHTML = `
     <span class="stat-label">Emergency break · leave-park mode</span>
@@ -173,13 +207,20 @@ function updateEmergencyCard(card: HTMLElement, plan: { title: string; reason: s
       <span class="recommendation-badge">Exit OK</span>
     </div>
     <p class="muted"><strong>Why chosen:</strong> ${plan.reason}</p>
-    ${weatherRiskNote()}
+    ${weatherRiskNote(weatherRisk)}
     <div class="history-summary"><strong>Family rule:</strong> This mode is for meltdown, heat, exhaustion, bathroom urgency, or a parent needing the day to stop escalating.</div>
     <div class="emergency-break-actions" style="display:grid;gap:10px;margin-top:14px;">
       <button class="button secondary-button emergency-break-exit" type="button">Exit emergency mode</button>
     </div>
   `;
+  card.dataset.emergencyPlanTitle = plan.title;
+  card.dataset.emergencyWeatherRisk = weatherRisk;
   // Future reassessment: consider a real "Begin 10-min reset" flow if it adds useful timer/state behavior.
+}
+
+function updateEmergencySteps(steps: HTMLElement, plan: EmergencyBreakPlan) {
+  steps.innerHTML = emergencyStepsMarkup(plan);
+  steps.dataset.emergencyPlanTitle = plan.title;
 }
 
 function placeLightningLaneAfterEmergency(planPanel: Element) {
@@ -213,16 +254,23 @@ function forceEmergencyContent(planPanel: Element, plan: { title: string; reason
   const card = planPanel.querySelector<HTMLElement>(".emergency-break-card");
   if (card) {
     styleCard(card);
-    if (card.textContent?.includes("Start route") || card.textContent?.includes("Start break plan") || !card.querySelector(".emergency-weather-note") && activeWeatherRisk() !== "normal") {
+    const weatherRisk = activeWeatherRisk();
+    if (shouldRefreshEmergencyContent(
+      card.dataset.emergencyPlanTitle,
+      card.dataset.emergencyWeatherRisk,
+      plan,
+      weatherRisk,
+    )) {
       updateEmergencyCard(card, plan);
+      bindEmergencyButtons(planPanel);
     }
   }
 
   const emergencySteps = planPanel.querySelector<HTMLElement>(".emergency-break-steps");
   if (emergencySteps) {
     emergencySteps.style.display = "grid";
-    if (!emergencySteps.querySelector(".emergency-break-step")) {
-      emergencySteps.innerHTML = emergencyStepsMarkup(plan);
+    if (!emergencySteps.querySelector(".emergency-break-step") || emergencySteps.dataset.emergencyPlanTitle !== plan.title) {
+      updateEmergencySteps(emergencySteps, plan);
     }
   }
 
@@ -285,7 +333,7 @@ function renderEmergencyBreakMode() {
   if (!steps) {
     steps = document.createElement("div");
     steps.className = "plan-steps emergency-break-steps";
-    steps.innerHTML = emergencyStepsMarkup(plan);
+    updateEmergencySteps(steps, plan);
     card.insertAdjacentElement("afterend", steps);
   }
 

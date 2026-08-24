@@ -10,6 +10,7 @@ import {
   familyTripAuthorizationPayload,
   loadFamilyTripAuthorization,
   normalizeFamilyTripRole,
+  rejectProtectedDeviceAuthorization,
   saveFamilyTripAuthorizationMode,
 } from "../app/lib/familyTripAuthorization.ts";
 import { FAMILY_DEVICE_ACCESS_STORAGE_KEY } from "../app/lib/familyTripDevices.ts";
@@ -129,6 +130,36 @@ test("unrecognized stored roles degrade to Viewer permissions", () => {
     assert.equal(authorization?.role, "viewer");
     assert.equal(canWriteFamilyTrip(authorization), false);
     assert.equal(canViewFamilyTripOperations(authorization), false);
+  } finally {
+    storage.restore();
+  }
+});
+
+test("a protected-device 401 clears metadata and persists disconnected without family-key fallback", () => {
+  const storage = installStorage();
+  try {
+    storage.store.set(FAMILY_KEY_STORAGE_KEY, "family-key");
+    saveProtectedDevice(storage.store, "editor");
+    saveFamilyTripAuthorizationMode("device_cookie");
+    const authorization = loadFamilyTripAuthorization();
+    assert.equal(authorization?.mode, "device_cookie");
+
+    assert.equal(rejectProtectedDeviceAuthorization(authorization, 403), false);
+    assert.equal(storage.store.has(FAMILY_DEVICE_ACCESS_STORAGE_KEY), true);
+
+    assert.equal(rejectProtectedDeviceAuthorization(authorization, 401), true);
+    assert.equal(storage.store.has(FAMILY_DEVICE_ACCESS_STORAGE_KEY), false);
+    assert.equal(storage.store.get(FAMILY_AUTHORIZATION_MODE_STORAGE_KEY), "disconnected");
+    assert.equal(storage.store.get(FAMILY_KEY_STORAGE_KEY), "family-key");
+    assert.equal(loadFamilyTripAuthorization(), null);
+
+    const familyKey = {
+      mode: "family_key",
+      key: "family-key",
+      role: "owner",
+      label: "Family key",
+    };
+    assert.equal(rejectProtectedDeviceAuthorization(familyKey, 401), false);
   } finally {
     storage.restore();
   }

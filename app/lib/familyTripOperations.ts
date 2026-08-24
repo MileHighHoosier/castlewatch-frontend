@@ -1,6 +1,7 @@
 import {
   FamilyTripAuthorization,
   familyTripAuthorizationPayload,
+  rejectProtectedDeviceAuthorization,
 } from "./familyTripAuthorization";
 
 export type FamilyTripOperationsWarning = {
@@ -215,6 +216,7 @@ export async function fetchFamilyTripOperations(
       ...familyTripAuthorizationPayload(authorization),
     }),
   });
+  rejectProtectedDeviceAuthorization(authorization, response.status);
 
   const rawText = await response.text();
   let data: unknown = {};
@@ -223,7 +225,6 @@ export async function fetchFamilyTripOperations(
   } catch {
     data = {};
   }
-
   const report = parseFamilyTripOperationsReport(data);
   if (!response.ok) {
     const message = report.message

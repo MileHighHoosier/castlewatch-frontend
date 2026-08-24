@@ -3,8 +3,8 @@ import {
   FAMILY_DEVICE_CREDENTIAL_COOKIE,
   extractOneTimeDeviceCredential,
   normalizeProtectedDeviceToken,
+  protectRejectedDeviceCredential,
   protectedDeviceCredentialCookieOptions,
-  sanitizeDeviceCredentialPayload,
   validateSameOriginJsonRequest,
 } from "../../lib/familyTripDeviceProxy";
 
@@ -116,6 +116,16 @@ function setCredentialCookie(response: NextResponse, token: string) {
   );
 }
 
+function protectedCredentialMissingResponse() {
+  const response = jsonResponse({
+    status: "protected_credential_missing",
+    authState: "rejected_device_token",
+    message: "The protected device credential is missing. Select family-key recovery explicitly or reconnect this browser.",
+  }, 401);
+  clearCredentialCookie(response);
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   const requestError = validateSameOriginJsonRequest(request.headers, request.nextUrl.origin);
   if (requestError) {
@@ -178,12 +188,13 @@ export async function POST(request: NextRequest) {
       }
       upstreamKey = key;
     } else if (body.authMode === "device_cookie") {
-      if (key || !protectedDeviceToken) {
+      if (key) {
         return jsonResponse({
-          status: "protected_credential_missing",
-          message: "The protected device credential is missing. Select family-key recovery explicitly or reconnect this browser.",
-        }, 401);
+          status: "invalid_request",
+          message: "Do not send a family key while the protected device credential is selected.",
+        }, 400);
       }
+      if (!protectedDeviceToken) return protectedCredentialMissingResponse();
       upstreamDeviceToken = protectedDeviceToken;
     } else {
       return jsonResponse({
@@ -220,12 +231,13 @@ export async function POST(request: NextRequest) {
       }
       upstreamKey = key;
     } else if (body.authMode === "device_cookie") {
-      if (key || !protectedDeviceToken) {
+      if (key) {
         return jsonResponse({
-          status: "protected_credential_missing",
-          message: "The protected device credential is missing. Select family-key recovery explicitly or reconnect this browser.",
-        }, 401);
+          status: "invalid_request",
+          message: "Do not send a family key while the protected device credential is selected.",
+        }, 400);
       }
+      if (!protectedDeviceToken) return protectedCredentialMissingResponse();
       upstreamDeviceToken = protectedDeviceToken;
     } else {
       return jsonResponse({
@@ -308,7 +320,15 @@ export async function POST(request: NextRequest) {
     const establishesCredential = action === "device_invite_accept"
       || action === "device_owner_bootstrap"
       || action === "device_credential_migrate";
-    let safePayload = sanitizeDeviceCredentialPayload(responseData);
+    const protectedDeviceSelected = body.authMode === "device_cookie"
+      && Boolean(protectedDeviceToken)
+      && upstreamDeviceToken === protectedDeviceToken;
+    const rejection = protectRejectedDeviceCredential(
+      responseData,
+      upstream.status,
+      protectedDeviceSelected,
+    );
+    let safePayload = rejection.safePayload;
     let credentialToStore = "";
 
     if (establishesCredential && upstream.ok) {
@@ -330,16 +350,7 @@ export async function POST(request: NextRequest) {
     const response = jsonResponse(safePayload, upstream.status);
     if (credentialToStore) setCredentialCookie(response, credentialToStore);
 
-    const safeRoot = safePayload && typeof safePayload === "object"
-      ? safePayload as Record<string, unknown>
-      : {};
-    if (
-      action === "device_access_check"
-      && body.authMode === "device_cookie"
-      && safeRoot.authState === "revoked_device_token"
-    ) {
-      clearCredentialCookie(response);
-    }
+    if (rejection.clearCredential) clearCredentialCookie(response);
     return response;
   } catch {
     return jsonResponse({

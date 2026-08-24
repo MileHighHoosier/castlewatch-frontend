@@ -1,4 +1,4 @@
-import { loadFamilyDeviceAccess } from "./familyTripDevices";
+import { clearFamilyDeviceAccess, loadFamilyDeviceAccess } from "./familyTripDevices";
 
 export const FAMILY_KEY_STORAGE_KEY = "castlewatch.family-key.v1";
 export const FAMILY_AUTHORIZATION_MODE_STORAGE_KEY = "castlewatch.family-authorization-mode.v1";
@@ -55,6 +55,16 @@ export function canViewFamilyTripOperations(authorization: FamilyTripAuthorizati
 export function familyTripAuthorizationDescription(authorization: FamilyTripAuthorization) {
   if (authorization.mode === "family_key") return "Family key · owner";
   return `${authorization.label} · ${authorization.role}`;
+}
+
+export function rejectProtectedDeviceAuthorization(
+  authorization: FamilyTripAuthorization,
+  statusCode: number,
+) {
+  if (authorization.mode !== "device_cookie" || statusCode !== 401) return false;
+  clearFamilyDeviceAccess();
+  saveFamilyTripAuthorizationMode(null);
+  return true;
 }
 
 export function loadFamilyTripAuthorizationMode(): FamilyTripAuthorizationMode | null {

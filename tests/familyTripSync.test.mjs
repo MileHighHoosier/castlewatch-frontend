@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   analyzeFamilyTripSync,
+  FamilyTripSyncError,
   fetchFamilyTrip,
   fetchFamilyTripHistory,
   fetchFamilyTripHistoryVersion,
@@ -9,6 +10,11 @@ import {
   restoreFamilyTripVersion,
   saveFamilyTrip,
 } from "../app/lib/familyTripSync.ts";
+import {
+  FAMILY_AUTHORIZATION_MODE_STORAGE_KEY,
+  FAMILY_KEY_STORAGE_KEY,
+} from "../app/lib/familyTripAuthorization.ts";
+import { FAMILY_DEVICE_ACCESS_STORAGE_KEY } from "../app/lib/familyTripDevices.ts";
 
 function payload(name = "Base plan", reservations = []) {
   return {
@@ -219,5 +225,70 @@ test("shared-plan device authorization uses only the protected cookie selector",
     assert.equal(Object.hasOwn(body, "deviceToken"), false);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("every protected shared-plan client disconnects on 401 without selecting the saved family key", async () => {
+  const previousWindow = globalThis.window;
+  const originalFetch = globalThis.fetch;
+  const store = new Map([[FAMILY_KEY_STORAGE_KEY, "family-key"]]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key),
+    },
+  };
+  const captured = [];
+  globalThis.fetch = async (_url, options) => {
+    captured.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({
+      status: "unauthorized",
+      authState: "rejected_device_token",
+      message: "Reconnect with a new invite.",
+    }), { status: 401, headers: { "Content-Type": "application/json" } });
+  };
+  const authorization = {
+    mode: "device_cookie",
+    role: "editor",
+    label: "Katie iPhone",
+    deviceId: "device-1",
+  };
+  const calls = [
+    () => fetchFamilyTrip(authorization),
+    () => saveFamilyTrip(authorization, 2, payload("Blocked write")),
+    () => fetchFamilyTripHistory(authorization),
+    () => fetchFamilyTripHistoryVersion(authorization, 1),
+    () => restoreFamilyTripVersion(authorization, 2, 1),
+  ];
+
+  try {
+    for (const call of calls) {
+      store.set(FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify({
+        deviceId: "device-1",
+        displayName: "Katie iPhone",
+        role: "editor",
+        savedAt: "2026-08-24T12:00:00.000Z",
+        storage: "protected_cookie",
+      }));
+      store.set(FAMILY_AUTHORIZATION_MODE_STORAGE_KEY, "device_cookie");
+      await assert.rejects(call, FamilyTripSyncError);
+      assert.equal(store.has(FAMILY_DEVICE_ACCESS_STORAGE_KEY), false);
+      assert.equal(store.get(FAMILY_AUTHORIZATION_MODE_STORAGE_KEY), "disconnected");
+      assert.equal(store.get(FAMILY_KEY_STORAGE_KEY), "family-key");
+    }
+    assert.deepEqual(captured.map((body) => body.action), [
+      "read",
+      "write",
+      "history",
+      "history_version",
+      "restore",
+    ]);
+    assert.equal(captured.every((body) => body.authMode === "device_cookie"), true);
+    assert.equal(captured.some((body) => Object.hasOwn(body, "key")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
   }
 });

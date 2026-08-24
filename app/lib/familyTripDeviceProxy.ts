@@ -76,6 +76,38 @@ export function sanitizeDeviceCredentialPayload(value: unknown): unknown {
   return safe;
 }
 
+export function protectRejectedDeviceCredential(
+  value: unknown,
+  upstreamStatus: number,
+  protectedDeviceSelected: boolean,
+) {
+  const safePayload = sanitizeDeviceCredentialPayload(value);
+  if (!protectedDeviceSelected || upstreamStatus !== 401) {
+    return { safePayload, clearCredential: false };
+  }
+
+  const root = safePayload && typeof safePayload === "object" && !Array.isArray(safePayload)
+    ? safePayload as Record<string, unknown>
+    : {};
+  if (root.authState === "revoked_device_token") {
+    return { safePayload, clearCredential: true };
+  }
+
+  return {
+    safePayload: {
+      status: "unauthorized",
+      authState: "rejected_device_token",
+      role: "",
+      device: null,
+      canManageDevices: false,
+      canWriteSharedPlan: false,
+      migrationRecommended: false,
+      message: "The protected device credential was rejected. Reconnect with a new invite or select family-key recovery explicitly.",
+    },
+    clearCredential: true,
+  };
+}
+
 export function extractOneTimeDeviceCredential(value: unknown) {
   const root = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>

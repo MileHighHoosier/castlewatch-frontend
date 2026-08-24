@@ -23,6 +23,7 @@ import {
   FAMILY_KEY_STORAGE_KEY,
   FamilyTripAuthorization,
   familyTripAuthorizationPayload,
+  rejectProtectedDeviceAuthorization,
 } from "./familyTripAuthorization";
 
 export { FAMILY_KEY_STORAGE_KEY } from "./familyTripAuthorization";
@@ -341,7 +342,10 @@ type RawSyncResponse = {
   data: any;
 };
 
-async function rawSyncRequest(body: Record<string, unknown>): Promise<RawSyncResponse> {
+async function rawSyncRequest(
+  body: Record<string, unknown>,
+  authorization: FamilyTripAuthorization,
+): Promise<RawSyncResponse> {
   const response = await fetch("/api/castlewatch-family-sync", {
     method: "POST",
     cache: "no-store",
@@ -352,6 +356,7 @@ async function rawSyncRequest(body: Record<string, unknown>): Promise<RawSyncRes
     },
     body: JSON.stringify(body),
   });
+  rejectProtectedDeviceAuthorization(authorization, response.status);
   const rawText = await response.text();
   let data: any = {};
   try {
@@ -382,7 +387,7 @@ export async function fetchFamilyTrip(authorization: FamilyTripAuthorization): P
   const result = await rawSyncRequest({
     action: "read",
     ...familyTripAuthorizationPayload(authorization),
-  });
+  }, authorization);
   const document = parseDocument(result);
   if (!result.response.ok) {
     throw new FamilyTripSyncError(document.message || `Shared family storage could not be loaded (HTTP ${result.response.status}).`, result.response.status, document);
@@ -400,7 +405,7 @@ export async function saveFamilyTrip(
     ...familyTripAuthorizationPayload(authorization),
     expectedVersion,
     payload,
-  });
+  }, authorization);
   const document = parseDocument(result);
   if (!result.response.ok) {
     throw new FamilyTripSyncError(document.message || `Shared family storage could not be saved (HTTP ${result.response.status}).`, result.response.status, document);
@@ -412,7 +417,7 @@ export async function fetchFamilyTripHistory(authorization: FamilyTripAuthorizat
   const result = await rawSyncRequest({
     action: "history",
     ...familyTripAuthorizationPayload(authorization),
-  });
+  }, authorization);
   const data = result.data;
   const history: FamilyTripHistoryDocument = {
     status: typeof data?.status === "string" ? data.status : result.response.ok ? "ok" : "error",
@@ -435,7 +440,7 @@ export async function fetchFamilyTripHistoryVersion(
     action: "history_version",
     ...familyTripAuthorizationPayload(authorization),
     version,
-  });
+  }, authorization);
   const data = result.data;
   if (!result.response.ok || !data?.payload) {
     const message = typeof data?.message === "string"
@@ -468,7 +473,7 @@ export async function restoreFamilyTripVersion(
     ...familyTripAuthorizationPayload(authorization),
     expectedVersion,
     sourceVersion,
-  });
+  }, authorization);
   const document = parseDocument(result);
   if (!result.response.ok) {
     throw new FamilyTripSyncError(document.message || `Shared history could not be restored (HTTP ${result.response.status}).`, result.response.status, document);

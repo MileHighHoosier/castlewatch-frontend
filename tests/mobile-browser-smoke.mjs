@@ -131,6 +131,27 @@ async function connectToPage(debugPort) {
   return { socket, send, on };
 }
 
+async function stopProcess(child) {
+  if (child.exitCode !== null || child.signalCode) return;
+
+  await new Promise((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(forceTimer);
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish();
+    }, 2_000);
+
+    child.once("exit", finish);
+    child.kill("SIGTERM");
+  });
+}
+
 async function run() {
   const chromePath = findChrome();
   const [appPort, debugPort] = await Promise.all([getOpenPort(), getOpenPort()]);
@@ -272,9 +293,8 @@ async function run() {
     throw error;
   } finally {
     cdp?.socket.close();
-    server.kill("SIGTERM");
-    chrome.kill("SIGTERM");
-    await rm(profileDirectory, { recursive: true, force: true });
+    await Promise.all([stopProcess(server), stopProcess(chrome)]);
+    await retry("Chrome profile cleanup", () => rm(profileDirectory, { recursive: true, force: true }), 10, 100);
   }
 }
 

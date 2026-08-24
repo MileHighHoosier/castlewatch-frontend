@@ -6,6 +6,7 @@ import {
   FAMILY_DEVICE_CREDENTIAL_COOKIE_PATH,
   extractOneTimeDeviceCredential,
   normalizeProtectedDeviceToken,
+  protectRejectedDeviceCredential,
   protectedDeviceCredentialCookieOptions,
   sanitizeDeviceCredentialPayload,
   validateSameOriginJsonRequest,
@@ -67,6 +68,32 @@ test("protected proxy validates exact device tokens and strips them from browser
 });
 
 
+test("only a rejected selected device cookie is cleared and normalized safely", () => {
+  const generic = protectRejectedDeviceCredential({
+    status: "unauthorized",
+    message: "Internal credential detail",
+    deviceToken: "cwdev_secret_should_not_escape",
+  }, 401, true);
+  assert.equal(generic.clearCredential, true);
+  assert.equal(generic.safePayload.authState, "rejected_device_token");
+  assert.match(generic.safePayload.message, /Reconnect with a new invite/);
+  assert.equal(JSON.stringify(generic.safePayload).includes("Internal credential detail"), false);
+  assert.equal(JSON.stringify(generic.safePayload).includes("cwdev_secret"), false);
+
+  const revokedPayload = {
+    status: "revoked",
+    authState: "revoked_device_token",
+    message: "Reconnect this device.",
+  };
+  const revoked = protectRejectedDeviceCredential(revokedPayload, 401, true);
+  assert.equal(revoked.clearCredential, true);
+  assert.deepEqual(revoked.safePayload, revokedPayload);
+
+  assert.equal(protectRejectedDeviceCredential({ status: "unauthorized" }, 401, false).clearCredential, false);
+  assert.equal(protectRejectedDeviceCredential({ status: "forbidden" }, 403, true).clearCredential, false);
+});
+
+
 test("same-origin JSON guard rejects cross-site and non-JSON credential requests", () => {
   const headers = (entries) => ({
     get: (name) => entries[name.toLowerCase()] ?? null,
@@ -104,6 +131,9 @@ test("same-origin proxy makes credential selection explicit and never returns in
   assert.match(source, /device_owner_bootstrap/);
   assert.match(source, /device_credential_migrate/);
   assert.match(source, /device_credential_clear/);
+  assert.match(source, /protectRejectedDeviceCredential/);
+  assert.match(source, /if \(rejection\.clearCredential\) clearCredentialCookie\(response\)/);
+  assert.match(source, /function protectedCredentialMissingResponse\(\)[\s\S]*clearCredentialCookie\(response\)/);
   assert.equal(source.includes("upstreamPreview"), false);
   assert.equal(source.includes("error.message"), false);
 });
@@ -134,4 +164,10 @@ test("credential-adjacent family device UI remains declarative and avoids dynami
     assert.equal(source.includes(".innerHTML"), false, `${relativePath} must not use innerHTML`);
     assert.equal(source.includes("dangerouslySetInnerHTML"), false, `${relativePath} must not use dangerouslySetInnerHTML`);
   }
+
+  const devicePanel = await readFile(new URL("../app/components/FamilyTripDevices.tsx", import.meta.url), "utf8");
+  assert.match(devicePanel, /disconnectRejectedDeviceCredential/);
+  assert.match(devicePanel, /value\.statusCode !== 401/);
+  assert.match(devicePanel, /saveFamilyTripAuthorizationMode\(null\)/);
+  assert.match(devicePanel, /clearFamilyDeviceAccess\(\)/);
 });

@@ -46,7 +46,12 @@ type LegacyStoredFamilyDeviceAccess = Omit<StoredFamilyDeviceAccess, "storage"> 
 
 let legacyMigrationInFlight: Promise<FamilyTripDeviceAccessResponse | null> | null = null;
 
-export type FamilyTripDeviceAccessState = "family_key" | "device_token" | "revoked_device_token" | "unknown";
+export type FamilyTripDeviceAccessState =
+  | "family_key"
+  | "device_token"
+  | "revoked_device_token"
+  | "rejected_device_token"
+  | "unknown";
 
 export type FamilyTripDeviceAccessResponse = {
   status: string;
@@ -325,7 +330,11 @@ function throwIfFailed(result: RawDeviceResponse, label: string) {
 export async function checkFamilyTripDeviceAccess(auth: FamilyTripDeviceAuth): Promise<FamilyTripDeviceAccessResponse> {
   const result = await rawDeviceRequest({ action: "device_access_check", ...authPayload(auth) });
   const parsed = parseFamilyTripDeviceAccessResponse(result.data);
-  if (!result.response.ok && parsed.authState !== "revoked_device_token") {
+  if (
+    !result.response.ok
+    && parsed.authState !== "revoked_device_token"
+    && parsed.authState !== "rejected_device_token"
+  ) {
     throw new FamilyTripDeviceError(errorMessage(result, "Device access check"), result.response.status, result.data);
   }
   return parsed;

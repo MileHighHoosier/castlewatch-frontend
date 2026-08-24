@@ -7,6 +7,11 @@ import {
   formatOperationsCost,
   parseFamilyTripOperationsReport,
 } from "../app/lib/familyTripOperations.ts";
+import {
+  FAMILY_AUTHORIZATION_MODE_STORAGE_KEY,
+  FAMILY_KEY_STORAGE_KEY,
+} from "../app/lib/familyTripAuthorization.ts";
+import { FAMILY_DEVICE_ACCESS_STORAGE_KEY } from "../app/lib/familyTripDevices.ts";
 
 test("operations report parser normalizes missing values safely", () => {
   const report = parseFamilyTripOperationsReport({
@@ -185,6 +190,58 @@ test("operations client selects the protected device without exposing a token", 
     assert.equal(Object.hasOwn(body, "deviceToken"), false);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("protected Operations rejection clears device metadata without family-key fallback", async () => {
+  const previousWindow = globalThis.window;
+  const originalFetch = globalThis.fetch;
+  const store = new Map([
+    [FAMILY_KEY_STORAGE_KEY, "family-key"],
+    [FAMILY_AUTHORIZATION_MODE_STORAGE_KEY, "device_cookie"],
+    [FAMILY_DEVICE_ACCESS_STORAGE_KEY, JSON.stringify({
+      deviceId: "device-1",
+      displayName: "Katie iPhone",
+      role: "editor",
+      savedAt: "2026-08-24T12:00:00.000Z",
+      storage: "protected_cookie",
+    })],
+  ]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key),
+    },
+  };
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      status: "unauthorized",
+      authState: "rejected_device_token",
+      message: "Reconnect with a new invite.",
+    }), { status: 401, headers: { "Content-Type": "application/json" } });
+  };
+
+  try {
+    await assert.rejects(
+      () => fetchFamilyTripOperations({
+        mode: "device_cookie",
+        role: "editor",
+        label: "Katie iPhone",
+        deviceId: "device-1",
+      }),
+      FamilyTripOperationsError,
+    );
+    assert.deepEqual(body, { action: "operations", authMode: "device_cookie" });
+    assert.equal(store.has(FAMILY_DEVICE_ACCESS_STORAGE_KEY), false);
+    assert.equal(store.get(FAMILY_AUTHORIZATION_MODE_STORAGE_KEY), "disconnected");
+    assert.equal(store.get(FAMILY_KEY_STORAGE_KEY), "family-key");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
   }
 });
 

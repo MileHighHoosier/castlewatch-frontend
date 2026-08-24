@@ -17,6 +17,7 @@ import {
   listFamilyTripDevices,
   loadFamilyDeviceAccess,
   migrateLegacyFamilyDeviceAccess,
+  parseFamilyTripDeviceAccessResponse,
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
   saveFamilyDeviceAccess,
@@ -105,6 +106,7 @@ function accessLabel(
   if (access?.authState === "family_key") return "Connected by family key";
   if (access?.authState === "device_token") return "Connected by protected device credential";
   if (access?.authState === "revoked_device_token") return "Protected credential revoked";
+  if (access?.authState === "rejected_device_token") return "Protected credential rejected";
   if (credentialMode === "device_cookie") return localDevice
     ? `Protected device: ${localDevice.displayName}`
     : "Protected device selected";
@@ -208,6 +210,35 @@ export default function FamilyTripDevices() {
     setSuccess(null);
   }
 
+  function disconnectRejectedDeviceCredential(value: unknown) {
+    if (
+      credentialMode !== "device_cookie"
+      || !(value instanceof FamilyTripDeviceError)
+      || value.statusCode !== 401
+    ) return false;
+
+    const parsed = parseFamilyTripDeviceAccessResponse(value.payload);
+    const authState = parsed.authState === "revoked_device_token"
+      ? "revoked_device_token"
+      : "rejected_device_token";
+    clearFamilyDeviceAccess();
+    setLocalDevice(null);
+    setCredentialMode(null);
+    saveFamilyTripAuthorizationMode(null);
+    setDevices([]);
+    setAccessState({
+      ...parsed,
+      status: authState === "revoked_device_token" ? "revoked" : "unauthorized",
+      authState,
+      canManageDevices: false,
+      canWriteSharedPlan: false,
+      migrationRecommended: false,
+      message: parsed.message || value.message,
+    });
+    setError(parsed.message || value.message);
+    return true;
+  }
+
   async function checkAccessState() {
     if (!auth) {
       setAccessState(null);
@@ -220,13 +251,18 @@ export default function FamilyTripDevices() {
     try {
       const response = await checkFamilyTripDeviceAccess(auth);
       setAccessState(response);
-      if (response.authState === "revoked_device_token") {
-        if (localDevice && (!response.device || response.device.id === localDevice.deviceId)) {
-          clearFamilyDeviceAccess();
-          setLocalDevice(null);
-        }
+      if (
+        response.authState === "revoked_device_token"
+        || response.authState === "rejected_device_token"
+      ) {
+        clearFamilyDeviceAccess();
+        setLocalDevice(null);
         setCredentialMode(null);
-        setError(response.message || "This protected device credential was revoked. Reconnect with a new invite or select family-key recovery.");
+        saveFamilyTripAuthorizationMode(null);
+        setDevices([]);
+        setError(response.message || (response.authState === "revoked_device_token"
+          ? "This protected device credential was revoked. Reconnect with a new invite or select family-key recovery."
+          : "This protected device credential was rejected. Reconnect with a new invite or select family-key recovery explicitly."));
       } else if (response.authState === "family_key") {
         setSuccess("This browser is connected by the family key owner path. Keep it enabled until device access is fully verified.");
       } else if (response.authState === "device_token") {
@@ -235,7 +271,7 @@ export default function FamilyTripDevices() {
           : "This browser is connected by protected device credential.");
       }
     } catch (accessError) {
-      setError(errorMessage(accessError));
+      if (!disconnectRejectedDeviceCredential(accessError)) setError(errorMessage(accessError));
     } finally {
       setBusy(null);
     }
@@ -265,7 +301,7 @@ export default function FamilyTripDevices() {
         ? `Loaded ${response.devices.length} connected device${response.devices.length === 1 ? "" : "s"}.`
         : "No connected devices are listed yet.");
     } catch (refreshError) {
-      setError(errorMessage(refreshError));
+      if (!disconnectRejectedDeviceCredential(refreshError)) setError(errorMessage(refreshError));
     } finally {
       setBusy(null);
     }
@@ -288,7 +324,7 @@ export default function FamilyTripDevices() {
       setInviteToken(response.inviteToken);
       setSuccess("Invite created. Copy the token now; CastleWatch will not show it again after you leave this panel.");
     } catch (inviteError) {
-      setError(errorMessage(inviteError));
+      if (!disconnectRejectedDeviceCredential(inviteError)) setError(errorMessage(inviteError));
     } finally {
       setBusy(null);
     }
@@ -351,7 +387,7 @@ export default function FamilyTripDevices() {
         setSuccess(`${nextDevice.displayName} was renamed.`);
       }
     } catch (renameError) {
-      setError(errorMessage(renameError));
+      if (!disconnectRejectedDeviceCredential(renameError)) setError(errorMessage(renameError));
     } finally {
       setBusy(null);
     }
@@ -393,13 +429,14 @@ export default function FamilyTripDevices() {
         try {
           const latest = await listFamilyTripDevices(auth);
           setDevices(latest.devices);
-        } catch {
+        } catch (refreshError) {
           // The revoke response already updated the local list; a failed follow-up refresh should not hide success.
+          disconnectRejectedDeviceCredential(refreshError);
         }
         setSuccess(`${nextDevice.displayName} was revoked.`);
       }
     } catch (revokeError) {
-      setError(errorMessage(revokeError));
+      if (!disconnectRejectedDeviceCredential(revokeError)) setError(errorMessage(revokeError));
     } finally {
       setBusy(null);
     }

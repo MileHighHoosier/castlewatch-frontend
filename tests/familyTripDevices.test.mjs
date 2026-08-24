@@ -76,7 +76,7 @@ test("device list parser keeps safe device metadata", () => {
   assert.equal(Object.hasOwn(parsed.devices[0], "rawToken"), false);
 });
 
-test("access parser keeps family-key and revoked-token states explicit", () => {
+test("access parser keeps family-key, revoked-token, and rejected-token states explicit", () => {
   const familyKey = parseFamilyTripDeviceAccessResponse({
     status: "ok",
     authState: "family_key",
@@ -99,6 +99,15 @@ test("access parser keeps family-key and revoked-token states explicit", () => {
   assert.equal(revoked.authState, "revoked_device_token");
   assert.equal(revoked.device?.status, "revoked");
   assert.equal(Object.hasOwn(revoked.device ?? {}, "token_hash"), false);
+
+  const rejected = parseFamilyTripDeviceAccessResponse({
+    status: "unauthorized",
+    authState: "rejected_device_token",
+    message: "Reconnect with a new invite.",
+  });
+  assert.equal(rejected.authState, "rejected_device_token");
+  assert.equal(rejected.device, null);
+  assert.equal(rejected.canManageDevices, false);
 });
 
 test("invite parser exposes an invite once while accepted-device parsing drops raw credentials", () => {
@@ -367,6 +376,32 @@ test("access client returns revoked state without silent family-key fallback", a
   try {
     const result = await checkFamilyTripDeviceAccess({ mode: "device_cookie" });
     assert.equal(result.authState, "revoked_device_token");
+    assert.deepEqual(body, { action: "device_access_check", authMode: "device_cookie" });
+    assert.equal(Object.hasOwn(body, "key"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("access client returns a rejected protected-cookie state without silent fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      status: "unauthorized",
+      authState: "rejected_device_token",
+      message: "The protected device credential was rejected.",
+      canManageDevices: false,
+      canWriteSharedPlan: false,
+      migrationRecommended: false,
+      device: null,
+    }), { status: 401, headers: { "Content-Type": "application/json" } });
+  };
+
+  try {
+    const result = await checkFamilyTripDeviceAccess({ mode: "device_cookie" });
+    assert.equal(result.authState, "rejected_device_token");
     assert.deepEqual(body, { action: "device_access_check", authMode: "device_cookie" });
     assert.equal(Object.hasOwn(body, "key"), false);
   } finally {

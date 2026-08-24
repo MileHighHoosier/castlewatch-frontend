@@ -25,7 +25,7 @@ const MODE_WAIT_LIMITS = { aggressive: 60, lowStress: 35 } as const;
 const COMPLETED_STORAGE_KEY = "castlewatch.completedRides.v1";
 
 type GuardMode = "aggressive" | "lowStress" | "coolDown" | "unknown";
-type RawRide = {
+export type RawRide = {
   name?: string;
   ride_name?: string;
   attraction?: string;
@@ -48,11 +48,11 @@ function activeParkName() {
   return document.querySelector(".command-header h2")?.textContent?.trim() || "Magic Kingdom";
 }
 
-function normalizedName(ride: RawRide) {
+export function normalizedName(ride: RawRide) {
   return String(ride.name || ride.ride_name || ride.attraction || "").trim();
 }
 
-function waitTime(ride: RawRide) {
+export function waitTime(ride: RawRide) {
   const wait = ride.wait_time ?? ride.wait;
   return typeof wait === "number" ? wait : -1;
 }
@@ -62,7 +62,7 @@ function includesAny(value: string, keywords: string[]) {
   return keywords.some((keyword) => normalized.includes(keyword));
 }
 
-function isCoolDownOnly(title: string) {
+export function isCoolDownOnly(title: string) {
   const normalized = title.toLowerCase();
   return COOL_DOWN_ONLY_RECOMMENDATIONS.some((name) => normalized.includes(name));
 }
@@ -83,7 +83,7 @@ function getCompletedRides() {
   }
 }
 
-function isEligiblePlanRide(ride: RawRide, park: string) {
+export function isEligiblePlanRideForState(ride: RawRide, park: string, completedRides: ReadonlySet<string>) {
   const name = normalizedName(ride);
   const combined = `${name} ${ride.land || ""}`;
   if (!name) return false;
@@ -91,11 +91,15 @@ function isEligiblePlanRide(ride: RawRide, park: string) {
   if (waitTime(ride) < 0) return false;
   if (String(ride.park || "").toLowerCase() !== park.toLowerCase()) return false;
   if (includesAny(combined, PLAN_EXCLUDED_KEYWORDS)) return false;
-  if (getCompletedRides().has(name)) return false;
+  if (completedRides.has(name)) return false;
   return true;
 }
 
-function scoreCandidate(ride: RawRide, mode: "aggressive" | "lowStress") {
+function isEligiblePlanRide(ride: RawRide, park: string) {
+  return isEligiblePlanRideForState(ride, park, getCompletedRides());
+}
+
+export function scoreCandidate(ride: RawRide, mode: "aggressive" | "lowStress") {
   const name = normalizedName(ride);
   const wait = waitTime(ride);
   const headliner = includesAny(name, HEADLINER_KEYWORDS);
@@ -139,7 +143,7 @@ function setStartRouteActive() {
   delete startButton.dataset.planGuardBlocked;
 }
 
-function replacementWhyChosen(ride: RawRide, mode: "aggressive" | "lowStress") {
+export function replacementWhyChosen(ride: RawRide, mode: "aggressive" | "lowStress") {
   const wait = waitTime(ride);
   const label = mode === "aggressive" ? "Max rides" : "Low-stress";
 

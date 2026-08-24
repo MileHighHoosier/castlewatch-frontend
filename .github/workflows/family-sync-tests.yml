@@ -28,3 +28,6 @@ jobs:
 
       - name: Build production frontend
         run: npm run build
+
+      - name: Run mobile browser smoke
+        run: npm run test:e2e

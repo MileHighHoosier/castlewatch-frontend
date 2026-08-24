@@ -329,10 +329,11 @@ export function isOpenRide(ride: Pick<DisplayRide, "is_open">) {
 }
 
 export function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
-  return !includesAny(`${ride.displayName} ${ride.displayLand}`, NON_RIDE_PRIORITY_KEYWORDS);
+  const combined = `${ride.displayName} ${ride.displayLand}`;
+  return !includesAny(combined, NON_RIDE_PRIORITY_KEYWORDS) && !includesAny(combined, SHOW_KEYWORDS);
 }
 
-function isActivityCandidate(ride: DisplayRide) {
+export function isActivityCandidate(ride: DisplayRide) {
   const combined = `${ride.displayName} ${ride.displayLand}`;
   return !isPriorityRide(ride) && !includesAny(combined, EXCLUDE_FROM_ACTIVITIES_KEYWORDS);
 }
@@ -374,7 +375,7 @@ function getRecommendationBadges(input: BadgeInput) {
   return Array.from(new Set(badges)).slice(0, 4);
 }
 
-function getActivityBadges(ride: DisplayRide) {
+export function getActivityBadges(ride: DisplayRide) {
   const combined = `${ride.displayName} ${ride.displayLand}`;
   const badges: string[] = [];
 
@@ -384,14 +385,14 @@ function getActivityBadges(ride: DisplayRide) {
   if (includesAny(combined, SCENERY_ONLY_KEYWORDS)) badges.push("Scenery");
   if (includesAny(combined, WALKTHROUGH_KEYWORDS)) badges.push("Walkthrough");
   if (includesAny(combined, KID_RESET_KEYWORDS)) badges.push("Kid reset");
-  if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) badges.push("A/C reset");
+  if (isCoolDownRide(ride) || includesAny(combined, [...SHOW_KEYWORDS, "cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) badges.push("A/C reset");
   if (ride.displayWait >= 0 && ride.displayWait <= 10) badges.push("Low wait");
   if (!badges.length || !badges.some((badge) => ["Show", "Character", "Photo stop", "Scenery", "Kid reset", "A/C reset"].includes(badge))) badges.push("Filler option");
 
   return Array.from(new Set(badges)).slice(0, 4);
 }
 
-function getActivityUseCase(ride: DisplayRide) {
+export function getActivityUseCase(ride: DisplayRide) {
   const combined = `${ride.displayName} ${ride.displayLand}`;
   if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) return "Character moment. Check timing buffer.";
   if (includesAny(combined, PHOTO_STOP_KEYWORDS)) return "Quick photo stop if nearby.";
@@ -408,7 +409,7 @@ function getActivityScore(ride: DisplayRide) {
 
   if (isOpenRide(ride)) score += 100;
   if (includesAny(combined, SHOW_KEYWORDS)) score += 45;
-  if (isCoolDownRide(ride) || includesAny(combined, ["cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) score += 35;
+  if (isCoolDownRide(ride) || includesAny(combined, [...SHOW_KEYWORDS, "cinema", "gallery", "show", "theater", "theatre", "carousel of progress"])) score += 35;
   if (includesAny(combined, KID_RESET_KEYWORDS)) score += 32;
   if (includesAny(combined, CHARACTER_EXPERIENCE_KEYWORDS)) score += 26;
   if (includesAny(combined, PHOTO_STOP_KEYWORDS)) score += 12;
@@ -421,7 +422,7 @@ function getActivityScore(ride: DisplayRide) {
   return score;
 }
 
-function compareActivityPriority(a: DisplayRide, b: DisplayRide) {
+export function compareActivityPriority(a: DisplayRide, b: DisplayRide) {
   return getActivityScore(b) - getActivityScore(a) || compareOpenThenWaitAsc(a, b) || a.displayName.localeCompare(b.displayName);
 }
 

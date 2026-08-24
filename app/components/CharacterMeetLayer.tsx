@@ -1,50 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchCharacterMeets, type CharacterMeet } from "../lib/api";
+import {
+  fetchCharacterMeets,
+  isCharacterExperienceText,
+  type CharacterMeet,
+} from "../lib/api";
 
 const STYLE_ID = "castlewatch-character-layer-style";
 const CHARACTERS_TAB_CLASS = "castlewatch-characters-tab";
 const CHARACTERS_PANEL_CLASS = "castlewatch-characters-panel";
 const CHARACTERS_ACTIVE_CLASS = "castlewatch-characters-active";
-
-const TRUE_CHARACTER_EXPERIENCE_KEYWORDS = [
-  "adventurers outpost",
-  "celebrity spotlight",
-  "character landing",
-  "character meet",
-  "character greeting",
-  "fairytale hall",
-  "greeting",
-  "meet ",
-  "meet-",
-  "meet and greet",
-  "meet disney",
-  "princess fairytale hall",
-  "royal sommerhus",
-  "star wars launch bay",
-  "town square theater",
-];
-
-const CHARACTER_ACTIVITY_KEYWORDS = [
-  "enchanted tales with belle",
-];
-
-const CHARACTER_FALSE_POSITIVES = [
-  "a pirate's adventure",
-  "buzz lightyear",
-  "cinderella castle",
-  "figment",
-  "journey into imagination",
-  "mickey & minnie's runaway railway",
-  "mickey and minnie's runaway railway",
-  "mickey's philharmagic",
-  "monsters inc. laugh floor",
-  "peter pan's flight",
-  "the many adventures of winnie the pooh",
-  "tiana's bayou adventure",
-  "winnie the pooh",
-];
 
 function ensureCharacterStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -113,25 +79,6 @@ function ensureCharacterStyle() {
     }
   `;
   document.head.appendChild(style);
-}
-
-function normalizedText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[’]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function includesAny(value: string, keywords: string[]) {
-  const normalized = normalizedText(value);
-  return keywords.some((keyword) => normalized.includes(normalizedText(keyword)));
-}
-
-function isCharacterText(value: string) {
-  const normalized = normalizedText(value);
-  if (includesAny(normalized, CHARACTER_FALSE_POSITIVES)) return false;
-  return includesAny(normalized, TRUE_CHARACTER_EXPERIENCE_KEYWORDS) || includesAny(normalized, CHARACTER_ACTIVITY_KEYWORDS);
 }
 
 function formatShowTime(value?: string) {
@@ -255,7 +202,7 @@ function removeCharacterCardsFromActivities() {
 
   Array.from(panel.querySelectorAll<HTMLElement>(".ride")).forEach((card) => {
     const text = card.textContent || "";
-    if (isCharacterText(text)) {
+    if (isCharacterExperienceText(text)) {
       card.classList.add("castlewatch-character-hidden");
     } else {
       card.classList.remove("castlewatch-character-hidden");

@@ -4,7 +4,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --loader ./tests/typescript-loader.mjs --test ./tests/*.test.mjs"
+    "test": "node --loader ./tests/typescript-loader.mjs --test ./tests/*.test.mjs",
+    "test:e2e": "node ./tests/mobile-browser-smoke.mjs"
   },
   "engines": {
     "node": "22.x"

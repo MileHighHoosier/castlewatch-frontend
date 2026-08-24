@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   fetchShowTimes,
+  isCharacterExperienceText,
   markNextRideFetchAsExplicitRefresh,
   type ParkShow,
   type ShowTimesResult,
@@ -11,23 +12,6 @@ import DayTrendLayer from "./DayTrendLayer";
 
 const STYLE_ID = "castlewatch-showtimes-activity-style";
 const CARD_CLASS = "castlewatch-showtimes-card";
-
-const CHARACTER_SHOW_KEYWORDS = [
-  "adventurers outpost",
-  "celebrity spotlight",
-  "character landing",
-  "character meet",
-  "character greeting",
-  "fairytale hall",
-  "meet ",
-  "meet-",
-  "meet and greet",
-  "meet disney",
-  "princess fairytale hall",
-  "royal sommerhus",
-  "star wars launch bay",
-  "town square theater",
-];
 
 function ensureShowTimesStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -94,17 +78,19 @@ function ensureShowTimesStyle() {
   document.head.appendChild(style);
 }
 
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[’]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+export function isCharacterShow(show: ParkShow) {
+  return isCharacterExperienceText(`${show.name} ${show.land || ""}`);
 }
 
-function isCharacterShow(show: ParkShow) {
-  const combined = normalizeText(`${show.name} ${show.land || ""}`);
-  return CHARACTER_SHOW_KEYWORDS.some((keyword) => combined.includes(normalizeText(keyword)));
+export function selectUpcomingShows(data: ShowTimesResult | null, limit = 6) {
+  return (data?.shows || [])
+    .filter((show) => !isCharacterShow(show))
+    .map((show) => ({
+      ...show,
+      times: (show.times || []).filter((time) => !time.isPast),
+    }))
+    .filter((show) => show.times.length)
+    .slice(0, limit);
 }
 
 function formatShowTime(value?: string) {
@@ -144,10 +130,7 @@ function createShowTimesCard(data: ShowTimesResult | null, loading: boolean, err
     return card;
   }
 
-  const shows = (data?.shows || [])
-    .filter((show) => show.times?.length)
-    .filter((show) => !isCharacterShow(show))
-    .slice(0, 6);
+  const shows = selectUpcomingShows(data);
 
   if (!shows.length) {
     summary.textContent = "No timed shows found right now. Check again after refresh or use the general activity list below.";
@@ -178,7 +161,6 @@ function createShowTimesCard(data: ShowTimesResult | null, loading: boolean, err
     row.className = "castlewatch-show-time-row";
 
     show.times
-      .filter((time) => !time.isPast)
       .slice(0, 5)
       .forEach((time) => {
         const pill = document.createElement("span");

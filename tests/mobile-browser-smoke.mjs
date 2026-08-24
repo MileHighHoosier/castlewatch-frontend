@@ -208,7 +208,10 @@ async function run() {
       await cdp.send("Fetch.fulfillRequest", {
         requestId,
         responseCode: 200,
-        responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+        responseHeaders: [
+          { name: "Content-Type", value: "application/json" },
+          { name: "Access-Control-Allow-Origin", value: "*" },
+        ],
         body: Buffer.from(JSON.stringify(SHOW_FIXTURE)).toString("base64"),
       });
     });

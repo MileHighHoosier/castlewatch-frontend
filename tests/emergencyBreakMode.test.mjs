@@ -60,5 +60,6 @@ test("an active emergency overlay refreshes when the park or weather risk change
   assert.equal(shouldRefreshEmergencyContent(magicKingdom.title, "normal", magicKingdom, "normal"), false);
   assert.equal(shouldRefreshEmergencyContent(magicKingdom.title, "normal", epcot, "normal"), true);
   assert.equal(shouldRefreshEmergencyContent(magicKingdom.title, "hot", magicKingdom, "storm"), true);
+  assert.equal(shouldRefreshEmergencyContent(magicKingdom.title, "storm", magicKingdom, "normal"), true);
   assert.equal(shouldRefreshEmergencyContent(undefined, undefined, magicKingdom, "normal"), true);
 });

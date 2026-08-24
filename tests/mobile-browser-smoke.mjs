@@ -230,6 +230,10 @@ async function run() {
             Array.from(document.querySelectorAll(selector)).find((node) => node.textContent?.trim() === label);
 
           await waitFor(() => document.querySelector(".command-center h2")?.textContent === "Magic Kingdom", "initial park dashboard");
+          await waitFor(() => {
+            const button = document.querySelector(".top-park-button");
+            return document.readyState === "complete" && button && parseFloat(getComputedStyle(button).minHeight) >= 44;
+          }, "production stylesheet");
           const topButtons = Array.from(document.querySelectorAll(".top-park-button"));
           if (topButtons.length !== 6) throw new Error("Expected six primary navigation buttons");
           const minimumTopButtonHeight = Math.min(...topButtons.map((button) => button.getBoundingClientRect().height));

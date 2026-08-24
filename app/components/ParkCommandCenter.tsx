@@ -16,7 +16,7 @@ type Ride = {
   created_at?: string;
 };
 
-type DisplayRide = Ride & {
+export type DisplayRide = Ride & {
   displayName: string;
   displayPark: string;
   displayWait: number;
@@ -33,7 +33,7 @@ type RideInsight = {
   is_open?: boolean;
 };
 
-type HistoricalInsights = {
+export type HistoricalInsights = {
   park: string;
   summary?: string;
   historical_entries_analyzed?: number;
@@ -48,7 +48,7 @@ type ParkCommandCenterProps = {
   onSelectPark: (park: string) => void;
 };
 
-type HeatZone = {
+export type HeatZone = {
   land: string;
   rides: DisplayRide[];
   openRides: DisplayRide[];
@@ -57,10 +57,10 @@ type HeatZone = {
   pressure: "Low" | "Moderate" | "High" | "Very High";
 };
 
-type PlanMode = "aggressive" | "lowStress" | "coolDown";
+export type PlanMode = "aggressive" | "lowStress" | "coolDown";
 type DashboardTab = "rides" | "heat" | "activities" | "plan";
 
-type PlanRecommendation = {
+export type PlanRecommendation = {
   title: string;
   subtitle: string;
   reason: string;
@@ -79,7 +79,7 @@ type BadgeInput = {
   headliner?: boolean;
 };
 
-type ScoredRide = {
+export type ScoredRide = {
   ride: DisplayRide;
   score: number;
   opportunity: number;
@@ -296,7 +296,7 @@ const ROPE_DROP_PRIORITY: Record<string, string[]> = {
   "Animal Kingdom": ["avatar flight of passage", "na'vi river journey", "kilimanjaro safaris", "expedition everest", "kali river rapids", "dinosaur"],
 };
 
-function normalizeParkName(value?: string) {
+export function normalizeParkName(value?: string) {
   if (!value) return "Unknown Park";
   const normalized = value.trim().toLowerCase();
   if (normalized.includes("magic kingdom")) return "Magic Kingdom";
@@ -324,11 +324,11 @@ function modeLabel(mode: PlanMode) {
   return "Low-stress";
 }
 
-function isOpenRide(ride: Pick<DisplayRide, "is_open">) {
+export function isOpenRide(ride: Pick<DisplayRide, "is_open">) {
   return ride.is_open !== false;
 }
 
-function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
+export function isPriorityRide(ride: Pick<DisplayRide, "displayName" | "displayLand">) {
   return !includesAny(`${ride.displayName} ${ride.displayLand}`, NON_RIDE_PRIORITY_KEYWORDS);
 }
 
@@ -466,7 +466,7 @@ function getRopeDropRank(ride: DisplayRide) {
   return index === -1 ? 999 : index;
 }
 
-function compareRopeDropPriority(a: DisplayRide, b: DisplayRide) {
+export function compareRopeDropPriority(a: DisplayRide, b: DisplayRide) {
   const rankDifference = getRopeDropRank(a) - getRopeDropRank(b);
   if (rankDifference !== 0) return rankDifference;
   return Math.max(b.displayWait, 0) - Math.max(a.displayWait, 0) || a.displayName.localeCompare(b.displayName);
@@ -493,7 +493,7 @@ function waitLevel(ride: DisplayRide) {
   return "ride-low";
 }
 
-function getPressure(averageWait: number, longestWait: number): HeatZone["pressure"] {
+export function getPressure(averageWait: number, longestWait: number): HeatZone["pressure"] {
   if (averageWait >= 45 || longestWait >= 80) return "Very High";
   if (averageWait >= 30 || longestWait >= 60) return "High";
   if (averageWait >= 15 || longestWait >= 35) return "Moderate";
@@ -540,7 +540,7 @@ function isWithinModeWaitLimit(wait: number | undefined, mode: PlanMode) {
   return typeof wait === "number" && wait >= 0 && wait <= MODE_WAIT_LIMITS[mode];
 }
 
-function scoreRideForMode(ride: DisplayRide, mode: PlanMode, hottestZone?: HeatZone, insights?: HistoricalInsights | null): ScoredRide {
+export function scoreRideForMode(ride: DisplayRide, mode: PlanMode, hottestZone?: HeatZone, insights?: HistoricalInsights | null): ScoredRide {
   const wait = Math.max(ride.displayWait, 0);
   const waitLimit = MODE_WAIT_LIMITS[mode];
   const headliner = isHeadlinerRide(ride);
@@ -605,7 +605,7 @@ function getScoredCandidates(openCandidates: DisplayRide[], mode: PlanMode, hott
     .sort((a, b) => b.score - a.score || compareOpenThenWaitAsc(a.ride, b.ride));
 }
 
-function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottestZone?: HeatZone, insights?: HistoricalInsights | null): PlanRecommendation {
+export function pickPlanRecommendation(mode: PlanMode, parkRides: DisplayRide[], hottestZone?: HeatZone, insights?: HistoricalInsights | null): PlanRecommendation {
   const openCandidates = parkRides.filter((ride) => isOpenRide(ride) && ride.displayWait >= 0).sort(compareOpenThenWaitAsc);
   const label = modeLabel(mode);
   const waitLimit = MODE_WAIT_LIMITS[mode];

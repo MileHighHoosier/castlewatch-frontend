@@ -19,8 +19,13 @@ import {
   loadTripWeekApproval,
   saveTripWeekApproval,
 } from "./tripWeekApproval";
+import {
+  FAMILY_KEY_STORAGE_KEY,
+  FamilyTripAuthorization,
+  familyTripAuthorizationPayload,
+} from "./familyTripAuthorization";
 
-export const FAMILY_KEY_STORAGE_KEY = "castlewatch.family-key.v1";
+export { FAMILY_KEY_STORAGE_KEY } from "./familyTripAuthorization";
 export const FAMILY_SYNC_METADATA_STORAGE_KEY = "castlewatch.family-sync-metadata.v1";
 
 export type FamilyTripPayload = {
@@ -334,13 +339,13 @@ export function analyzeFamilyTripSync(
 type RawSyncResponse = {
   response: Response;
   data: any;
-  rawText: string;
 };
 
 async function rawSyncRequest(body: Record<string, unknown>): Promise<RawSyncResponse> {
   const response = await fetch("/api/castlewatch-family-sync", {
     method: "POST",
     cache: "no-store",
+    credentials: "same-origin",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -354,29 +359,29 @@ async function rawSyncRequest(body: Record<string, unknown>): Promise<RawSyncRes
   } catch {
     data = {};
   }
-  return { response, data, rawText };
+  return { response, data };
 }
 
-function fallbackMessage(response: Response, rawText: string, label: string) {
-  return `${label} returned HTTP ${response.status}${rawText ? `: ${rawText.slice(0, 180)}` : "."}`;
+function fallbackMessage(response: Response, label: string) {
+  return `${label} returned HTTP ${response.status}.`;
 }
 
 function parseDocument(result: RawSyncResponse): FamilyTripDocument {
-  const { response, data, rawText } = result;
+  const { response, data } = result;
   return {
     status: typeof data?.status === "string" ? data.status : response.ok ? "ok" : "error",
     version: Number.isInteger(data?.version) ? data.version : 0,
     payload: data?.payload && typeof data.payload === "object" ? data.payload as FamilyTripPayload : null,
     updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : null,
-    message: typeof data?.message === "string" ? data.message : response.ok ? undefined : fallbackMessage(response, rawText, "Family sync"),
+    message: typeof data?.message === "string" ? data.message : response.ok ? undefined : fallbackMessage(response, "Family sync"),
     restoredFromVersion: Number.isInteger(data?.restoredFromVersion) ? data.restoredFromVersion : null,
   };
 }
 
-export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> {
+export async function fetchFamilyTrip(authorization: FamilyTripAuthorization): Promise<FamilyTripDocument> {
   const result = await rawSyncRequest({
     action: "read",
-    key: key.trim(),
+    ...familyTripAuthorizationPayload(authorization),
   });
   const document = parseDocument(result);
   if (!result.response.ok) {
@@ -386,13 +391,13 @@ export async function fetchFamilyTrip(key: string): Promise<FamilyTripDocument> 
 }
 
 export async function saveFamilyTrip(
-  key: string,
+  authorization: FamilyTripAuthorization,
   expectedVersion: number,
   payload: FamilyTripPayload,
 ): Promise<FamilyTripDocument> {
   const result = await rawSyncRequest({
     action: "write",
-    key: key.trim(),
+    ...familyTripAuthorizationPayload(authorization),
     expectedVersion,
     payload,
   });
@@ -403,10 +408,10 @@ export async function saveFamilyTrip(
   return document;
 }
 
-export async function fetchFamilyTripHistory(key: string): Promise<FamilyTripHistoryDocument> {
+export async function fetchFamilyTripHistory(authorization: FamilyTripAuthorization): Promise<FamilyTripHistoryDocument> {
   const result = await rawSyncRequest({
     action: "history",
-    key: key.trim(),
+    ...familyTripAuthorizationPayload(authorization),
   });
   const data = result.data;
   const history: FamilyTripHistoryDocument = {
@@ -414,7 +419,7 @@ export async function fetchFamilyTripHistory(key: string): Promise<FamilyTripHis
     currentVersion: Number.isInteger(data?.currentVersion) ? data.currentVersion : 0,
     historyLimit: Number.isInteger(data?.historyLimit) ? data.historyLimit : 25,
     entries: Array.isArray(data?.entries) ? data.entries as FamilyTripHistoryEntry[] : [],
-    message: typeof data?.message === "string" ? data.message : result.response.ok ? undefined : fallbackMessage(result.response, result.rawText, "Family history"),
+    message: typeof data?.message === "string" ? data.message : result.response.ok ? undefined : fallbackMessage(result.response, "Family history"),
   };
   if (!result.response.ok) {
     throw new FamilyTripSyncError(history.message || `Shared history could not be loaded (HTTP ${result.response.status}).`, result.response.status);
@@ -423,19 +428,19 @@ export async function fetchFamilyTripHistory(key: string): Promise<FamilyTripHis
 }
 
 export async function fetchFamilyTripHistoryVersion(
-  key: string,
+  authorization: FamilyTripAuthorization,
   version: number,
 ): Promise<FamilyTripHistorySnapshot> {
   const result = await rawSyncRequest({
     action: "history_version",
-    key: key.trim(),
+    ...familyTripAuthorizationPayload(authorization),
     version,
   });
   const data = result.data;
   if (!result.response.ok || !data?.payload) {
     const message = typeof data?.message === "string"
       ? data.message
-      : fallbackMessage(result.response, result.rawText, "History version");
+      : fallbackMessage(result.response, "History version");
     throw new FamilyTripSyncError(message, result.response.status);
   }
   return {
@@ -454,13 +459,13 @@ export async function fetchFamilyTripHistoryVersion(
 }
 
 export async function restoreFamilyTripVersion(
-  key: string,
+  authorization: FamilyTripAuthorization,
   expectedVersion: number,
   sourceVersion: number,
 ): Promise<FamilyTripDocument> {
   const result = await rawSyncRequest({
     action: "restore",
-    key: key.trim(),
+    ...familyTripAuthorizationPayload(authorization),
     expectedVersion,
     sourceVersion,
   });

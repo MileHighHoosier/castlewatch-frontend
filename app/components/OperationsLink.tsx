@@ -2,13 +2,27 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { loadFamilyKey } from "../lib/familyTripSync";
+import {
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
+  canViewFamilyTripOperations,
+  loadFamilyTripAuthorization,
+} from "../lib/familyTripAuthorization";
 
 export default function OperationsLink() {
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {
-    setAvailable(Boolean(loadFamilyKey()));
+    function refresh() {
+      const authorization = loadFamilyTripAuthorization();
+      setAvailable(Boolean(authorization && canViewFamilyTripOperations(authorization)));
+    }
+    refresh();
+    window.addEventListener("storage", refresh);
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refresh);
+    };
   }, []);
 
   if (!available) return null;

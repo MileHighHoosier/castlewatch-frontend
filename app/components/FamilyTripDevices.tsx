@@ -22,6 +22,12 @@ import {
   saveFamilyDeviceAccess,
 } from "../lib/familyTripDevices";
 import { loadFamilyKey } from "../lib/familyTripSync";
+import {
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
+  loadFamilyTripAuthorizationSelection,
+  loadFamilyTripAuthorizationMode,
+  saveFamilyTripAuthorizationMode,
+} from "../lib/familyTripAuthorization";
 
 const STYLE_ID = "castlewatch-family-devices-style";
 
@@ -137,7 +143,11 @@ export default function FamilyTripDevices() {
     setLocalDevice(stored);
     if (stored?.displayName) setAcceptName(stored.displayName);
     if (!hasLegacyFamilyDeviceAccess()) {
-      setCredentialMode(stored ? "device_cookie" : key.trim() ? "family_key" : null);
+      const selection = loadFamilyTripAuthorizationSelection();
+      setCredentialMode(selection === "disconnected"
+        ? null
+        : loadFamilyTripAuthorizationMode()
+          || (stored ? "device_cookie" : key.trim() ? "family_key" : null));
       return () => {
         cancelled = true;
       };
@@ -150,6 +160,7 @@ export default function FamilyTripDevices() {
         const migrated = loadFamilyDeviceAccess();
         setLocalDevice(migrated);
         setCredentialMode("device_cookie");
+        saveFamilyTripAuthorizationMode("device_cookie");
         setAccessState(response);
         setSuccess("The legacy browser token was moved into protected server-managed storage and removed from local storage.");
       })
@@ -164,6 +175,26 @@ export default function FamilyTripDevices() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function refreshSelectedCredential() {
+      const nextKey = loadFamilyKey();
+      const nextDevice = loadFamilyDeviceAccess();
+      const selection = loadFamilyTripAuthorizationSelection();
+      setFamilyKey(nextKey);
+      setLocalDevice(nextDevice);
+      setCredentialMode(selection === "disconnected"
+        ? null
+        : loadFamilyTripAuthorizationMode()
+          || (nextDevice ? "device_cookie" : nextKey.trim() ? "family_key" : null));
+    }
+    window.addEventListener("storage", refreshSelectedCredential);
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refreshSelectedCredential);
+    return () => {
+      window.removeEventListener("storage", refreshSelectedCredential);
+      window.removeEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refreshSelectedCredential);
     };
   }, []);
 
@@ -276,6 +307,7 @@ export default function FamilyTripDevices() {
       const response = await acceptFamilyTripInvite(token, acceptName.trim() || "This device");
       setLocalDevice(loadFamilyDeviceAccess());
       setCredentialMode("device_cookie");
+      saveFamilyTripAuthorizationMode("device_cookie");
       setAccessState(response.device ? {
         status: "ok",
         authState: "device_token",
@@ -346,6 +378,7 @@ export default function FamilyTripDevices() {
           await clearProtectedFamilyDeviceAccess();
           setLocalDevice(null);
           setCredentialMode(null);
+          saveFamilyTripAuthorizationMode(null);
           setAccessState({
             status: "revoked",
             authState: "revoked_device_token",
@@ -379,6 +412,7 @@ export default function FamilyTripDevices() {
       await clearProtectedFamilyDeviceAccess();
       setLocalDevice(null);
       setCredentialMode(null);
+      saveFamilyTripAuthorizationMode(null);
       setAccessState(null);
       setSuccess("The protected browser credential was cleared. The server-side device record was not revoked.");
     } catch (clearError) {
@@ -402,6 +436,7 @@ export default function FamilyTripDevices() {
       );
       setLocalDevice(loadFamilyDeviceAccess());
       setCredentialMode("device_cookie");
+      saveFamilyTripAuthorizationMode("device_cookie");
       setBootstrapConfirmation(false);
       setAccessState(response.device ? {
         status: "ok",
@@ -431,7 +466,7 @@ export default function FamilyTripDevices() {
       </summary>
       <div className="family-devices-content">
         <p className="muted">
-          Manage device access manually. Device-management requests use the credential selected below; normal shared-plan sync still uses the family key. This panel does not poll, send texts, or disable the family key.
+          Manage device access manually. The selected protected device or family-key recovery credential is also used by shared-plan sync, history, and eligible Operations requests. CastleWatch never falls back silently, polls here, sends texts, or disables the family key.
         </p>
 
         {(familyKey.trim() || localDevice || credentialMode === "device_cookie") && (
@@ -446,6 +481,7 @@ export default function FamilyTripDevices() {
                   disabled={disabled}
                   onClick={() => {
                     setCredentialMode("device_cookie");
+                    saveFamilyTripAuthorizationMode("device_cookie");
                     setAccessState(null);
                     clearMessages();
                   }}
@@ -460,6 +496,7 @@ export default function FamilyTripDevices() {
                   disabled={disabled}
                   onClick={() => {
                     setCredentialMode("family_key");
+                    saveFamilyTripAuthorizationMode("family_key");
                     setAccessState(null);
                     clearMessages();
                   }}

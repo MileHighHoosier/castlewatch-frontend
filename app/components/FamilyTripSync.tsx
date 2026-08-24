@@ -2,6 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
+  FamilyTripAuthorization,
+  canWriteFamilyTrip,
+  familyKeyAuthorization,
+  familyTripAuthorizationDescription,
+  loadFamilyTripAuthorization,
+  protectedDeviceAuthorization,
+  sameFamilyTripAuthorization,
+  saveFamilyTripAuthorizationMode,
+} from "../lib/familyTripAuthorization";
+import {
   FamilyTripDocument,
   FamilyTripPayload,
   FamilyTripSyncAnalysis,
@@ -132,7 +143,9 @@ function uploadButtonLabel(analysis: FamilyTripSyncAnalysis) {
 
 export default function FamilyTripSync() {
   const [key, setKey] = useState("");
-  const keyRef = useRef("");
+  const [authorization, setAuthorization] = useState<FamilyTripAuthorization | null>(null);
+  const authorizationRef = useRef<FamilyTripAuthorization | null>(null);
+  const [availableDevice, setAvailableDevice] = useState<FamilyTripAuthorization | null>(null);
   const [remote, setRemote] = useState<FamilyTripDocument | null>(null);
   const [metadata, setMetadata] = useState<FamilyTripSyncMetadata | null>(null);
   const [localPayload, setLocalPayload] = useState<FamilyTripPayload | null>(null);
@@ -173,9 +186,10 @@ export default function FamilyTripSync() {
   }, []);
 
   const connected = remote !== null;
+  const writable = Boolean(authorization && canWriteFamilyTrip(authorization));
   const autosave = useFamilyTripAutosave({
     connected,
-    familyKey: keyRef.current,
+    authorization,
     localPayload,
     remote,
     analysis,
@@ -184,23 +198,27 @@ export default function FamilyTripSync() {
   });
 
   const checkRemote = useCallback(async (
-    requestedKey?: string,
+    requestedAuthorization?: FamilyTripAuthorization,
     announce = false,
   ): Promise<CheckedSyncState | null> => {
-    const normalizedKey = (requestedKey ?? keyRef.current).trim();
-    if (!normalizedKey) return null;
+    const selectedAuthorization = requestedAuthorization ?? authorizationRef.current;
+    if (!selectedAuthorization) return null;
 
     setChecking(true);
     try {
-      const document = await fetchFamilyTrip(normalizedKey);
+      const document = await fetchFamilyTrip(selectedAuthorization);
       const currentLocal = buildLocalFamilyTripPayload();
       const storedMetadata = loadFamilySyncMetadata();
       const nextMetadata = matchingBaseline(document, currentLocal, storedMetadata);
       const nextAnalysis = analyzeFamilyTripSync(currentLocal, document, nextMetadata);
 
-      keyRef.current = normalizedKey;
-      setKey(normalizedKey);
-      saveFamilyKey(normalizedKey);
+      authorizationRef.current = selectedAuthorization;
+      setAuthorization(selectedAuthorization);
+      saveFamilyTripAuthorizationMode(selectedAuthorization.mode);
+      if (selectedAuthorization.mode === "family_key") {
+        setKey(selectedAuthorization.key);
+        saveFamilyKey(selectedAuthorization.key);
+      }
       setRemote(document);
       setLocalPayload(currentLocal);
       setMetadata(nextMetadata);
@@ -228,11 +246,15 @@ export default function FamilyTripSync() {
   useEffect(() => {
     ensureStyle();
     const savedKey = loadFamilyKey();
-    keyRef.current = savedKey;
     setKey(savedKey);
+    const device = protectedDeviceAuthorization();
+    const selectedAuthorization = loadFamilyTripAuthorization();
+    setAvailableDevice(device);
+    authorizationRef.current = selectedAuthorization;
+    setAuthorization(selectedAuthorization);
     setMetadata(loadFamilySyncMetadata());
     setLocalPayload(buildLocalFamilyTripPayload());
-    if (savedKey) void checkRemote(savedKey, false);
+    if (selectedAuthorization) void checkRemote(selectedAuthorization, false);
   }, [checkRemote]);
 
   useEffect(() => {
@@ -246,7 +268,7 @@ export default function FamilyTripSync() {
 
     function checkOnFocus() {
       refreshLocal();
-      if (keyRef.current) void checkRemote(undefined, false);
+      if (authorizationRef.current) void checkRemote(undefined, false);
     }
 
     function checkOnVisibility() {
@@ -255,25 +277,44 @@ export default function FamilyTripSync() {
 
     const localInterval = window.setInterval(refreshLocal, LOCAL_CHECK_INTERVAL_MS);
     const remoteInterval = window.setInterval(() => {
-      if (keyRef.current && document.visibilityState === "visible") void checkRemote(undefined, false);
+      if (authorizationRef.current && document.visibilityState === "visible") void checkRemote(undefined, false);
     }, REMOTE_CHECK_INTERVAL_MS);
 
+    function refreshAuthorizationOptions() {
+      setAvailableDevice(protectedDeviceAuthorization());
+      const selectedAuthorization = loadFamilyTripAuthorization();
+      if (sameFamilyTripAuthorization(authorizationRef.current, selectedAuthorization)) return;
+      authorizationRef.current = selectedAuthorization;
+      setAuthorization(selectedAuthorization);
+      setRemote(null);
+      setConfirmAction(null);
+      clearMessages();
+      if (selectedAuthorization) void checkRemote(selectedAuthorization, false);
+    }
+
+    function handleStorage() {
+      refreshLocal();
+      refreshAuthorizationOptions();
+    }
+
     window.addEventListener("focus", checkOnFocus);
-    window.addEventListener("storage", refreshLocal);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refreshAuthorizationOptions);
     document.addEventListener("visibilitychange", checkOnVisibility);
 
     return () => {
       window.clearInterval(localInterval);
       window.clearInterval(remoteInterval);
       window.removeEventListener("focus", checkOnFocus);
-      window.removeEventListener("storage", refreshLocal);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, refreshAuthorizationOptions);
       document.removeEventListener("visibilitychange", checkOnVisibility);
     };
-  }, [checkRemote]);
+  }, [checkRemote, clearMessages]);
 
   async function connect() {
-    const normalizedKey = key.trim();
-    if (!normalizedKey) {
+    const selectedAuthorization = familyKeyAuthorization(key);
+    if (!selectedAuthorization) {
       setError("Enter the CastleWatch family key first.");
       return;
     }
@@ -281,11 +322,28 @@ export default function FamilyTripSync() {
     setBusy(true);
     clearMessages();
     setConfirmAction(null);
-    await checkRemote(normalizedKey, true);
+    await checkRemote(selectedAuthorization, true);
+    setBusy(false);
+  }
+
+  async function connectProtectedDevice() {
+    const selectedAuthorization = protectedDeviceAuthorization();
+    if (!selectedAuthorization) {
+      setError("This browser does not have protected device metadata. Accept an invite or use family-key recovery.");
+      return;
+    }
+    setBusy(true);
+    clearMessages();
+    setConfirmAction(null);
+    await checkRemote(selectedAuthorization, true);
     setBusy(false);
   }
 
   async function prepareUpload() {
+    if (!authorization || !canWriteFamilyTrip(authorization)) {
+      setError("Viewer access is read only. Use an Owner or Editor credential to upload shared-plan changes.");
+      return;
+    }
     setBusy(true);
     clearMessages();
     const checked = await checkRemote(undefined, false);
@@ -311,12 +369,12 @@ export default function FamilyTripSync() {
   }
 
   async function upload() {
-    if (!remote) return;
+    if (!remote || !authorization || !canWriteFamilyTrip(authorization)) return;
     setBusy(true);
     clearMessages();
     const payload = buildLocalFamilyTripPayload();
     try {
-      const document = await saveFamilyTrip(keyRef.current, remote.version, payload);
+      const document = await saveFamilyTrip(authorization, remote.version, payload);
       const nextMetadata = createFamilySyncMetadata(document.version, payload);
       saveFamilySyncMetadata(nextMetadata);
       setRemote(document);
@@ -360,10 +418,14 @@ export default function FamilyTripSync() {
 
   function disconnect() {
     autosave.setEnabled(false);
-    saveFamilyKey("");
+    if (authorizationRef.current?.mode === "family_key") {
+      saveFamilyKey("");
+      setKey("");
+    }
+    saveFamilyTripAuthorizationMode(null);
     clearFamilySyncMetadata();
-    keyRef.current = "";
-    setKey("");
+    authorizationRef.current = null;
+    setAuthorization(null);
     setRemote(null);
     setMetadata(null);
     setConfirmAction(null);
@@ -384,29 +446,39 @@ export default function FamilyTripSync() {
       </summary>
       <div className="family-sync-content">
         <p className="muted">
-          CastleWatch checks for newer versions when this page opens or regains focus. Guarded autosave is off by default on each browser, and manual upload and download always remain available.
+          CastleWatch checks for newer versions when this page opens or regains focus. Each request uses exactly one selected credential. Guarded autosave is off by default on each browser.
         </p>
 
         {!connected && (
-          <div className="family-sync-key-row">
-            <input
-              aria-label="CastleWatch family key"
-              type="password"
-              autoComplete="current-password"
-              placeholder="Family key"
-              value={key}
-              onChange={(event) => {
-                setKey(event.target.value);
-                keyRef.current = event.target.value;
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void connect();
-              }}
-            />
-            <button className="family-sync-button family-sync-button-primary" type="button" disabled={disabled} onClick={() => void connect()}>
-              {busy ? "Connecting…" : "Connect"}
-            </button>
-          </div>
+          <>
+            {availableDevice?.mode === "device_cookie" && (
+              <div className="family-sync-remote">
+                <strong>Protected device available</strong>
+                <span className="muted">{familyTripAuthorizationDescription(availableDevice)}. The credential remains in protected HttpOnly cookie storage.</span>
+                <div className="family-sync-actions">
+                  <button className="family-sync-button family-sync-button-primary" type="button" disabled={disabled} onClick={() => void connectProtectedDevice()}>
+                    {busy ? "Connecting…" : "Connect protected device"}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="family-sync-key-row">
+              <input
+                aria-label="CastleWatch family key"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Family-key recovery"
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void connect();
+                }}
+              />
+              <button className="family-sync-button family-sync-button-warning" type="button" disabled={disabled} onClick={() => void connect()}>
+                {busy ? "Connecting…" : "Connect with family key"}
+              </button>
+            </div>
+          </>
         )}
 
         {connected && remote && analysis && (
@@ -414,6 +486,7 @@ export default function FamilyTripSync() {
             <div className="family-sync-remote">
               <strong>{remote.version === 0 ? "No shared plan yet" : "Shared plan available"}</strong>
               <span className="muted">{remoteDescription(remote)}</span>
+              {authorization && <span className="muted">Credential: {familyTripAuthorizationDescription(authorization)}.</span>}
             </div>
 
             <div className={`family-sync-awareness family-sync-awareness-${analysis.tone}`}>
@@ -424,7 +497,7 @@ export default function FamilyTripSync() {
               )}
             </div>
 
-            <div className={`family-autosave family-autosave-${autosave.phase}`}>
+            {writable ? <div className={`family-autosave family-autosave-${autosave.phase}`}>
               <div className="family-autosave-top">
                 <strong>Guarded autosave</strong>
                 <button
@@ -441,7 +514,12 @@ export default function FamilyTripSync() {
               <span className="family-autosave-detail">{autosave.detail}</span>
               {autosaveTime && <small className="family-autosave-time">Last autosave: {autosaveTime}</small>}
               {retryTime && <small className="family-autosave-time">Next attempt: {retryTime}</small>}
-            </div>
+            </div> : (
+              <div className="family-sync-awareness family-sync-awareness-ready">
+                <strong>Viewer access · read only</strong>
+                <span>Download, status checks, and backup history are available. Upload, restore, autosave, and Operations require an Owner or Editor credential.</span>
+              </div>
+            )}
 
             {analysis.id === "conflict" && (
               <div className="family-sync-guard">
@@ -455,7 +533,7 @@ export default function FamilyTripSync() {
                   {downloadButtonLabel(analysis)}
                 </button>
               )}
-              {analysis.canUpload && (
+              {analysis.canUpload && writable && (
                 <button className="family-sync-button family-sync-button-warning" type="button" disabled={disabled} onClick={() => void prepareUpload()}>
                   {uploadButtonLabel(analysis)}
                 </button>
@@ -463,7 +541,7 @@ export default function FamilyTripSync() {
               <button className="family-sync-button" type="button" disabled={disabled} onClick={() => void checkRemote(undefined, true)}>
                 {checking ? "Checking…" : "Check shared status now"}
               </button>
-              <button className="family-sync-button family-sync-button-danger" type="button" disabled={disabled} onClick={disconnect}>Disconnect this device</button>
+              <button className="family-sync-button family-sync-button-danger" type="button" disabled={disabled} onClick={disconnect}>Disconnect shared plan</button>
             </div>
           </>
         )}

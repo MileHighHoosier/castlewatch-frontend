@@ -53,7 +53,7 @@ CastleWatch is in **Rebaseline & Stabilization**, not a new feature sprint.
 
 The current goal is to establish authoritative documentation, resolve high-priority security/reliability issues, improve regression coverage, and finish or deliberately freeze the incomplete account/device migration before adding major new product features.
 
-Rebaseline Sections 4A-4E are complete. Section 4F is the active full regression/build review and Section 4 closeout batch; it does not start the account/device migration work in Section 5.
+Section 4 concludes with a full cross-repository regression/build review. Its QC closeout does not start the account/device migration work in Section 5.
 
 After stabilization, the next major product objective is to **complete Trip Week Phase 2 - Unified Recommendation Engine**. The engine already exists in partial form; it should not be restarted from scratch.
 

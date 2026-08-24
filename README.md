@@ -53,6 +53,8 @@ CastleWatch is in **Rebaseline & Stabilization**, not a new feature sprint.
 
 The current goal is to establish authoritative documentation, resolve high-priority security/reliability issues, improve regression coverage, and finish or deliberately freeze the incomplete account/device migration before adding major new product features.
 
+Section 4 concludes with a full cross-repository regression/build review. Its QC closeout does not start the account/device migration work in Section 5.
+
 After stabilization, the next major product objective is to **complete Trip Week Phase 2 - Unified Recommendation Engine**. The engine already exists in partial form; it should not be restarted from scratch.
 
 ## Canonical project documentation
@@ -63,8 +65,6 @@ The backend repository contains the cross-repository source-of-truth documents:
 - [`ARCHITECTURE.md`](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/ARCHITECTURE.md) - production boundaries, data flows and migration constraints.
 - [`ROADMAP.md`](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/ROADMAP.md) - rebaseline/stabilization sequence and later product phases.
 - [`AGENTS.md`](AGENTS.md) - instructions for coding agents working in this frontend repository.
-
-> Note: until the rebaseline documentation PRs are merged, the cross-repository links above point to the future `main` locations; review-branch copies are authoritative for the current Section 1 review.
 
 ## Frontend entry points
 
@@ -112,6 +112,14 @@ Run automated frontend tests:
 ```bash
 npm test
 ```
+
+After a successful production build, run the dependency-free mobile Chrome smoke:
+
+```bash
+npm run test:e2e
+```
+
+GitHub Actions runs the clean Node 22 `npm ci`, full contract suite, production build, and mobile browser smoke together for every pull request.
 
 ## Backend connection
 

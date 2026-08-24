@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run family sync tests
+      - name: Run full frontend contract suite
         run: npm test
 
       - name: Build production frontend

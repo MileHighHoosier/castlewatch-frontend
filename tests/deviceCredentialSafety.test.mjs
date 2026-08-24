@@ -99,6 +99,8 @@ test("same-origin proxy makes credential selection explicit and never returns in
   assert.match(source, /body\.authMode === "family_key"/);
   assert.match(source, /body\.authMode === "device_cookie"/);
   assert.match(source, /Raw device credentials are accepted only by the one-time migration action/);
+  assert.match(source, /Raw device credentials are not accepted by shared-plan actions/);
+  assert.match(source, /sharedPlanAction/);
   assert.match(source, /device_owner_bootstrap/);
   assert.match(source, /device_credential_migrate/);
   assert.match(source, /device_credential_clear/);

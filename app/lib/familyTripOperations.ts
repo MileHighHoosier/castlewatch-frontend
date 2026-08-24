@@ -1,3 +1,8 @@
+import {
+  FamilyTripAuthorization,
+  familyTripAuthorizationPayload,
+} from "./familyTripAuthorization";
+
 export type FamilyTripOperationsWarning = {
   level: "info" | "warning" | "critical" | string;
   code: string;
@@ -194,17 +199,20 @@ export function parseFamilyTripOperationsReport(data: unknown): FamilyTripOperat
   };
 }
 
-export async function fetchFamilyTripOperations(key: string): Promise<FamilyTripOperationsReport> {
+export async function fetchFamilyTripOperations(
+  authorization: FamilyTripAuthorization,
+): Promise<FamilyTripOperationsReport> {
   const response = await fetch("/api/castlewatch-family-sync", {
     method: "POST",
     cache: "no-store",
+    credentials: "same-origin",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       action: "operations",
-      key: key.trim(),
+      ...familyTripAuthorizationPayload(authorization),
     }),
   });
 
@@ -219,7 +227,7 @@ export async function fetchFamilyTripOperations(key: string): Promise<FamilyTrip
   const report = parseFamilyTripOperationsReport(data);
   if (!response.ok) {
     const message = report.message
-      || `Operations report returned HTTP ${response.status}${rawText ? `: ${rawText.slice(0, 180)}` : "."}`;
+      || `Operations report returned HTTP ${response.status}.`;
     throw new FamilyTripOperationsError(message, response.status);
   }
   return report;

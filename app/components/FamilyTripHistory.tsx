@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
+  FamilyTripAuthorization,
+  canRestoreFamilyTrip,
+  familyTripAuthorizationDescription,
+  loadFamilyTripAuthorization,
+} from "../lib/familyTripAuthorization";
+import {
   FamilyTripDocument,
   FamilyTripHistoryDocument,
   FamilyTripHistorySnapshot,
@@ -14,7 +21,6 @@ import {
   fetchFamilyTrip,
   fetchFamilyTripHistory,
   fetchFamilyTripHistoryVersion,
-  loadFamilyKey,
   loadFamilySyncMetadata,
   restoreFamilyTripVersion,
   saveFamilySyncMetadata,
@@ -23,7 +29,7 @@ import {
 const STYLE_ID = "castlewatch-family-history-style";
 
 type CheckedState = {
-  key: string;
+  authorization: FamilyTripAuthorization;
   remote: FamilyTripDocument;
   analysis: FamilyTripSyncAnalysis;
   history: FamilyTripHistoryDocument;
@@ -68,7 +74,7 @@ function displayDate(value: string | null) {
 }
 
 export default function FamilyTripHistory() {
-  const [familyKey, setFamilyKey] = useState("");
+  const [authorization, setAuthorization] = useState<FamilyTripAuthorization | null>(null);
   const [remote, setRemote] = useState<FamilyTripDocument | null>(null);
   const [history, setHistory] = useState<FamilyTripHistoryDocument | null>(null);
   const [analysis, setAnalysis] = useState<FamilyTripSyncAnalysis | null>(null);
@@ -83,9 +89,9 @@ export default function FamilyTripHistory() {
   }, []);
 
   const refresh = useCallback(async (announce = false): Promise<CheckedState | null> => {
-    const key = loadFamilyKey().trim();
-    setFamilyKey(key);
-    if (!key) {
+    const selectedAuthorization = loadFamilyTripAuthorization();
+    setAuthorization(selectedAuthorization);
+    if (!selectedAuthorization) {
       setRemote(null);
       setHistory(null);
       setAnalysis(null);
@@ -95,8 +101,8 @@ export default function FamilyTripHistory() {
     setLoading(true);
     try {
       const [current, nextHistory] = await Promise.all([
-        fetchFamilyTrip(key),
-        fetchFamilyTripHistory(key),
+        fetchFamilyTrip(selectedAuthorization),
+        fetchFamilyTripHistory(selectedAuthorization),
       ]);
       const nextAnalysis = analyzeFamilyTripSync(
         buildLocalFamilyTripPayload(),
@@ -108,7 +114,7 @@ export default function FamilyTripHistory() {
       setAnalysis(nextAnalysis);
       setError(null);
       if (announce) setSuccess(`Backup history refreshed through version ${current.version}.`);
-      return { key, remote: current, analysis: nextAnalysis, history: nextHistory };
+      return { authorization: selectedAuthorization, remote: current, analysis: nextAnalysis, history: nextHistory };
     } catch (refreshError) {
       handleFailure(refreshError);
       return null;
@@ -125,7 +131,13 @@ export default function FamilyTripHistory() {
       void refresh(false);
     }
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener("storage", onFocus);
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("storage", onFocus);
+      window.removeEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, onFocus);
+    };
   }, [refresh]);
 
   async function prepareRestore(version: number) {
@@ -149,8 +161,14 @@ export default function FamilyTripHistory() {
       return;
     }
 
+    if (!canRestoreFamilyTrip(checked.authorization)) {
+      setError("Viewer access can inspect backup history but cannot restore a shared version.");
+      setBusy(false);
+      return;
+    }
+
     try {
-      const snapshot = await fetchFamilyTripHistoryVersion(checked.key, version);
+      const snapshot = await fetchFamilyTripHistoryVersion(checked.authorization, version);
       setSelected(snapshot);
     } catch (snapshotError) {
       handleFailure(snapshotError);
@@ -165,10 +183,13 @@ export default function FamilyTripHistory() {
     setError(null);
     setSuccess(null);
     try {
-      const key = loadFamilyKey().trim();
-      if (!key) throw new Error("Reconnect the Shared Family Plan before restoring a backup.");
+      const selectedAuthorization = loadFamilyTripAuthorization();
+      if (!selectedAuthorization) throw new Error("Reconnect the Shared Family Plan before restoring a backup.");
+      if (!canRestoreFamilyTrip(selectedAuthorization)) {
+        throw new Error("Viewer access cannot restore a shared version.");
+      }
 
-      const current = await fetchFamilyTrip(key);
+      const current = await fetchFamilyTrip(selectedAuthorization);
       const currentAnalysis = analyzeFamilyTripSync(
         buildLocalFamilyTripPayload(),
         current,
@@ -178,7 +199,7 @@ export default function FamilyTripHistory() {
         throw new Error("Restore stopped because the sync state changed. Resolve the Shared Family Plan status and try again.");
       }
 
-      const restored = await restoreFamilyTripVersion(key, current.version, selected.version);
+      const restored = await restoreFamilyTripVersion(selectedAuthorization, current.version, selected.version);
       if (!restored.payload) throw new Error("The restored shared version did not include a trip payload.");
 
       const nextMetadata = createFamilySyncMetadata(restored.version, restored.payload);
@@ -194,9 +215,10 @@ export default function FamilyTripHistory() {
     }
   }
 
-  if (!familyKey) return null;
+  if (!authorization) return null;
 
-  const canRestore = analysis?.id === "up_to_date";
+  const roleCanRestore = canRestoreFamilyTrip(authorization);
+  const canRestore = roleCanRestore && analysis?.id === "up_to_date";
   const entries = history?.entries || [];
 
   return (
@@ -213,9 +235,16 @@ export default function FamilyTripHistory() {
       <div className="family-history-content">
         <p className="muted">
           CastleWatch keeps up to {history?.historyLimit || 25} shared snapshots. Restoring never erases history—it creates a new shared version from the selected backup.
+          {` Credential: ${familyTripAuthorizationDescription(authorization)}.`}
         </p>
 
-        {!canRestore && analysis && (
+        {!roleCanRestore && (
+          <div className="family-history-message family-history-warning">
+            Viewer access can inspect current and historical versions. Restore controls require an Owner or Editor credential.
+          </div>
+        )}
+
+        {roleCanRestore && !canRestore && analysis && (
           <div className="family-history-message family-history-warning">
             Restore controls are locked while the Shared Family Plan says “{analysis.label}.” Resolve that status first.
           </div>
@@ -243,7 +272,7 @@ export default function FamilyTripHistory() {
                 </div>
                 {entry.isCurrent && <span className="family-history-current">Current</span>}
               </div>
-              {!entry.isCurrent && (
+              {!entry.isCurrent && roleCanRestore && (
                 <button
                   className="family-history-restore"
                   type="button"

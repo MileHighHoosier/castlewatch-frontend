@@ -106,12 +106,19 @@ test("operations client sends a protected read-only proxy action", async () => {
   };
 
   try {
-    const report = await fetchFamilyTripOperations("  family-key  ");
+    const report = await fetchFamilyTripOperations({
+      mode: "family_key",
+      key: "  family-key  ",
+      role: "owner",
+      label: "Family key",
+    });
     assert.equal(capturedUrl, "/api/castlewatch-family-sync");
     assert.equal(capturedOptions.method, "POST");
     assert.equal(capturedOptions.cache, "no-store");
+    assert.equal(capturedOptions.credentials, "same-origin");
     assert.deepEqual(JSON.parse(capturedOptions.body), {
       action: "operations",
+      authMode: "family_key",
       key: "family-key",
     });
     assert.equal(report.storage.currentVersion, 11);
@@ -137,7 +144,12 @@ test("operations client preserves upstream error details", async () => {
 
   try {
     await assert.rejects(
-      () => fetchFamilyTripOperations("wrong"),
+      () => fetchFamilyTripOperations({
+        mode: "family_key",
+        key: "wrong",
+        role: "owner",
+        label: "Family key",
+      }),
       (error) => {
         assert.ok(error instanceof FamilyTripOperationsError);
         assert.equal(error.statusCode, 401);
@@ -145,6 +157,32 @@ test("operations client preserves upstream error details", async () => {
         return true;
       },
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("operations client selects the protected device without exposing a token", async () => {
+  const originalFetch = globalThis.fetch;
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response(JSON.stringify({ status: "ok", warnings: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    await fetchFamilyTripOperations({
+      mode: "device_cookie",
+      role: "editor",
+      label: "Katie iPhone",
+      deviceId: "device-1",
+    });
+    assert.deepEqual(body, { action: "operations", authMode: "device_cookie" });
+    assert.equal(Object.hasOwn(body, "key"), false);
+    assert.equal(Object.hasOwn(body, "deviceToken"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

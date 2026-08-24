@@ -3,12 +3,18 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
+  FamilyTripAuthorization,
+  canViewFamilyTripOperations,
+  familyTripAuthorizationDescription,
+  loadFamilyTripAuthorization,
+} from "../lib/familyTripAuthorization";
+import {
   FamilyTripOperationsReport,
   fetchFamilyTripOperations,
   formatOperationsBytes,
   formatOperationsCost,
 } from "../lib/familyTripOperations";
-import { loadFamilyKey } from "../lib/familyTripSync";
 import styles from "./operations.module.css";
 
 function count(value: number | null) {
@@ -22,19 +28,20 @@ function reliability(value: string) {
 }
 
 export default function OperationsDashboard() {
-  const savedKey = useRef("");
+  const selectedAuthorization = useRef<FamilyTripAuthorization | null>(null);
+  const [authorization, setAuthorization] = useState<FamilyTripAuthorization | null>(null);
   const [checked, setChecked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<FamilyTripOperationsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async (providedKey?: string) => {
-    const key = (providedKey || savedKey.current).trim();
-    if (!key) return;
+  const refresh = useCallback(async (providedAuthorization?: FamilyTripAuthorization) => {
+    const activeAuthorization = providedAuthorization || selectedAuthorization.current;
+    if (!activeAuthorization || !canViewFamilyTripOperations(activeAuthorization)) return;
     setLoading(true);
     setError(null);
     try {
-      setReport(await fetchFamilyTripOperations(key));
+      setReport(await fetchFamilyTripOperations(activeAuthorization));
     } catch (value) {
       setReport(null);
       setError(value instanceof Error ? value.message : "The operations report could not be loaded.");
@@ -44,10 +51,26 @@ export default function OperationsDashboard() {
   }, []);
 
   useEffect(() => {
-    savedKey.current = loadFamilyKey();
-    setChecked(true);
-    if (savedKey.current) void refresh(savedKey.current);
+    function loadAuthorization() {
+      selectedAuthorization.current = loadFamilyTripAuthorization();
+      setAuthorization(selectedAuthorization.current);
+      setChecked(true);
+      setReport(null);
+      setError(null);
+      if (selectedAuthorization.current && canViewFamilyTripOperations(selectedAuthorization.current)) {
+        void refresh(selectedAuthorization.current);
+      }
+    }
+    loadAuthorization();
+    window.addEventListener("storage", loadAuthorization);
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, loadAuthorization);
+    return () => {
+      window.removeEventListener("storage", loadAuthorization);
+      window.removeEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, loadAuthorization);
+    };
   }, [refresh]);
+
+  const allowed = Boolean(authorization && canViewFamilyTripOperations(authorization));
 
   return (
     <main className={`page ${styles.page}`}>
@@ -60,17 +83,25 @@ export default function OperationsDashboard() {
           </div>
           <p>Storage, activity, and estimated Railway cost for the Shared Family Plan.</p>
         </div>
-        <button type="button" disabled={loading || !savedKey.current} onClick={() => void refresh()}>
+        <button type="button" disabled={loading || !allowed} onClick={() => void refresh()}>
           {loading ? "Refreshing…" : "Refresh report"}
         </button>
       </header>
 
       {!checked && <section className={styles.notice}>Checking this browser for a Shared Family Plan connection…</section>}
 
-      {checked && !savedKey.current && (
+      {checked && !authorization && (
         <section className={styles.notice}>
           <h2>No Shared Family Plan connection found</h2>
           <p>Connect this browser from the main dashboard, then return here.</p>
+          <Link href="/">Return to the dashboard</Link>
+        </section>
+      )}
+
+      {checked && authorization && !allowed && (
+        <section className={styles.notice}>
+          <h2>Operations requires Owner or Editor access</h2>
+          <p>{familyTripAuthorizationDescription(authorization)} is read only. Viewer access can use shared-plan reads and backup history from the dashboard.</p>
           <Link href="/">Return to the dashboard</Link>
         </section>
       )}

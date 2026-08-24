@@ -77,7 +77,7 @@ function validAction(value: unknown): value is SyncAction {
     || value === "device_revoke";
 }
 
-function legacyKeyOnly(action: SyncAction) {
+function sharedPlanAction(action: SyncAction) {
   return action === "read"
     || action === "write"
     || action === "history"
@@ -165,11 +165,32 @@ export async function POST(request: NextRequest) {
   let upstreamKey = "";
   let upstreamDeviceToken = "";
 
-  if (legacyKeyOnly(action)) {
-    if (!key) {
-      return jsonResponse({ status: "invalid_request", message: "The family sync key is missing." }, 400);
+  if (sharedPlanAction(action)) {
+    if (body.deviceToken !== undefined) {
+      return jsonResponse({
+        status: "invalid_request",
+        message: "Raw device credentials are not accepted by shared-plan actions.",
+      }, 400);
     }
-    upstreamKey = key;
+    if (body.authMode === "family_key") {
+      if (!key) {
+        return jsonResponse({ status: "invalid_request", message: "The family sync key is missing." }, 400);
+      }
+      upstreamKey = key;
+    } else if (body.authMode === "device_cookie") {
+      if (key || !protectedDeviceToken) {
+        return jsonResponse({
+          status: "protected_credential_missing",
+          message: "The protected device credential is missing. Select family-key recovery explicitly or reconnect this browser.",
+        }, 401);
+      }
+      upstreamDeviceToken = protectedDeviceToken;
+    } else {
+      return jsonResponse({
+        status: "invalid_request",
+        message: "Select either the protected device credential or family-key recovery explicitly.",
+      }, 400);
+    }
   } else if (action === "device_owner_bootstrap") {
     if (body.authMode !== "family_key" || !key || body.deviceToken) {
       return jsonResponse({

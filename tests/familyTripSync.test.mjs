@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   analyzeFamilyTripSync,
+  fetchFamilyTrip,
+  fetchFamilyTripHistory,
+  fetchFamilyTripHistoryVersion,
   fingerprintFamilyTripPayload,
+  restoreFamilyTripVersion,
+  saveFamilyTrip,
 } from "../app/lib/familyTripSync.ts";
 
 function payload(name = "Base plan", reservations = []) {
@@ -149,4 +154,70 @@ test("simultaneous edits create a conflict and never permit upload", () => {
   assert.equal(analysis.remoteChanged, true);
   assert.equal(analysis.canUpload, false);
   assert.equal(analysis.canDownload, true);
+});
+
+test("all shared-plan clients send one explicit family-key authorization", async () => {
+  const originalFetch = globalThis.fetch;
+  const captured = [];
+  const value = payload();
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    captured.push({ body, credentials: options.credentials });
+    if (body.action === "history") {
+      return new Response(JSON.stringify({ status: "ok", currentVersion: 3, entries: [] }), { status: 200 });
+    }
+    if (body.action === "history_version") {
+      return new Response(JSON.stringify({ status: "ok", version: body.version, payload: value, summary: {} }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ status: "ok", version: 3, payload: value }), { status: 200 });
+  };
+  const authorization = {
+    mode: "family_key",
+    key: "  family-key  ",
+    role: "owner",
+    label: "Family key",
+  };
+
+  try {
+    await fetchFamilyTrip(authorization);
+    await saveFamilyTrip(authorization, 3, value);
+    await fetchFamilyTripHistory(authorization);
+    await fetchFamilyTripHistoryVersion(authorization, 2);
+    await restoreFamilyTripVersion(authorization, 3, 2);
+
+    assert.deepEqual(captured.map((entry) => entry.body), [
+      { action: "read", authMode: "family_key", key: "family-key" },
+      { action: "write", authMode: "family_key", key: "family-key", expectedVersion: 3, payload: value },
+      { action: "history", authMode: "family_key", key: "family-key" },
+      { action: "history_version", authMode: "family_key", key: "family-key", version: 2 },
+      { action: "restore", authMode: "family_key", key: "family-key", expectedVersion: 3, sourceVersion: 2 },
+    ]);
+    assert.equal(captured.every((entry) => entry.credentials === "same-origin"), true);
+    assert.equal(captured.some((entry) => Object.hasOwn(entry.body, "deviceToken")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("shared-plan device authorization uses only the protected cookie selector", async () => {
+  const originalFetch = globalThis.fetch;
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response(JSON.stringify({ status: "empty", version: 0, payload: null }), { status: 200 });
+  };
+
+  try {
+    await fetchFamilyTrip({
+      mode: "device_cookie",
+      role: "viewer",
+      label: "Grandma phone",
+      deviceId: "device-2",
+    });
+    assert.deepEqual(body, { action: "read", authMode: "device_cookie" });
+    assert.equal(Object.hasOwn(body, "key"), false);
+    assert.equal(Object.hasOwn(body, "deviceToken"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

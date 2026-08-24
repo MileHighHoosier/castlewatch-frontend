@@ -16,6 +16,10 @@ import {
   saveFamilySyncMetadata,
   saveFamilyTrip,
 } from "../lib/familyTripSync";
+import {
+  FamilyTripAuthorization,
+  canWriteFamilyTrip,
+} from "../lib/familyTripAuthorization";
 
 const ENABLED_KEY = "castlewatch.family-autosave-enabled.v1";
 const DEBOUNCE_MS = 6_000;
@@ -27,7 +31,7 @@ export type AutosavePhase = "off" | "ready" | "pending" | "saving" | "saved" | "
 
 type Props = {
   connected: boolean;
-  familyKey: string;
+  authorization: FamilyTripAuthorization | null;
   localPayload: FamilyTripPayload | null;
   remote: FamilyTripDocument | null;
   analysis: FamilyTripSyncAnalysis | null;
@@ -61,7 +65,7 @@ function isRetryable(error: unknown) {
 
 export default function useFamilyTripAutosave({
   connected,
-  familyKey,
+  authorization,
   localPayload,
   remote,
   analysis,
@@ -78,6 +82,7 @@ export default function useFamilyTripAutosave({
   const retryCount = useRef(0);
   const lastSaveEpoch = useRef(0);
   const previousFingerprint = useRef("");
+  const writable = Boolean(authorization && canWriteFamilyTrip(authorization));
 
   const fingerprint = useMemo(
     () => localPayload ? fingerprintFamilyTripPayload(localPayload) : "",
@@ -124,14 +129,14 @@ export default function useFamilyTripAutosave({
   }, [clearTimer]);
 
   const run = useCallback(async () => {
-    if (!enabled || !connected || !familyKey || suspended || inFlight.current) return;
+    if (!enabled || !connected || !authorization || !writable || suspended || inFlight.current) return;
     inFlight.current = true;
     setPhase("saving");
     setDetail("Checking the server version before saving…");
     const payload = buildLocalFamilyTripPayload();
 
     try {
-      const current = await fetchFamilyTrip(familyKey);
+      const current = await fetchFamilyTrip(authorization);
       const currentMetadata = matchingMetadata(current, payload);
       const currentAnalysis = analyzeFamilyTripSync(payload, current, currentMetadata);
       onSyncState(current, payload, currentMetadata);
@@ -149,7 +154,7 @@ export default function useFamilyTripAutosave({
         return;
       }
 
-      const saved = await saveFamilyTrip(familyKey, current.version, payload);
+      const saved = await saveFamilyTrip(authorization, current.version, payload);
       const savedMetadata = createFamilySyncMetadata(saved.version, payload);
       saveFamilySyncMetadata(savedMetadata);
       onSyncState(saved, payload, savedMetadata);
@@ -190,14 +195,22 @@ export default function useFamilyTripAutosave({
     } finally {
       inFlight.current = false;
     }
-  }, [connected, enabled, familyKey, onSyncState, schedule, suspended]);
+  }, [authorization, connected, enabled, onSyncState, schedule, suspended, writable]);
 
   useEffect(() => {
     clearTimer();
     if (!enabled) return;
-    if (!connected || !familyKey || !remote || !localPayload || !analysis) {
+    if (!connected || !authorization || !remote || !localPayload || !analysis) {
       setPhase("blocked");
       setDetail("Connect to the Shared Family Plan before autosave can run.");
+      return;
+    }
+    if (!writable) {
+      clearTimer();
+      window.localStorage.removeItem(ENABLED_KEY);
+      setEnabledState(false);
+      setPhase("off");
+      setDetail("Viewer access is read only. Manual download and history remain available.");
       return;
     }
     if (suspended) {
@@ -223,7 +236,7 @@ export default function useFamilyTripAutosave({
       setPhase("blocked");
       setDetail(blockedMessage(analysis));
     }
-  }, [analysis, clearTimer, connected, enabled, familyKey, fingerprint, localPayload, remote, run, schedule, suspended]);
+  }, [analysis, authorization, clearTimer, connected, enabled, fingerprint, localPayload, remote, run, schedule, suspended, writable]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 

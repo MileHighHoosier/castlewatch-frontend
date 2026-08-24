@@ -39,8 +39,8 @@ export const DEFAULT_RESORT_PLAN: ResortPlan = {
   "2027-10-10": "value_tbd",
   "2027-10-11": "value_tbd",
   "2027-10-12": "beach",
-  "2027-10-13": "value_tbd",
-  "2027-10-14": "value_tbd",
+  "2027-10-13": "beach",
+  "2027-10-14": "beach",
   "2027-10-15": "akl_jambo",
 };
 

@@ -198,13 +198,12 @@ function parseShowTime(value?: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function scheduleTimesFromItem(item: any) {
+export function scheduleTimesFromItem(item: any, now = new Date()) {
   const schedule = Array.isArray(item?.showtimes)
     ? item.showtimes
     : Array.isArray(item?.schedule)
       ? item.schedule
       : [];
-  const now = new Date();
 
   return schedule.flatMap((entry: any): ShowTimeEntry[] => {
     const startTime = entry?.startTime || entry?.start || entry?.time;
@@ -217,6 +216,10 @@ function scheduleTimesFromItem(item: any) {
       status: entry?.type || entry?.status || "Scheduled",
       isPast: start < now,
     }];
+  }).sort((a, b) => {
+    const aTime = parseShowTime(a.startTime)?.getTime() ?? Number.POSITIVE_INFINITY;
+    const bTime = parseShowTime(b.startTime)?.getTime() ?? Number.POSITIVE_INFINITY;
+    return aTime - bTime;
   });
 }
 
@@ -288,11 +291,16 @@ function itemIdentity(item: any) {
   return `${item?.name || item?.entityName || ""} ${item?.land || item?.area || ""}`;
 }
 
-function isAllowedWdwItem(item: any) {
+export function isAllowedWdwItem(item: any) {
   return !includesAny(itemIdentity(item), NON_DISNEY_ORLANDO_KEYWORDS);
 }
 
-function isCharacterMeetEntity(item: any) {
+export function isCharacterExperienceText(value: string) {
+  if (includesAny(value, CHARACTER_EXCLUDE_KEYWORDS)) return false;
+  return includesAny(value, CHARACTER_INCLUDE_KEYWORDS);
+}
+
+export function isCharacterMeetEntity(item: any) {
   if (!isAllowedWdwItem(item)) return false;
 
   const entityType = String(item?.entityType || item?.type || "").toUpperCase();
@@ -300,10 +308,10 @@ function isCharacterMeetEntity(item: any) {
 
   if (includesAny(combined, CHARACTER_EXCLUDE_KEYWORDS)) return false;
   if (entityType.includes("MEET") || entityType.includes("CHARACTER")) return true;
-  return includesAny(combined, CHARACTER_INCLUDE_KEYWORDS);
+  return isCharacterExperienceText(combined);
 }
 
-function sanitizeShowTimesResult(park: string, data: ShowTimesResult): ShowTimesResult {
+export function sanitizeShowTimesResult(park: string, data: ShowTimesResult): ShowTimesResult {
   return {
     ...data,
     park,
@@ -311,13 +319,13 @@ function sanitizeShowTimesResult(park: string, data: ShowTimesResult): ShowTimes
   };
 }
 
-function normalizeExternalShowTimes(park: string, data: any, source: string): ShowTimesResult {
+export function normalizeExternalShowTimes(park: string, data: any, source: string, now = new Date()): ShowTimesResult {
   const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
 
   const shows = liveData.flatMap((item: any): ParkShow[] => {
-    if (!isAllowedWdwItem(item)) return [];
+    if (!isAllowedWdwItem(item) || isCharacterMeetEntity(item)) return [];
 
-    const times = scheduleTimesFromItem(item);
+    const times = scheduleTimesFromItem(item, now);
     const entityType = String(item?.entityType || item?.type || "").toUpperCase();
     if (!times.length && !["SHOW", "ENTERTAINMENT", "PARADE"].includes(entityType)) return [];
     if (!times.length) return [];
@@ -341,17 +349,17 @@ function normalizeExternalShowTimes(park: string, data: any, source: string): Sh
     park,
     shows,
     source,
-    updated_at: new Date().toISOString(),
+    updated_at: now.toISOString(),
   };
 }
 
-function normalizeExternalCharacterMeets(park: string, data: any, source: string): CharacterMeetResult {
+export function normalizeExternalCharacterMeets(park: string, data: any, source: string, now = new Date()): CharacterMeetResult {
   const liveData = Array.isArray(data?.liveData) ? data.liveData : [];
 
   const characters = liveData.flatMap((item: any): CharacterMeet[] => {
     if (!isCharacterMeetEntity(item)) return [];
 
-    const times = scheduleTimesFromItem(item);
+    const times = scheduleTimesFromItem(item, now);
     const upcoming = times.filter((time) => !time.isPast);
 
     return [{
@@ -372,7 +380,7 @@ function normalizeExternalCharacterMeets(park: string, data: any, source: string
     park,
     characters,
     source,
-    updated_at: new Date().toISOString(),
+    updated_at: now.toISOString(),
   };
 }
 

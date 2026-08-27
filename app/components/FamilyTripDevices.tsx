@@ -133,6 +133,7 @@ export default function FamilyTripDevices() {
   const [acceptName, setAcceptName] = useState("");
   const [bootstrapName, setBootstrapName] = useState("Owner browser");
   const [bootstrapConfirmation, setBootstrapConfirmation] = useState(false);
+  const [localRenameValue, setLocalRenameValue] = useState("");
   const [renameValues, setRenameValues] = useState<Record<string, string>>({});
   const [pendingRevokeDeviceId, setPendingRevokeDeviceId] = useState<string | null>(null);
 
@@ -143,6 +144,7 @@ export default function FamilyTripDevices() {
     setFamilyKey(key);
     const stored = loadFamilyDeviceAccess();
     setLocalDevice(stored);
+    setLocalRenameValue(stored?.displayName || "");
     if (stored?.displayName) setAcceptName(stored.displayName);
     if (!hasLegacyFamilyDeviceAccess()) {
       const selection = loadFamilyTripAuthorizationSelection();
@@ -161,6 +163,7 @@ export default function FamilyTripDevices() {
         if (cancelled || !response) return;
         const migrated = loadFamilyDeviceAccess();
         setLocalDevice(migrated);
+        setLocalRenameValue(migrated?.displayName || "");
         setCredentialMode("device_cookie");
         saveFamilyTripAuthorizationMode("device_cookie");
         setAccessState(response);
@@ -187,6 +190,7 @@ export default function FamilyTripDevices() {
       const selection = loadFamilyTripAuthorizationSelection();
       setFamilyKey(nextKey);
       setLocalDevice(nextDevice);
+      setLocalRenameValue(nextDevice?.displayName || "");
       setCredentialMode(selection === "disconnected"
         ? null
         : loadFamilyTripAuthorizationMode()
@@ -223,6 +227,7 @@ export default function FamilyTripDevices() {
       : "rejected_device_token";
     clearFamilyDeviceAccess();
     setLocalDevice(null);
+    setLocalRenameValue("");
     setCredentialMode(null);
     saveFamilyTripAuthorizationMode(null);
     setDevices([]);
@@ -257,6 +262,7 @@ export default function FamilyTripDevices() {
       ) {
         clearFamilyDeviceAccess();
         setLocalDevice(null);
+        setLocalRenameValue("");
         setCredentialMode(null);
         saveFamilyTripAuthorizationMode(null);
         setDevices([]);
@@ -341,7 +347,9 @@ export default function FamilyTripDevices() {
     clearMessages();
     try {
       const response = await acceptFamilyTripInvite(token, acceptName.trim() || "This device");
-      setLocalDevice(loadFamilyDeviceAccess());
+      const acceptedDevice = loadFamilyDeviceAccess();
+      setLocalDevice(acceptedDevice);
+      setLocalRenameValue(acceptedDevice?.displayName || "");
       setCredentialMode("device_cookie");
       saveFamilyTripAuthorizationMode("device_cookie");
       setAccessState(response.device ? {
@@ -382,8 +390,39 @@ export default function FamilyTripDevices() {
         setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
         if (localDevice?.deviceId === nextDevice.id) {
           saveFamilyDeviceAccess(nextDevice);
-          setLocalDevice(loadFamilyDeviceAccess());
+          const renamedDevice = loadFamilyDeviceAccess();
+          setLocalDevice(renamedDevice);
+          setLocalRenameValue(renamedDevice?.displayName || nextDevice.displayName);
         }
+        setSuccess(`${nextDevice.displayName} was renamed.`);
+      }
+    } catch (renameError) {
+      if (!disconnectRejectedDeviceCredential(renameError)) setError(errorMessage(renameError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function renameCurrentDevice() {
+    if (!auth || !localDevice?.deviceId) return;
+    const displayName = localRenameValue.trim();
+    if (!displayName) {
+      setError("Device name cannot be blank.");
+      return;
+    }
+
+    setBusy("rename-local");
+    clearMessages();
+    try {
+      const response = await renameFamilyTripDevice(auth, localDevice.deviceId, displayName);
+      const nextDevice = response.device;
+      if (nextDevice) {
+        saveFamilyDeviceAccess(nextDevice);
+        const renamedDevice = loadFamilyDeviceAccess();
+        setLocalDevice(renamedDevice);
+        setLocalRenameValue(renamedDevice?.displayName || nextDevice.displayName);
+        setDevices((current) => current.map((entry) => entry.id === nextDevice.id ? nextDevice : entry));
+        setRenameValues((current) => ({ ...current, [nextDevice.id]: nextDevice.displayName }));
         setSuccess(`${nextDevice.displayName} was renamed.`);
       }
     } catch (renameError) {
@@ -413,6 +452,7 @@ export default function FamilyTripDevices() {
         if (localDevice?.deviceId === nextDevice.id) {
           await clearProtectedFamilyDeviceAccess();
           setLocalDevice(null);
+          setLocalRenameValue("");
           setCredentialMode(null);
           saveFamilyTripAuthorizationMode(null);
           setAccessState({
@@ -448,6 +488,7 @@ export default function FamilyTripDevices() {
     try {
       await clearProtectedFamilyDeviceAccess();
       setLocalDevice(null);
+      setLocalRenameValue("");
       setCredentialMode(null);
       saveFamilyTripAuthorizationMode(null);
       setAccessState(null);
@@ -471,7 +512,9 @@ export default function FamilyTripDevices() {
         familyKey,
         bootstrapName.trim() || "Owner browser",
       );
-      setLocalDevice(loadFamilyDeviceAccess());
+      const ownerDevice = loadFamilyDeviceAccess();
+      setLocalDevice(ownerDevice);
+      setLocalRenameValue(ownerDevice?.displayName || "");
       setCredentialMode("device_cookie");
       saveFamilyTripAuthorizationMode("device_cookie");
       setBootstrapConfirmation(false);
@@ -556,6 +599,19 @@ export default function FamilyTripDevices() {
           <div className="family-devices-local">
             <strong>This browser has a protected device credential</strong>
             <span className="family-devices-meta">{localDevice.displayName} · {localDevice.role} · protected {formatDate(localDevice.savedAt)}. Local storage contains safe metadata only.</span>
+            {localDevice.deviceId && (
+              <div className="family-devices-row">
+                <input
+                  className="family-devices-rename"
+                  aria-label="Rename this device"
+                  value={localRenameValue}
+                  onChange={(event) => setLocalRenameValue(event.target.value)}
+                />
+                <button className="family-devices-button" type="button" disabled={disabled} onClick={() => void renameCurrentDevice()}>
+                  {busy === "rename-local" ? "Renaming…" : "Rename this device"}
+                </button>
+              </div>
+            )}
             <div className="family-devices-actions">
               <button className="family-devices-button" type="button" disabled={disabled} onClick={() => void clearLocalDevice()}>
                 {busy === "clear" ? "Clearing…" : "Clear protected credential from this browser"}

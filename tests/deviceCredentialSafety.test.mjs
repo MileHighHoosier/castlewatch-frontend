@@ -171,3 +171,13 @@ test("credential-adjacent family device UI remains declarative and avoids dynami
   assert.match(devicePanel, /saveFamilyTripAuthorizationMode\(null\)/);
   assert.match(devicePanel, /clearFamilyDeviceAccess\(\)/);
 });
+
+
+test("a protected non-owner device has a safe self-rename path", async () => {
+  const devicePanel = await readFile(new URL("../app/components/FamilyTripDevices.tsx", import.meta.url), "utf8");
+  assert.match(devicePanel, /async function renameCurrentDevice\(\)/);
+  assert.match(devicePanel, /renameFamilyTripDevice\(auth, localDevice\.deviceId, displayName\)/);
+  assert.match(devicePanel, /aria-label="Rename this device"/);
+  assert.match(devicePanel, /busy === "rename-local"/);
+  assert.equal(devicePanel.includes("deviceToken"), false);
+});

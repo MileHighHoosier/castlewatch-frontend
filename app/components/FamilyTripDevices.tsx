@@ -21,6 +21,7 @@ import {
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
   saveFamilyDeviceAccess,
+  summarizeFamilyTripDevices,
 } from "../lib/familyTripDevices";
 import { loadFamilyKey } from "../lib/familyTripSync";
 import {
@@ -303,9 +304,7 @@ export default function FamilyTripDevices() {
         }
         return next;
       });
-      setSuccess(response.devices.length
-        ? `Loaded ${response.devices.length} connected device${response.devices.length === 1 ? "" : "s"}.`
-        : "No connected devices are listed yet.");
+      setSuccess(summarizeFamilyTripDevices(response.devices));
     } catch (refreshError) {
       if (!disconnectRejectedDeviceCredential(refreshError)) setError(errorMessage(refreshError));
     } finally {

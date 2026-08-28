@@ -2,14 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   FAMILY_AUTHORIZATION_MODE_STORAGE_KEY,
+  FAMILY_AUTHORIZATION_UPDATED_EVENT,
   FAMILY_KEY_STORAGE_KEY,
   canReadFamilyTrip,
   canRestoreFamilyTrip,
   canViewFamilyTripOperations,
   canWriteFamilyTrip,
+  familyKeyAuthorization,
   familyTripAuthorizationPayload,
   loadFamilyTripAuthorization,
   normalizeFamilyTripRole,
+  persistFamilyTripAuthorization,
   rejectProtectedDeviceAuthorization,
   saveFamilyTripAuthorizationMode,
 } from "../app/lib/familyTripAuthorization.ts";
@@ -18,11 +21,21 @@ import { FAMILY_DEVICE_ACCESS_STORAGE_KEY } from "../app/lib/familyTripDevices.t
 function installStorage() {
   const previousWindow = globalThis.window;
   const store = new Map();
+  const listeners = new Map();
   globalThis.window = {
     localStorage: {
       getItem: (key) => store.get(key) ?? null,
       setItem: (key, value) => store.set(key, String(value)),
       removeItem: (key) => store.delete(key),
+    },
+    addEventListener: (type, listener) => {
+      const current = listeners.get(type) || [];
+      current.push(listener);
+      listeners.set(type, current);
+    },
+    dispatchEvent: (event) => {
+      for (const listener of listeners.get(event.type) || []) listener(event);
+      return true;
     },
   };
   return {
@@ -61,6 +74,27 @@ test("authorization capability matrix matches Owner, Editor, and Viewer contract
   assert.equal(canViewFamilyTripOperations(owner), true);
   assert.equal(canViewFamilyTripOperations(editor), true);
   assert.equal(canViewFamilyTripOperations(viewer), false);
+});
+
+test("family-key selection is observable only after its key is persisted", () => {
+  const storage = installStorage();
+  try {
+    let observedAuthorization = null;
+    window.addEventListener(FAMILY_AUTHORIZATION_UPDATED_EVENT, () => {
+      observedAuthorization = loadFamilyTripAuthorization();
+    });
+
+    const authorization = familyKeyAuthorization("  family-key  ");
+    assert.ok(authorization);
+    persistFamilyTripAuthorization(authorization);
+
+    assert.equal(storage.store.get(FAMILY_KEY_STORAGE_KEY), "family-key");
+    assert.equal(storage.store.get(FAMILY_AUTHORIZATION_MODE_STORAGE_KEY), "family_key");
+    assert.equal(observedAuthorization?.mode, "family_key");
+    assert.equal(observedAuthorization?.role, "owner");
+  } finally {
+    storage.restore();
+  }
 });
 
 test("authorization payloads contain exactly one credential selector", () => {

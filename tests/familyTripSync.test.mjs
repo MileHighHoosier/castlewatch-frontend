@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   analyzeFamilyTripSync,
+  createContentIdenticalFamilyTripBackup,
   FamilyTripSyncError,
   fetchFamilyTrip,
   fetchFamilyTripHistory,
@@ -200,6 +202,70 @@ test("all shared-plan clients send one explicit family-key authorization", async
     ]);
     assert.equal(captured.every((entry) => entry.credentials === "same-origin"), true);
     assert.equal(captured.some((entry) => Object.hasOwn(entry.body, "deviceToken")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("manual backup writes the freshly downloaded payload unchanged with the current expected version", async () => {
+  const originalFetch = globalThis.fetch;
+  const value = payload();
+  let captured;
+  globalThis.fetch = async (_url, options) => {
+    captured = JSON.parse(options.body);
+    return new Response(JSON.stringify({ status: "ok", version: 12, payload: value }), { status: 200 });
+  };
+
+  try {
+    const document = await createContentIdenticalFamilyTripBackup({
+      mode: "device_cookie",
+      role: "owner",
+      label: "Ryan Brave Owner",
+      deviceId: "owner-1",
+    }, remote(11, value));
+
+    assert.deepEqual(captured, {
+      action: "write",
+      authMode: "device_cookie",
+      expectedVersion: 11,
+      payload: value,
+    });
+    assert.equal(document.version, 12);
+    assert.deepEqual(document.payload, value);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("manual backup UI is confirmed, up-to-date only, and content-identical", async () => {
+  const source = await readFile(new URL("../app/components/FamilyTripSync.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /analysis\.id === "up_to_date" && writable && remote\.payload/);
+  assert.match(source, /Create manual backup/);
+  assert.match(source, /Confirm manual backup/);
+  assert.match(source, /createContentIdenticalFamilyTripBackup\(checked\.authorization, checked\.document\)/);
+  assert.match(source, /without changing reservations, the trip profile or the active park order/);
+});
+
+test("manual backup rejects a response that does not preserve the shared payload", async () => {
+  const originalFetch = globalThis.fetch;
+  const value = payload();
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    status: "ok",
+    version: 12,
+    payload: payload("Unexpected change"),
+  }), { status: 200 });
+
+  try {
+    await assert.rejects(
+      createContentIdenticalFamilyTripBackup({
+        mode: "device_cookie",
+        role: "owner",
+        label: "Ryan Brave Owner",
+        deviceId: "owner-1",
+      }, remote(11, value)),
+      /did not preserve the shared trip payload/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

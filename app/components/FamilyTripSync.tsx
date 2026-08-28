@@ -23,6 +23,7 @@ import {
   applyFamilyTripPayload,
   buildLocalFamilyTripPayload,
   clearFamilySyncMetadata,
+  createContentIdenticalFamilyTripBackup,
   createFamilySyncMetadata,
   fetchFamilyTrip,
   fingerprintFamilyTripPayload,
@@ -38,9 +39,10 @@ const STYLE_ID = "castlewatch-family-sync-style";
 const LOCAL_CHECK_INTERVAL_MS = 1_000;
 const REMOTE_CHECK_INTERVAL_MS = 60_000;
 
-type ConfirmAction = "upload" | "download" | null;
+type ConfirmAction = "upload" | "download" | "backup" | null;
 
 type CheckedSyncState = {
+  authorization: FamilyTripAuthorization;
   document: FamilyTripDocument;
   localPayload: FamilyTripPayload;
   metadata: FamilyTripSyncMetadata | null;
@@ -230,6 +232,7 @@ export default function FamilyTripSync() {
       }
 
       return {
+        authorization: selectedAuthorization,
         document,
         localPayload: currentLocal,
         metadata: nextMetadata,
@@ -395,6 +398,56 @@ export default function FamilyTripSync() {
     }
   }
 
+  async function prepareManualBackup() {
+    if (!authorization || !canWriteFamilyTrip(authorization)) return;
+    setBusy(true);
+    clearMessages();
+    setConfirmAction(null);
+    const checked = await checkRemote(undefined, false);
+    if (!checked) {
+      setBusy(false);
+      return;
+    }
+    if (checked.analysis.id !== "up_to_date" || !checked.document.payload) {
+      setError("Manual backup is available only while this browser is up to date with no local changes.");
+      setBusy(false);
+      return;
+    }
+    setConfirmAction("backup");
+    setBusy(false);
+  }
+
+  async function createManualBackup() {
+    setBusy(true);
+    clearMessages();
+    try {
+      const checked = await checkRemote(undefined, false);
+      if (!checked || checked.analysis.id !== "up_to_date" || !checked.document.payload) {
+        throw new Error("Manual backup stopped because the sync state changed. Resolve the Shared Family Plan status and try again.");
+      }
+      if (!canWriteFamilyTrip(checked.authorization)) {
+        throw new Error("Viewer access cannot create a manual backup.");
+      }
+
+      const document = await createContentIdenticalFamilyTripBackup(checked.authorization, checked.document);
+      if (!document.payload) throw new Error("The new shared backup did not include a trip payload.");
+
+      const nextMetadata = createFamilySyncMetadata(document.version, document.payload);
+      saveFamilySyncMetadata(nextMetadata);
+      setRemote(document);
+      setLocalPayload(document.payload);
+      setMetadata(nextMetadata);
+      setConfirmAction(null);
+      setSuccess(`Content-identical backup created as shared version ${document.version}. Trip content was unchanged.`);
+      window.dispatchEvent(new CustomEvent(FAMILY_SYNC_UPDATED_EVENT));
+    } catch (backupError) {
+      setConfirmAction(null);
+      handleFailure(backupError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function prepareDownload() {
     setBusy(true);
     clearMessages();
@@ -538,6 +591,11 @@ export default function FamilyTripSync() {
                   {uploadButtonLabel(analysis)}
                 </button>
               )}
+              {analysis.id === "up_to_date" && writable && remote.payload && (
+                <button className="family-sync-button family-sync-button-primary" type="button" disabled={disabled} onClick={() => void prepareManualBackup()}>
+                  Create manual backup
+                </button>
+              )}
               <button className="family-sync-button" type="button" disabled={disabled} onClick={() => void checkRemote(undefined, true)}>
                 {checking ? "Checking…" : "Check shared status now"}
               </button>
@@ -569,6 +627,21 @@ export default function FamilyTripSync() {
             <div className="family-sync-actions">
               <button className="family-sync-button family-sync-button-warning" type="button" disabled={busy} onClick={() => void upload()}>
                 {busy ? "Uploading…" : "Confirm upload"}
+              </button>
+              <button className="family-sync-button" type="button" disabled={busy} onClick={() => setConfirmAction(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {confirmAction === "backup" && remote?.payload && (
+          <div className="family-sync-confirm">
+            <strong>Create a content-identical backup as shared version {remote.version + 1}?</strong>
+            <div className="muted">
+              CastleWatch will re-save shared version {remote.version} unchanged with an optimistic version check. This creates a new history snapshot without changing reservations, the trip profile or the active park order.
+            </div>
+            <div className="family-sync-actions">
+              <button className="family-sync-button family-sync-button-primary" type="button" disabled={busy} onClick={() => void createManualBackup()}>
+                {busy ? "Creating backup…" : "Confirm manual backup"}
               </button>
               <button className="family-sync-button" type="button" disabled={busy} onClick={() => setConfirmAction(null)}>Cancel</button>
             </div>

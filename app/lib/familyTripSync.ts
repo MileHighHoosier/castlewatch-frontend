@@ -413,6 +413,23 @@ export async function saveFamilyTrip(
   return document;
 }
 
+export async function createContentIdenticalFamilyTripBackup(
+  authorization: FamilyTripAuthorization,
+  current: FamilyTripDocument,
+): Promise<FamilyTripDocument> {
+  if (current.version < 1 || !current.payload) {
+    throw new Error("A current shared plan is required before creating a manual backup.");
+  }
+  const saved = await saveFamilyTrip(authorization, current.version, current.payload);
+  if (
+    !saved.payload
+    || fingerprintFamilyTripPayload(saved.payload) !== fingerprintFamilyTripPayload(current.payload)
+  ) {
+    throw new Error("The manual backup response did not preserve the shared trip payload.");
+  }
+  return saved;
+}
+
 export async function fetchFamilyTripHistory(authorization: FamilyTripAuthorization): Promise<FamilyTripHistoryDocument> {
   const result = await rawSyncRequest({
     action: "history",

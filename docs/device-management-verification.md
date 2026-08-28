@@ -50,7 +50,7 @@ Use a trusted primary browser and a second real browser or phone. The secondary 
 
 1. Read the current shared plan, history and one history version.
 2. Download a backup.
-3. Upload the same unmodified payload with the current expected version.
+3. Use the confirmed **Create manual backup** action to upload that same unmodified payload with the current expected version.
 4. Confirm a new version is created while the itinerary and trip profile remain content-identical.
 5. Restore the immediately previous content-identical version and confirm restore creates a new version without changing trip content.
 6. Confirm guarded autosave remains off unless manually enabled.

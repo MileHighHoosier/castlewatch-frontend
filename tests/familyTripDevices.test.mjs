@@ -5,6 +5,7 @@ import {
   FamilyTripDeviceError,
   acceptFamilyTripInvite,
   bootstrapFamilyOwnerDevice,
+  canOfferFamilyOwnerBootstrap,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   clearProtectedFamilyDeviceAccess,
@@ -20,6 +21,7 @@ import {
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
   saveFamilyDeviceAccess,
+  summarizeFamilyTripDevices,
 } from "../app/lib/familyTripDevices.ts";
 
 const SAFE_DEVICE = {
@@ -74,6 +76,31 @@ test("device list parser keeps safe device metadata", () => {
   assert.equal(parsed.devices[0].role, "owner");
   assert.equal(Object.hasOwn(parsed.devices[0], "token_hash"), false);
   assert.equal(Object.hasOwn(parsed.devices[0], "rawToken"), false);
+});
+
+test("device list summary distinguishes active and revoked records", () => {
+  assert.equal(summarizeFamilyTripDevices([]), "No device records are listed yet.");
+  assert.equal(
+    summarizeFamilyTripDevices([
+      { ...SAFE_DEVICE, id: "device-1", status: "revoked", revokedAt: "2026-07-08T20:33:42Z" },
+      { ...SAFE_DEVICE, id: "device-2", status: "revoked", revokedAt: "2026-07-08T20:18:14Z" },
+    ]),
+    "Loaded 2 device records: 0 active, 2 revoked.",
+  );
+  assert.equal(
+    summarizeFamilyTripDevices([
+      SAFE_DEVICE,
+      { ...SAFE_DEVICE, id: "device-2", status: "revoked", revokedAt: "2026-07-08T20:18:14Z" },
+    ]),
+    "Loaded 2 device records: 1 active, 1 revoked.",
+  );
+});
+
+test("owner bootstrap is offered only on the explicitly selected family-key path", () => {
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", "family_key"), true);
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", "device_cookie"), false);
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", null), false);
+  assert.equal(canOfferFamilyOwnerBootstrap("   ", "family_key"), false);
 });
 
 test("access parser keeps family-key, revoked-token, and rejected-token states explicit", () => {

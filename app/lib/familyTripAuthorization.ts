@@ -90,6 +90,16 @@ export function saveFamilyTripAuthorizationMode(mode: FamilyTripAuthorizationMod
   }
 }
 
+export function persistFamilyTripAuthorization(authorization: FamilyTripAuthorization) {
+  if (typeof window === "undefined") return;
+  if (authorization.mode === "family_key") {
+    const key = authorization.key.trim();
+    if (!key) throw new Error("The CastleWatch family key is missing.");
+    window.localStorage.setItem(FAMILY_KEY_STORAGE_KEY, key);
+  }
+  saveFamilyTripAuthorizationMode(authorization.mode);
+}
+
 export function sameFamilyTripAuthorization(
   first: FamilyTripAuthorization | null,
   second: FamilyTripAuthorization | null,

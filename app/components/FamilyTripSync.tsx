@@ -8,6 +8,7 @@ import {
   familyKeyAuthorization,
   familyTripAuthorizationDescription,
   loadFamilyTripAuthorization,
+  persistFamilyTripAuthorization,
   protectedDeviceAuthorization,
   sameFamilyTripAuthorization,
   saveFamilyTripAuthorizationMode,
@@ -214,10 +215,9 @@ export default function FamilyTripSync() {
 
       authorizationRef.current = selectedAuthorization;
       setAuthorization(selectedAuthorization);
-      saveFamilyTripAuthorizationMode(selectedAuthorization.mode);
+      persistFamilyTripAuthorization(selectedAuthorization);
       if (selectedAuthorization.mode === "family_key") {
         setKey(selectedAuthorization.key);
-        saveFamilyKey(selectedAuthorization.key);
       }
       setRemote(document);
       setLocalPayload(currentLocal);

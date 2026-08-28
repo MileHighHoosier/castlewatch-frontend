@@ -70,6 +70,26 @@ export type FamilyTripDevicesResponse = {
   message?: string;
 };
 
+export function summarizeFamilyTripDevices(devices: FamilyTripDeviceRecord[]) {
+  if (devices.length === 0) return "No device records are listed yet.";
+
+  const activeCount = devices.filter((device) => device.status === "active").length;
+  const revokedCount = devices.filter((device) => device.status === "revoked").length;
+  const otherCount = devices.length - activeCount - revokedCount;
+  const counts = [`${activeCount} active`];
+  if (revokedCount > 0) counts.push(`${revokedCount} revoked`);
+  if (otherCount > 0) counts.push(`${otherCount} other`);
+
+  return `Loaded ${devices.length} device record${devices.length === 1 ? "" : "s"}: ${counts.join(", ")}.`;
+}
+
+export function canOfferFamilyOwnerBootstrap(
+  familyKey: string,
+  credentialMode: "family_key" | "device_cookie" | null,
+) {
+  return Boolean(familyKey.trim()) && credentialMode === "family_key";
+}
+
 export type FamilyTripInviteResponse = {
   status: string;
   inviteToken: string;

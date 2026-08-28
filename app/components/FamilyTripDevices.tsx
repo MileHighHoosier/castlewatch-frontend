@@ -9,6 +9,7 @@ import {
   StoredFamilyDeviceAccess,
   acceptFamilyTripInvite,
   bootstrapFamilyOwnerDevice,
+  canOfferFamilyOwnerBootstrap,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   clearProtectedFamilyDeviceAccess,
@@ -21,6 +22,7 @@ import {
   renameFamilyTripDevice,
   revokeFamilyTripDevice,
   saveFamilyDeviceAccess,
+  summarizeFamilyTripDevices,
 } from "../lib/familyTripDevices";
 import { loadFamilyKey } from "../lib/familyTripSync";
 import {
@@ -208,6 +210,11 @@ export default function FamilyTripDevices() {
   const canAttemptAuthenticatedAction = Boolean(auth);
   const disabled = Boolean(busy);
   const familyKeyOnly = Boolean(familyKey.trim()) && !localDevice;
+  const canBootstrapOwner = canOfferFamilyOwnerBootstrap(familyKey, credentialMode);
+
+  useEffect(() => {
+    if (credentialMode !== "family_key") setBootstrapConfirmation(false);
+  }, [credentialMode]);
 
   function clearMessages() {
     setError(null);
@@ -303,9 +310,7 @@ export default function FamilyTripDevices() {
         }
         return next;
       });
-      setSuccess(response.devices.length
-        ? `Loaded ${response.devices.length} connected device${response.devices.length === 1 ? "" : "s"}.`
-        : "No connected devices are listed yet.");
+      setSuccess(summarizeFamilyTripDevices(response.devices));
     } catch (refreshError) {
       if (!disconnectRejectedDeviceCredential(refreshError)) setError(errorMessage(refreshError));
     } finally {
@@ -692,7 +697,7 @@ export default function FamilyTripDevices() {
         )}
 
         <div className="family-devices-grid">
-          {familyKey.trim() && (
+          {canBootstrapOwner && (
             <div className="family-devices-card">
               <strong>Bootstrap owner device</strong>
               <span className="family-devices-meta">Use this explicit one-time recovery action only for the first active owner device, or after revoking a previous owner device. The device credential goes directly into a Secure, HttpOnly, SameSite=Strict cookie and is never displayed or written to local storage.</span>

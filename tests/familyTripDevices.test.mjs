@@ -5,6 +5,7 @@ import {
   FamilyTripDeviceError,
   acceptFamilyTripInvite,
   bootstrapFamilyOwnerDevice,
+  canOfferFamilyOwnerBootstrap,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   clearProtectedFamilyDeviceAccess,
@@ -93,6 +94,13 @@ test("device list summary distinguishes active and revoked records", () => {
     ]),
     "Loaded 2 device records: 1 active, 1 revoked.",
   );
+});
+
+test("owner bootstrap is offered only on the explicitly selected family-key path", () => {
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", "family_key"), true);
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", "device_cookie"), false);
+  assert.equal(canOfferFamilyOwnerBootstrap(" family-key ", null), false);
+  assert.equal(canOfferFamilyOwnerBootstrap("   ", "family_key"), false);
 });
 
 test("access parser keeps family-key, revoked-token, and rejected-token states explicit", () => {

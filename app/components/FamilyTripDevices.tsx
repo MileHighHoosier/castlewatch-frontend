@@ -9,6 +9,7 @@ import {
   StoredFamilyDeviceAccess,
   acceptFamilyTripInvite,
   bootstrapFamilyOwnerDevice,
+  canOfferFamilyOwnerBootstrap,
   checkFamilyTripDeviceAccess,
   clearFamilyDeviceAccess,
   clearProtectedFamilyDeviceAccess,
@@ -209,6 +210,11 @@ export default function FamilyTripDevices() {
   const canAttemptAuthenticatedAction = Boolean(auth);
   const disabled = Boolean(busy);
   const familyKeyOnly = Boolean(familyKey.trim()) && !localDevice;
+  const canBootstrapOwner = canOfferFamilyOwnerBootstrap(familyKey, credentialMode);
+
+  useEffect(() => {
+    if (credentialMode !== "family_key") setBootstrapConfirmation(false);
+  }, [credentialMode]);
 
   function clearMessages() {
     setError(null);
@@ -691,7 +697,7 @@ export default function FamilyTripDevices() {
         )}
 
         <div className="family-devices-grid">
-          {familyKey.trim() && (
+          {canBootstrapOwner && (
             <div className="family-devices-card">
               <strong>Bootstrap owner device</strong>
               <span className="family-devices-meta">Use this explicit one-time recovery action only for the first active owner device, or after revoking a previous owner device. The device credential goes directly into a Secure, HttpOnly, SameSite=Strict cookie and is never displayed or written to local storage.</span>

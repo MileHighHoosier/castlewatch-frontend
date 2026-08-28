@@ -83,6 +83,13 @@ export function summarizeFamilyTripDevices(devices: FamilyTripDeviceRecord[]) {
   return `Loaded ${devices.length} device record${devices.length === 1 ? "" : "s"}: ${counts.join(", ")}.`;
 }
 
+export function canOfferFamilyOwnerBootstrap(
+  familyKey: string,
+  credentialMode: "family_key" | "device_cookie" | null,
+) {
+  return Boolean(familyKey.trim()) && credentialMode === "family_key";
+}
+
 export type FamilyTripInviteResponse = {
   status: string;
   inviteToken: string;

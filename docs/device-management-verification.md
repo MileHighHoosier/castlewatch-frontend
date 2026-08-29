@@ -2,114 +2,111 @@
 
 ## Status
 
-**Started August 27, 2026 — live credential and real-device checks remain open.**
+**Passed August 29, 2026 — production two-device verification is complete.**
 
-This checklist verifies the finished private-family authorization model in production. It replaces the older Editor-only checklist that predated owner bootstrap, protected device cookies, normal shared-plan device authorization, Viewer enforcement and revoked-credential cleanup.
+Section 5E verified the finished private-family authorization model in production with a trusted Owner browser and a second real phone/browser that did not contain the family key. Frontend issue #25 is the live evidence tracker.
 
-The live checkbox tracker is frontend issue #25. Do not place a family key, raw invite/device credential, token hash or pepper in this document, GitHub, logs or screenshots.
+No family key, raw invite/device credential, token hash or pepper was recorded in this document, GitHub, logs or screenshots.
 
 ## Non-retirement boundary
 
-Section 5E does not authorize family-key retirement. `CASTLEWATCH_FAMILY_KEY` and the production `legacy_family_key_enabled` value remain configured and enabled. Any retirement option is a separate future decision requiring explicit user approval after Section 5 closes.
+Section 5E closeout does not authorize family-key retirement. `CASTLEWATCH_FAMILY_KEY` and the production `legacy_family_key_enabled` value remain configured and enabled. Any retirement option is a separate future decision requiring explicit user approval.
 
-## Fixed production checkpoints
+## Production checkpoints
 
-- backend `main`: `226f9f3ff776c0a48b12c9aa763cb140160b071c`;
-- frontend `main`: `f591f5b140e5ca0654f04a1433963d7ba560bd71`;
+- backend `main` at verification: `226f9f3ff776c0a48b12c9aa763cb140160b071c`;
+- frontend `main` at verification: `f7b5ccbf38081ff044808899ef7c965c2e04e1cd`;
 - frontend: `https://castlewatch-frontend.vercel.app`;
 - backend: `https://castlewatch-2027-production.up.railway.app`;
 - governing backend contract: `docs/accounts_migration_contract.md`.
 
-## Verified automated baseline
+The frontend verification head includes three narrow 5E support fixes:
 
-- both production heads remain unchanged from the finalized 5D checkpoint;
-- the authoritative Railway and Vercel checks are green;
-- production CastleWatch loads Railway data and reports **Backend connected**;
-- Railway `/health` returns HTTP 200 with status `ok`;
-- intentionally invalid family-key device-list, invite, bootstrap, shared-plan and Operations requests return unauthorized without mutation;
-- an invalid invite is rejected without creating a device;
-- selecting protected-device mode without a cookie returns `protected_credential_missing` and does not use a family key;
-- the unused `/api/family-trip` direct proxy remains isolated and key-only with no in-repository caller; `/api/castlewatch-family-sync` is canonical.
+- PR #42 / `fe964bec64f1d2071c899e2ea5d8bf3d79a1e949`: protected-device self-rename;
+- PR #43 / `f87f5b761cb0cec7c74defad723a3790bf85a6fd`: explicit family-key recovery verification UI;
+- PR #44 / `f7b5ccbf38081ff044808899ef7c965c2e04e1cd`: confirmed content-identical manual backup creation.
 
-## Required live verification
+## Automated and service baseline
 
-Use a trusted primary browser and a second real browser or phone. The secondary device must not contain the family key.
+- the backend remained at the finalized 5D implementation head;
+- the frontend passed all 111 tests and its production Next.js build at the 5E verification head;
+- the authoritative Vercel status for the frontend verification head was successful;
+- production CastleWatch loaded Railway data and reported **Backend connected**;
+- Railway `/health` returned HTTP 200 with status `ok`;
+- intentionally invalid family-key device-list, invite, bootstrap, shared-plan and Operations requests were rejected without mutation;
+- an invalid invite was rejected without creating a device;
+- protected-device mode without a cookie returned `protected_credential_missing` without family-key fallback;
+- the unused `/api/family-trip` direct proxy remained isolated and key-only with no in-repository caller; `/api/castlewatch-family-sync` remained canonical.
 
-### A. Family-key recovery and owner bootstrap
+## Production verification results
 
-1. Connect Shared Family Plan with the current family key through the trusted UI.
-2. Confirm the shared plan loads and **Check access state** reports the family-key owner path.
-3. Refresh Family devices and confirm the list contains safe metadata only.
-4. Explicitly bootstrap one named production Owner device.
-5. Confirm the credential is stored in the protected `Secure`, `HttpOnly`, `SameSite=Strict` cookie and no raw device token reaches browser JavaScript or persistent UI.
-6. Reload and confirm the protected Owner credential persists.
-7. Select the protected Owner credential and confirm owner access without family-key fallback.
-8. Re-select family-key recovery and confirm it remains available.
+### A. Family-key recovery and Owner bootstrap — passed
 
-### B. Owner shared-plan behavior
+- Family-key recovery connected explicitly and reported the family-key Owner path.
+- The production device list exposed safe metadata only.
+- The explicit confirmation created the protected Owner device `Ryan Brave Owner`.
+- No raw Owner credential reached browser JavaScript, persistent UI or browser-readable storage.
+- The protected Owner credential persisted across reloads and worked without family-key fallback.
+- Family-key recovery remained available, was reselected successfully, and stayed enabled.
 
-1. Read the current shared plan, history and one history version.
-2. Download a backup.
-3. Use the confirmed **Create manual backup** action to upload that same unmodified payload with the current expected version.
-4. Confirm a new version is created while the itinerary and trip profile remain content-identical.
-5. Restore the immediately previous content-identical version and confirm restore creates a new version without changing trip content.
-6. Confirm guarded autosave remains off unless manually enabled.
-7. Confirm Operations loads for Owner.
-8. Confirm Owner can list devices and create Editor or Viewer invites.
+### B. Owner normal flow — passed
 
-### C. Editor on the second device
+- Owner read the shared plan, history and historical versions.
+- A content-identical manual backup created shared version 12 from version 11.
+- Append-only restore verification created versions 13 and 14 without changing trip content.
+- Guarded autosave remained off.
+- Operations loaded normally for Owner.
+- Owner device listing and Editor/Viewer invitation creation worked.
 
-1. Create an Editor invite from the Owner path.
-2. Confirm the invite token appears only in the immediate response and never in the device list.
-3. Transfer the invite directly to the second device without posting or logging it.
-4. Accept the invite and confirm no raw device token is displayed.
-5. Reload and confirm the protected Editor credential persists.
-6. Confirm Editor can read, write content-identically, read history, restore content-identically and open Operations.
-7. Confirm Editor cannot list devices or create invites.
-8. Rename the current Editor device through the protected self-rename control and confirm persistence.
+### C. Editor on the second device — passed
 
-### D. Viewer boundary
+- A seven-day Editor invite was transferred directly and accepted without exposing a raw device credential.
+- `Katie iPhone Editor` persisted in protected browser storage across reloads.
+- Editor read the plan/history, opened Operations, created content-identical version 15 and restored version 14 as new version 16.
+- Editor could not list devices or create invitations.
+- Editor self-rename persisted.
+- Owner subsequently revoked the temporary Editor device.
 
-Revoke the Editor test device before reconnecting the same secondary browser through a fresh Viewer invite.
+### D. Viewer boundary — passed
 
-1. Accept a Viewer invite with no family key present.
-2. Confirm Viewer can read the shared plan and history.
-3. Confirm manual upload, guarded autosave, restore and Operations controls are unavailable.
-4. Confirm Viewer cannot list devices, create invites or perform protected write/restore/Operations requests.
-5. Rename the current Viewer device through the protected self-rename control and confirm persistence.
-6. Confirm browser display metadata cannot override the server-verified Viewer role.
+- A fresh Viewer invite connected the same secondary device without a family key.
+- Viewer read the current plan and history.
+- Upload, autosave, restore and Operations controls were unavailable; direct Operations access reported that Owner or Editor access was required.
+- Viewer could not list devices, create invitations or perform protected write/restore/Operations requests.
+- Renaming the display label to `Owner Label Test` did not change the server-verified Viewer role.
 
-### E. Revoked-cookie-only denial
+### E. Revoked-cookie-only denial — passed
 
-1. Leave the active protected Viewer credential and no family key on the secondary device.
-2. Revoke it from the Owner browser through the inline confirmation.
-3. Confirm the Owner list reports revoked status and a timestamp.
-4. On the untouched secondary device, run **Check access state** or a manual shared-plan refresh.
-5. Confirm the request receives the explicit revoked/rejected 401 state.
-6. Confirm CastleWatch clears the protected cookie and safe local device metadata, records a disconnected selection and does not fall back to a family key.
-7. Confirm revocation does not alter shared-plan content or history.
+- Owner revoked the active temporary Viewer through the confirmation flow.
+- The Owner list showed the Viewer as revoked with a timestamp.
+- The untouched secondary browser received the explicit rejected/revoked state on its next request.
+- CastleWatch cleared the protected cookie and safe local device metadata, entered a disconnected state and did not select or use a family key.
+- Shared-plan content and history were unchanged by revocation.
 
-### F. Recovery and final state
+### F. Recovery and final production state — passed
 
-1. Explicitly reconnect the trusted browser through family-key recovery.
-2. Re-select and verify the protected Owner credential.
-3. Leave at least one manually tested active Owner device in production.
-4. Revoke any temporary Editor or Viewer device that remains active.
-5. Confirm final device rows expose safe metadata only.
-6. Recheck Railway health and the authoritative frontend Vercel deployment.
-7. Confirm the October 9–16, 2027 trip, two-adult/two-child profile, no-park-hopping rule and **Keep / Swap / Wait / Review** control remain unchanged.
+- Family-key recovery and the protected Owner path were each explicitly reverified.
+- `Ryan Brave Owner` remains the active production Owner.
+- Temporary Editor and Viewer devices are revoked with timestamps.
+- Final device rows expose safe metadata and token prefixes only.
+- A deliberate trip-name cleanup used the two-step optimistic upload confirmation and created shared version 17.
+- Final shared state is up to date at version 17 with guarded autosave off.
+- Final trip invariants are `Columbus Day Week 2027`, October 9–16, 2027, two adults, two children, no park hopping and zero bookings.
+- The decision engine still reports **Wait for official data / Keep the base plan provisional**, with the base plan active and the official 2027 MNSSHP calendar still the blocker.
+- Railway health and the authoritative frontend Vercel deployment remained green after the run.
 
-## Safety checks
+## Safety results
 
-- Family devices performs no automatic polling and sends no SMS/text delivery.
-- No family-key disablement, removal or retirement control is present.
-- Invite tokens appear only immediately after creation.
-- Raw family keys, device tokens, invite tokens, token hashes and peppers never appear in GitHub, source, logs, screenshots or persistent UI.
-- No dependency/runtime, schema, itinerary or reservation change is bundled into 5E.
+- Family devices performed no automatic polling and sent no SMS/text delivery.
+- No family-key disablement, removal or retirement control was present.
+- Invite credentials appeared only in immediate creation results.
+- Device lists and persistent browser state exposed safe metadata only.
+- No dependency/runtime, schema, itinerary order, reservation or automatic recommendation change was bundled into 5E.
+- Raw family keys, device credentials, invite credentials, token hashes and peppers were not placed in source, logs, GitHub, screenshots or long-lived UI.
 
 ## Pass criteria
 
-Section 5E can close only when frontend issue #25 records all of the following:
+All Section 5E pass criteria are satisfied:
 
 - a production Owner device exists and is manually verified;
 - family-key recovery remains enabled and verified;
@@ -118,5 +115,7 @@ Section 5E can close only when frontend issue #25 records all of the following:
 - self-rename and Owner-managed revocation pass;
 - a revoked-cookie-only device loses access without hidden fallback;
 - shared-plan version/history and trip invariants remain intact;
-- Railway and the authoritative frontend Vercel deployment remain green;
-- canonical closeout is reviewed, merged and deployed after explicit **Finalize Section 5E** approval.
+- Railway and the authoritative frontend Vercel deployment are green;
+- canonical closeout was explicitly authorized with **Finalize Section 5E**.
+
+Section 5 may close with the family key still enabled. This result is not authorization to retire it.

@@ -35,11 +35,12 @@ Do not use old chat history as the source of truth when current code/documentati
 
 ## Account/device migration safety gate
 
-The account/device migration is incomplete.
+The account/device migration is complete and production-verified through Section 5. Family-key recovery remains an intentional safety boundary.
 
 - Do **not** remove or disable `CASTLEWATCH_FAMILY_KEY`.
-- Do **not** assume a saved device token can replace the family key for all shared-plan actions.
-- Normal shared-plan read/write/history/restore/operations behavior must remain backward compatible until dual authorization and production verification are complete.
+- Keep credential selection explicit and never fall back silently after a selected protected device credential is missing, rejected or revoked.
+- Treat the server-verified Owner/Editor/Viewer role as authoritative; browser display metadata is not authorization.
+- Preserve normal shared-plan dual authorization and the documented role matrix while keeping family-key recovery working.
 - Do not add a family-key retirement UI without the documented owner-device/recovery gates and explicit user approval.
 
 ## Trip Week decision engine

@@ -45,15 +45,15 @@ The frontend is well beyond its original Phase One starter state. Major implemen
 - shared family plan synchronization,
 - shared version history and restore,
 - operations/usage support,
-- account/device invitation, naming and revocation foundations.
+- production-verified account/device invitations, protected Owner/Editor/Viewer credentials, naming, revocation and family-key recovery.
 
 ## Current development phase
 
 CastleWatch is in **Rebaseline & Stabilization**, not a new feature sprint.
 
-The current goal is to establish authoritative documentation, resolve high-priority security/reliability issues, improve regression coverage, and finish or deliberately freeze the incomplete account/device migration before adding major new product features.
+Sections 1–5 of Rebaseline & Stabilization are complete. The private-family account/device migration passed production Owner/Editor/Viewer, recovery and revocation verification on August 29, 2026; the family-key recovery path remains enabled.
 
-Section 4 concludes with a full cross-repository regression/build review. Its QC closeout does not start the account/device migration work in Section 5.
+Section 6 production smoke verification is next and has not started.
 
 After stabilization, the next major product objective is to **complete Trip Week Phase 2 - Unified Recommendation Engine**. The engine already exists in partial form; it should not be restarted from scratch.
 

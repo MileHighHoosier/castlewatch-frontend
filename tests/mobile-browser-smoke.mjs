@@ -246,6 +246,30 @@ async function run() {
           const navColumns = getComputedStyle(document.querySelector(".top-park-banner")).gridTemplateColumns.split(" ").length;
           if (navColumns !== 3) throw new Error("Mobile primary navigation did not collapse to three columns");
 
+          const plan = buttonNamed(".section-tab", "Plan");
+          if (!plan) throw new Error("Plan tab is missing");
+          plan.click();
+          const lightningLaneForm = await waitFor(() => document.querySelector(".lightning-lane-form"), "Lightning Lane form");
+          const setField = (name, value) => {
+            const input = lightningLaneForm.querySelector("[name='" + name + "']");
+            input.value = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          setField("name", "Seven Dwarfs Mine Train");
+          setField("start", "10:30");
+          setField("end", "11:30");
+          lightningLaneForm.querySelector("button[type='submit']").click();
+          const lightningLaneRow = await waitFor(() => document.querySelector(".lightning-lane-row"), "immediate Lightning Lane result");
+          if (!lightningLaneRow.textContent.includes("Seven Dwarfs Mine Train")) throw new Error("Saved Lightning Lane is missing");
+          const removeLightningLane = buttonNamed(".lightning-lane-actions button", "Remove");
+          if (!removeLightningLane) throw new Error("Lightning Lane remove control is missing");
+          removeLightningLane.click();
+          await waitFor(
+            () => !document.querySelector(".lightning-lane-row") && document.querySelector(".lightning-lane-empty"),
+            "restored empty Lightning Lane state",
+          );
+
           const activities = buttonNamed(".section-tab", "Activities");
           if (!activities) throw new Error("Activities tab is missing");
           activities.click();
@@ -272,6 +296,7 @@ async function run() {
             viewport: [window.innerWidth, window.innerHeight],
             navButtons: topButtons.length,
             navColumns,
+            lightningLaneRestored: !document.querySelector(".lightning-lane-row"),
             activitiesHeading: "Shows & family activities",
             characterPanel: characterPanel.querySelector("h3")?.textContent,
             selectedPark: document.querySelector(".command-center h2")?.textContent,
@@ -290,6 +315,7 @@ async function run() {
     assert.deepEqual(result.viewport, [390, 844]);
     assert.equal(result.navButtons, 6);
     assert.equal(result.navColumns, 3);
+    assert.equal(result.lightningLaneRestored, true);
     assert.equal(result.activitiesHeading, "Shows & family activities");
     assert.equal(result.characterPanel, "Characters & meet-and-greets");
     assert.equal(result.selectedPark, "Epcot");

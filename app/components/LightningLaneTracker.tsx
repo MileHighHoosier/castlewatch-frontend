@@ -138,9 +138,9 @@ function updateAddReadyState(form: HTMLFormElement) {
   addButton.textContent = ready ? "Add ready" : "Add";
 }
 
-function renderLightningLaneTracker() {
+function renderLightningLaneTracker(force = false) {
   const activeElement = document.activeElement;
-  if (activeElement?.closest?.(".lightning-lane-tracker")) return;
+  if (!force && activeElement?.closest?.(".lightning-lane-tracker")) return;
 
   const planPanel = Array.from(document.querySelectorAll(".compact-panel")).find((panel) => panel.querySelector(".next-move-card"));
   if (!planPanel) return;
@@ -223,7 +223,7 @@ function renderLightningLaneTracker() {
       lane,
     ]);
     markSavedConfirmation();
-    renderLightningLaneTracker();
+    renderLightningLaneTracker(true);
   });
 
   const list = document.createElement("div");
@@ -254,7 +254,7 @@ function renderLightningLaneTracker() {
       used.textContent = lane.used ? "Undo" : "Used";
       used.addEventListener("click", () => {
         saveLanes(readLanes().map((nextLane) => nextLane.id === lane.id ? { ...nextLane, used: !nextLane.used } : nextLane));
-        renderLightningLaneTracker();
+        renderLightningLaneTracker(true);
       });
 
       const remove = document.createElement("button");
@@ -262,7 +262,7 @@ function renderLightningLaneTracker() {
       remove.textContent = "Remove";
       remove.addEventListener("click", () => {
         saveLanes(readLanes().filter((nextLane) => nextLane.id !== lane.id));
-        renderLightningLaneTracker();
+        renderLightningLaneTracker(true);
       });
 
       actions.appendChild(used);

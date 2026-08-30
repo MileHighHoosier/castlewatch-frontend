@@ -51,8 +51,29 @@ test("closed rides and non-ride attractions stay out of live ride-demand candida
   assert.equal(isOpenRide(ride()), true);
   assert.equal(isOpenRide(ride({ is_open: false })), false);
   assert.equal(isPriorityRide(ride({ displayName: "Seven Dwarfs Mine Train" })), true);
+  assert.equal(isPriorityRide(ride({ displayName: "Disney Jr. Mickey Mouse Clubhouse Live!", displayLand: "Animation Courtyard" })), false);
   assert.equal(isPriorityRide(ride({ displayName: "Tree of Life", displayLand: "Discovery Island Trails" })), false);
   assert.equal(isPriorityRide(ride({ displayName: "Test Track Single Rider" })), false);
+});
+
+test("Disney Jr. Mickey Mouse Clubhouse Live never becomes a Live Plan candidate", () => {
+  const candidates = [
+    ride({
+      displayName: "Disney Jr. Mickey Mouse Clubhouse Live!",
+      displayPark: "Hollywood Studios",
+      displayLand: "Animation Courtyard",
+      displayWait: 0,
+    }),
+    ride({
+      displayName: "Mickey & Minnie's Runaway Railway",
+      displayPark: "Hollywood Studios",
+      displayLand: "Hollywood Boulevard",
+      displayWait: 15,
+    }),
+  ].filter(isPriorityRide);
+
+  assert.deepEqual(candidates.map((candidate) => candidate.displayName), ["Mickey & Minnie's Runaway Railway"]);
+  assert.equal(pickPlanRecommendation("lowStress", candidates).title, "Mickey & Minnie's Runaway Railway");
 });
 
 test("ride-area pressure boundaries remain stable", () => {

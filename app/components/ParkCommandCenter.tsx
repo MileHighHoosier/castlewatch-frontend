@@ -144,6 +144,7 @@ const SHOW_KEYWORDS = [
   "finding nemo",
   "indiana jones",
   "little mermaid - a musical adventure",
+  "mickey mouse clubhouse",
   "muppet",
   "short film",
   "sing-along",

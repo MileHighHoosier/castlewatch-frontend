@@ -151,6 +151,19 @@ test("seated shows retain show and cooling guidance", () => {
   assert.equal(getActivityUseCase(show), "Seated show / A/C break.");
 });
 
+test("Disney Jr. Mickey Mouse Clubhouse Live remains a show activity", () => {
+  const show = experience({
+    displayName: "Disney Jr. Mickey Mouse Clubhouse Live!",
+    displayPark: "Hollywood Studios",
+    displayLand: "Animation Courtyard",
+    displayWait: 0,
+  });
+
+  assert.equal(isActivityCandidate(show), true);
+  assert.ok(getActivityBadges(show).includes("Show"));
+  assert.equal(getActivityUseCase(show), "Character moment. Check timing buffer.");
+});
+
 test("kid-reset activities retain their distinct family-use guidance", () => {
   const reset = experience({ displayName: "The Boneyard", displayLand: "DinoLand U.S.A." });
   assert.ok(getActivityBadges(reset).includes("Kid reset"));

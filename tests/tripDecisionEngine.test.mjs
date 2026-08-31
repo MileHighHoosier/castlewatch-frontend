@@ -190,3 +190,120 @@ test("a clean base plan returns Keep and remains user controlled", () => {
   assert.ok(result.nextActions.some((action) => /keep the park order/i.test(action)));
   assert.equal(result.blockers.length, 0);
 });
+
+test("each scenario exposes the typed evidence contract and totals its contributions", () => {
+  const result = decision();
+  const expectedProvenance = new Set([
+    "backend:event-calendar",
+    "backend:historical-forecast",
+    "browser:trip-reservations",
+    "browser:resort-plan",
+  ]);
+
+  for (const scenario of Object.values(result.scenarios)) {
+    assert.ok(scenario.evidence.length >= 10);
+    for (const item of scenario.evidence) {
+      assert.ok(item.id);
+      assert.ok(item.signal);
+      assert.ok(item.availability);
+      assert.ok(expectedProvenance.has(item.provenance));
+      assert.ok(item.freshness?.status);
+      assert.ok(item.freshness?.detail);
+      assert.ok(item.confidence);
+      assert.equal(Number.isFinite(item.contribution), true);
+      assert.ok(item.explanation);
+    }
+    const evidenceTotal = scenario.evidence.reduce((sum, item) => sum + item.contribution, 0);
+    assert.equal(scenario.score, Math.round(evidenceTotal * 10) / 10);
+  }
+});
+
+test("unavailable and stale evidence is explicit and contributes zero", () => {
+  const staleIntelligence = intelligence({
+    overallStatus: "stale",
+    recommendationStatus: "recommend_base",
+    baseRisk: 25,
+    alternateRisk: 10,
+  });
+  const unavailableForecasts = BASE_DAYS.map((day) => ({
+    ...day,
+    forecast: { status: "unavailable" },
+  }));
+  const unavailableAlternateForecasts = ALTERNATE_DAYS.map((day) => ({
+    ...day,
+    forecast: { status: "unavailable" },
+  }));
+
+  const result = decision({
+    intelligence: staleIntelligence,
+    baseDays: unavailableForecasts,
+    alternateDays: unavailableAlternateForecasts,
+  });
+
+  for (const scenario of Object.values(result.scenarios)) {
+    const staleEvent = scenario.evidence.find((item) => item.signal === "events");
+    assert.equal(staleEvent?.availability, "stale");
+    assert.equal(staleEvent?.freshness.status, "stale");
+    assert.equal(staleEvent?.contribution, 0);
+    assert.equal(scenario.eventRisk, 0);
+
+    const unavailableCrowds = scenario.evidence.filter((item) => item.signal === "historical_crowds");
+    assert.ok(unavailableCrowds.length > 0);
+    assert.ok(unavailableCrowds.every((item) => item.availability === "unavailable"));
+    assert.ok(unavailableCrowds.every((item) => item.contribution === 0));
+    assert.equal(scenario.forecastRisk, 0);
+  }
+});
+
+test("an unknown origin resort is not assignable and does not silently fall back", () => {
+  const result = decision({
+    resortPlan: {
+      ...RESOLVED_RESORT_PLAN,
+      "2027-10-09": "unknown-resort",
+    },
+  });
+
+  const baseEvidence = result.scenarios.base.evidence.find(
+    (item) => item.signal === "transportation" && item.affectedDate === "2027-10-10",
+  );
+  const alternateEvidence = result.scenarios.alternate.evidence.find(
+    (item) => item.signal === "transportation" && item.affectedDate === "2027-10-10",
+  );
+  assert.equal(baseEvidence?.availability, "not_assignable");
+  assert.equal(baseEvidence?.contribution, 0);
+  assert.equal(alternateEvidence?.availability, "not_assignable");
+  assert.equal(alternateEvidence?.contribution, 0);
+});
+
+test("baseline outcomes remain stable across keep, swap, wait and review fixtures", () => {
+  const fixtures = [
+    {
+      name: "keep",
+      expected: "keep",
+      overrides: { intelligence: intelligence({ baseRisk: 0, alternateRisk: 8 }) },
+    },
+    {
+      name: "swap",
+      expected: "swap",
+      overrides: { intelligence: intelligence({ recommendationStatus: "recommend_swap", baseRisk: 8, alternateRisk: 0 }) },
+    },
+    {
+      name: "wait",
+      expected: "wait",
+      overrides: { intelligence: intelligence({ overallStatus: "provisional", recommendationStatus: "wait_for_calendar", parkHoursStatus: "unreleased" }) },
+    },
+    {
+      name: "review",
+      expected: "review",
+      overrides: {
+        intelligence: intelligence({ recommendationStatus: "recommend_swap", baseRisk: 20, alternateRisk: 0 }),
+        reservations: [reservation({ date: "2027-10-13", location: "Epcot" })],
+      },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const result = decision(fixture.overrides);
+    assert.equal(result.status, fixture.expected, fixture.name);
+  }
+});

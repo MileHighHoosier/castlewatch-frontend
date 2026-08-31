@@ -182,7 +182,7 @@ export default function TripWeekDecisionCard({
       <div className="trip-decision-heading">
         <div>
           <h3>CastleWatch recommendation</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>Unified decision from events, bookings, resorts, transportation and historical signals.</p>
+          <p className="muted" style={{ marginBottom: 0 }}>Unified decision from events, bookings, resorts, transportation, historical signals, trustworthy weather and assignable Lightning Lane constraints.</p>
         </div>
         <span className="trip-decision-status">{statusLabel(decision, approval)}</span>
       </div>
@@ -232,6 +232,8 @@ export default function TripWeekDecisionCard({
                 <div>Reservations <strong>{scenario.reservationRisk}</strong></div>
                 <div>Travel <strong>{scenario.resortTravelRisk}</strong></div>
                 <div>Crowds <strong>{scenario.forecastRisk}</strong></div>
+                <div>Weather <strong>{scenario.weatherRisk}</strong></div>
+                <div>Lightning Lane <strong>{scenario.lightningLaneRisk}</strong></div>
               </div>
             </article>
           );

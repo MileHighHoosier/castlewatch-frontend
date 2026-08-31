@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import type { LightningLane } from "../lib/lightningLane";
 import {
+  LIGHTNING_LANE_PARKS,
+  LIGHTNING_LANE_STORAGE_KEY,
   formatLightningLaneWindow,
   isValidLightningLane,
   lightningLaneConflictNote,
@@ -12,7 +14,7 @@ import {
   sortLightningLanesByUrgency,
 } from "../lib/lightningLane";
 
-const STORAGE_KEY = "castlewatch.lightningLanes.v1";
+const STORAGE_KEY = LIGHTNING_LANE_STORAGE_KEY;
 const SAVED_CONFIRMATION_KEY = "castlewatch.lightningLaneSavedAt.v1";
 const PARK_RIDE_PRESETS: Record<string, string[]> = {
   "magic kingdom": [
@@ -52,6 +54,15 @@ const DEFAULT_RIDE_PRESETS = PARK_RIDE_PRESETS["magic kingdom"];
 
 function activeParkName() {
   return document.querySelector(".command-header h2")?.textContent?.trim() || "Magic Kingdom";
+}
+
+function currentTripAssignment(): Pick<LightningLane, "date" | "park"> | Record<string, never> {
+  const park = activeParkName();
+  if (!LIGHTNING_LANE_PARKS.includes(park as (typeof LIGHTNING_LANE_PARKS)[number])) return {};
+  return {
+    date: new Date().toLocaleDateString("en-CA"),
+    park: park as (typeof LIGHTNING_LANE_PARKS)[number],
+  };
 }
 
 function ridePresetsForCurrentPark() {
@@ -215,7 +226,14 @@ function renderLightningLaneTracker(force = false) {
     const name = String(data.get("name") || "").trim();
     const start = String(data.get("start") || "").trim();
     const end = String(data.get("end") || "").trim();
-    const lane = { id: `${Date.now()}`, name, start, end, used: false };
+    const lane = {
+      id: `${Date.now()}`,
+      name,
+      start,
+      end,
+      used: false,
+      ...currentTripAssignment(),
+    };
     if (!isValidLightningLane(lane)) return;
 
     saveLanes([
@@ -243,7 +261,8 @@ function renderLightningLaneTracker(force = false) {
       const rideName = document.createElement("strong");
       rideName.textContent = lane.name;
       const windowStatus = document.createElement("span");
-      windowStatus.textContent = `${formatLightningLaneWindow(lane.start, lane.end)} · ${lightningLaneStatus(lane)}`;
+      const assignment = lane.date && lane.park ? ` · ${lane.date} · ${lane.park}` : "";
+      windowStatus.textContent = `${formatLightningLaneWindow(lane.start, lane.end)} · ${lightningLaneStatus(lane)}${assignment}`;
       detail.append(rideName, windowStatus);
 
       const actions = document.createElement("div");

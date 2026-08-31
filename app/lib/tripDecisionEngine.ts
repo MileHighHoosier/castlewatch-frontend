@@ -3,9 +3,26 @@ import type { TripProfile, TripReservation } from "./tripProfile";
 import { buildReservationWarnings } from "./tripProfile";
 import {
   ResortPlan,
+  RESORT_OPTIONS,
   getResortOption,
   previousDate,
 } from "./tripResorts";
+import {
+  DecisionEvidence,
+  DecisionEvidenceAvailability,
+  DecisionEvidenceConfidence,
+  createDecisionEvidence,
+  sumDecisionEvidence,
+} from "./tripDecisionEvidence";
+
+export type {
+  DecisionEvidence,
+  DecisionEvidenceAvailability,
+  DecisionEvidenceConfidence,
+  DecisionEvidenceProvenance,
+  DecisionEvidenceFreshness,
+  DecisionSignalKind,
+} from "./tripDecisionEvidence";
 
 export type DecisionScenarioId = "base" | "alternate";
 export type DecisionStatus = "keep" | "swap" | "wait" | "review";
@@ -15,7 +32,7 @@ export type DecisionForecast = {
   status?: string;
   comparison?: string;
   summary?: string;
-  confidence?: { label?: string };
+  confidence?: { level?: string; label?: string };
   best_window?: { window?: string } | null;
   peak_window?: { window?: string } | null;
 };
@@ -40,6 +57,7 @@ export type DecisionScenario = {
   affectedConfirmed: TripReservation[];
   affectedProvisional: TripReservation[];
   reasons: string[];
+  evidence: DecisionEvidence[];
 };
 
 export type DecisionReadiness = {
@@ -88,7 +106,7 @@ function scenarioAssignments(days: DecisionDay[]) {
 }
 
 function forecastPenalty(forecast?: DecisionForecast) {
-  if (!forecast || forecast.status === "unavailable") return 1;
+  if (!forecast || forecast.status === "unavailable") return 0;
   const penalties: Record<string, number> = {
     noticeably_busier: 4,
     slightly_busier: 2,
@@ -100,6 +118,14 @@ function forecastPenalty(forecast?: DecisionForecast) {
   const confidence = (forecast.confidence?.label || "").toLowerCase();
   if (confidence.includes("early") || confidence.includes("low")) return Math.round(base * 0.5 * 10) / 10;
   return base;
+}
+
+function forecastConfidence(forecast?: DecisionForecast): DecisionEvidenceConfidence {
+  const confidence = `${forecast?.confidence?.level || ""} ${forecast?.confidence?.label || ""}`.toLowerCase();
+  if (confidence.includes("high") || confidence.includes("higher")) return "high";
+  if (confidence.includes("medium")) return "medium";
+  if (confidence.includes("low") || confidence.includes("early")) return "low";
+  return forecast ? "low" : "not_applicable";
 }
 
 function reservationImpact(
@@ -158,31 +184,75 @@ function resortTravelPenalty(resortId: string | undefined, park: string) {
 function scenarioResortRisk(assignments: Record<string, string>, resortPlan: ResortPlan) {
   let score = 0;
   const notes: string[] = [];
+  const evidence: DecisionEvidence[] = [];
 
   for (const [date, park] of Object.entries(assignments)) {
     const originNight = previousDate(date);
-    const result = resortTravelPenalty(resortPlan[originNight], park);
-    score += result.score;
+    const resortId = resortPlan[originNight];
+    const resortKnown = Boolean(resortId && RESORT_OPTIONS.some((resort) => resort.id === resortId));
+    const result = resortKnown ? resortTravelPenalty(resortId, park) : {
+      score: 0,
+      note: `The origin resort for ${park} on ${date} is not assignable yet.`,
+    };
+    const item = createDecisionEvidence({
+      id: `transportation:${date}:${park}`,
+      signal: "transportation",
+      label: `${park} transportation`,
+      availability: resortKnown ? "available" : "not_assignable",
+      provenance: "browser:resort-plan",
+      freshness: {
+        status: "not_applicable",
+        detail: "The saved overnight resort is a planning selection rather than time-sensitive live evidence.",
+      },
+      confidence: !resortKnown ? "not_applicable" : resortId === "value_tbd" ? "low" : "medium",
+      contribution: result.score,
+      explanation: result.note,
+      affectedDate: date,
+      affectedPark: park,
+    });
+    evidence.push(item);
+    score += item.contribution;
     if (result.score === 0 || result.score >= 3) notes.push(result.note);
   }
 
-  return { score, notes: Array.from(new Set(notes)) };
+  return { score: Math.round(score * 10) / 10, notes: Array.from(new Set(notes)), evidence };
 }
 
 function scenarioForecastRisk(days: DecisionDay[]) {
   let score = 0;
   const notes: string[] = [];
+  const evidence: DecisionEvidence[] = [];
 
   for (const day of days) {
     if (!day.park) continue;
+    const available = Boolean(day.forecast && day.forecast.status !== "unavailable");
     const penalty = forecastPenalty(day.forecast);
-    score += penalty;
+    const item = createDecisionEvidence({
+      id: `historical-crowds:${day.date}:${day.park}`,
+      signal: "historical_crowds",
+      label: `${day.park} historical crowd signal`,
+      availability: available ? "available" : "unavailable",
+      provenance: "backend:historical-forecast",
+      freshness: {
+        status: "not_applicable",
+        detail: "This is historical directional evidence for a target date, not a live 2027 prediction.",
+      },
+      confidence: available ? forecastConfidence(day.forecast) : "not_applicable",
+      contribution: penalty,
+      explanation: available
+        ? day.forecast?.summary || `${day.park} has a ${day.forecast?.comparison || "typical"} historical signal for ${day.date}.`
+        : `Historical crowd evidence is unavailable for ${day.park} on ${day.date}; it does not affect the score.`,
+      affectedDate: day.date,
+      affectedPark: day.park,
+    });
+    evidence.push(item);
+    score += item.contribution;
     const comparison = day.forecast?.comparison;
     if (comparison === "noticeably_busier") notes.push(`${day.park} on ${day.date} has a noticeably busier historical signal.`);
     if (comparison === "noticeably_quieter") notes.push(`${day.park} on ${day.date} has a noticeably quieter historical signal.`);
   }
 
-  return { score: Math.round(score * 10) / 10, notes };
+  return { score: Math.round(score * 10) / 10, notes, evidence };
 }
 
 function scenarioEventRisk(
@@ -190,10 +260,67 @@ function scenarioEventRisk(
   intelligence?: SpecialEventIntelligenceData,
 ) {
   const scenario = intelligence?.scenarios?.[id];
+  let availability: DecisionEvidenceAvailability = "available";
+  if (!scenario || intelligence?.overall_status === "unavailable") availability = "unavailable";
+  if (intelligence?.overall_status === "stale") availability = "stale";
+  const rawScore = Number(scenario?.event_risk_score || 0);
+  const evidence = createDecisionEvidence({
+    id: `events:${id}`,
+    signal: "events",
+    label: `${id === "base" ? "Base plan" : "MNSSHP alternate"} event/calendar signal`,
+    availability,
+    provenance: "backend:event-calendar",
+    freshness: {
+      status: availability === "stale" ? "stale" : intelligence?.generated_at ? "current" : "unknown",
+      observedAt: intelligence?.generated_at,
+      detail: availability === "stale"
+        ? "The calendar source is stale, so cached event risk is shown but does not affect the score."
+        : intelligence?.generated_at
+          ? "Generated with the current Trip Week event-intelligence response."
+          : "The event-intelligence response did not provide a generation time.",
+    },
+    confidence: availability !== "available"
+      ? "not_applicable"
+      : intelligence?.overall_status === "official"
+        ? "high"
+        : intelligence?.overall_status === "partial"
+          ? "medium"
+          : "low",
+    contribution: rawScore,
+    explanation: scenario?.reasons?.join(" ")
+      || (availability === "available"
+        ? "No event-specific risk was reported for this scenario."
+        : "Event/calendar evidence is unavailable and does not affect the score."),
+  });
   return {
-    score: Number(scenario?.event_risk_score || 0),
+    score: evidence.contribution,
     notes: scenario?.reasons || [],
+    evidence,
   };
+}
+
+function reservationEvidence(
+  id: DecisionScenarioId,
+  reservation: ReturnType<typeof reservationImpact>,
+  noParkHopping: boolean,
+) {
+  const affected = reservation.confirmed.length + reservation.provisional.length;
+  return createDecisionEvidence({
+    id: `reservations:${id}`,
+    signal: "reservations",
+    label: `${id === "base" ? "Base plan" : "MNSSHP alternate"} reservation impact`,
+    availability: "available",
+    provenance: "browser:trip-reservations",
+    freshness: {
+      status: "not_applicable",
+      detail: "This contribution comes from the current browser-local reservation snapshot.",
+    },
+    confidence: affected ? "high" : "medium",
+    contribution: reservation.score,
+    explanation: affected
+      ? `${reservation.confirmed.length} confirmed and ${reservation.provisional.length} provisional reservation conflicts are assigned to this park order${noParkHopping ? " with no park hopping" : ""}.`
+      : "No saved reservation conflicts are assigned to this park order.",
+  });
 }
 
 function buildScenario(
@@ -207,9 +334,16 @@ function buildScenario(
   const assignments = scenarioAssignments(days);
   const event = scenarioEventRisk(id, intelligence);
   const reservation = reservationImpact(assignments, reservations, profile.noParkHopping);
+  const reservationSignal = reservationEvidence(id, reservation, profile.noParkHopping);
   const resort = scenarioResortRisk(assignments, resortPlan);
   const forecast = scenarioForecastRisk(days);
-  const score = Math.round((event.score + reservation.score + resort.score + forecast.score) * 10) / 10;
+  const evidence = [
+    event.evidence,
+    reservationSignal,
+    ...resort.evidence,
+    ...forecast.evidence,
+  ];
+  const score = sumDecisionEvidence(evidence);
 
   const reasons = [
     ...event.notes,
@@ -228,13 +362,14 @@ function buildScenario(
     id,
     label: id === "base" ? "Base plan" : "MNSSHP alternate",
     score,
-    eventRisk: event.score,
-    reservationRisk: reservation.score,
-    resortTravelRisk: resort.score,
-    forecastRisk: forecast.score,
+    eventRisk: sumDecisionEvidence(evidence, "events"),
+    reservationRisk: sumDecisionEvidence(evidence, "reservations"),
+    resortTravelRisk: sumDecisionEvidence(evidence, "transportation"),
+    forecastRisk: sumDecisionEvidence(evidence, "historical_crowds"),
     affectedConfirmed: reservation.confirmed,
     affectedProvisional: reservation.provisional,
     reasons: Array.from(new Set(reasons)).slice(0, 8),
+    evidence,
   };
 }
 

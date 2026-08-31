@@ -13,6 +13,8 @@ import {
   saveResortPlan,
 } from "../lib/tripResorts";
 import {
+  getResortTransferRoute,
+  getResortTransportationRoute,
   projectTransportationArrival,
   transportationLeaveBy,
 } from "../lib/transportationPlanning";
@@ -123,7 +125,7 @@ function busToPark(date: string, title: string, resort: ResortOption, park: stri
   const short = resort.shortName;
   const destination = park;
   const boarding = park;
-  const isAklToAk = resort.category === "akl" && park === "Animal Kingdom";
+  const timing = getResortTransportationRoute(resort.id, park);
   return {
     key: `${date}-${resort.id}-${park}`,
     date,
@@ -136,10 +138,10 @@ function busToPark(date: string, title: string, resort: ResortOption, park: stri
     boardingLabel: boarding,
     routeNumber: `No public route number — board the bus marked ${destination}`,
     publishedSchedule: "No fixed public timetable — use the resort display or My Disney Experience",
-    travelMin: isAklToAk ? 10 : 20,
-    travelMax: isAklToAk ? 25 : 45,
-    walkToStop: 10,
-    arrivalBuffer: 15,
+    travelMin: timing.travelMin,
+    travelMax: timing.travelMax,
+    walkToStop: timing.walkToStop,
+    arrivalBuffer: timing.arrivalBuffer,
     steps: [
       `Walk from ${short} to its Disney bus stop.`,
       `Join the queue marked ${destination}.`,
@@ -152,13 +154,14 @@ function busToPark(date: string, title: string, resort: ResortOption, park: stri
 }
 
 function parkRoute(date: string, title: string, resort: ResortOption, park: string, note?: string): RoutePlan {
+  const timing = getResortTransportationRoute(resort.id, park);
   if (park === "Epcot" && resort.category === "skyliner") {
     return {
       key:`${date}-${resort.id}-epcot-skyliner`, date, title, from:resort.shortName, to:"Epcot International Gateway",
       targetLabel:"Desired gate arrival", defaultTarget:"08:00", primary:"Disney Skyliner to Epcot",
       boardingLabel:"Epcot Skyliner direction", routeNumber:"No route number — follow signs for the Epcot line",
       publishedSchedule:"Continuous service when operating; weather can pause the Skyliner",
-      travelMin:20, travelMax:40, walkToStop:10, arrivalBuffer:15,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Walk from ${resort.shortName} to the Skyliner station.`, "Ride toward Caribbean Beach and transfer if directed.", "Exit at Epcot International Gateway and continue through security."],
       backup:"Use the destination-labeled Epcot bus or rideshare if Skyliner service is unavailable.", note, busAssist:false,
     };
@@ -170,7 +173,7 @@ function parkRoute(date: string, title: string, resort: ResortOption, park: stri
       targetLabel:"Desired gate arrival", defaultTarget:"08:00", primary:"Disney Skyliner to Hollywood Studios",
       boardingLabel:"Hollywood Studios Skyliner direction", routeNumber:"No route number — follow signs for Hollywood Studios",
       publishedSchedule:"Continuous service when operating; weather can pause the Skyliner",
-      travelMin:15, travelMax:35, walkToStop:10, arrivalBuffer:15,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Walk from ${resort.shortName} to the Skyliner station.`, "Transfer at Caribbean Beach if directed.", "Exit at Hollywood Studios and continue to security."],
       backup:"Use the destination-labeled Hollywood Studios bus or rideshare if Skyliner service is unavailable.", note, busAssist:false,
     };
@@ -182,7 +185,7 @@ function parkRoute(date: string, title: string, resort: ResortOption, park: stri
       targetLabel:"Desired gate arrival", defaultTarget:"08:00", primary:"Walk to International Gateway",
       boardingLabel:"No vehicle needed", routeNumber:"No route number — use the signed walking path",
       publishedSchedule:"Walking path is always available; Friendship Boat is the slower alternative",
-      travelMin:10, travelMax:20, walkToStop:5, arrivalBuffer:15,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Leave ${resort.shortName} toward Crescent Lake.`, "Follow signs to Epcot International Gateway.", "Enter through International Gateway rather than the front entrance."],
       backup:"Use the Friendship Boat when operating if walking is undesirable.", note, busAssist:false,
     };
@@ -194,7 +197,7 @@ function parkRoute(date: string, title: string, resort: ResortOption, park: stri
       targetLabel:"Desired gate arrival", defaultTarget:"08:00", primary:"Walk or Friendship Boat",
       boardingLabel:"Hollywood Studios boat direction", routeNumber:"No route number — board the Friendship Boat marked Hollywood Studios",
       publishedSchedule:"Boats run continuously when operating; walking is usually more predictable",
-      travelMin:20, travelMax:40, walkToStop:5, arrivalBuffer:15,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Leave ${resort.shortName} toward Crescent Lake.`, "Walk the signed path to Hollywood Studios or board the Friendship Boat.", "Continue through security at Hollywood Studios."],
       backup:"Use rideshare when time is tight or boat service is delayed.", note, busAssist:false,
     };
@@ -209,7 +212,7 @@ function parkRoute(date: string, title: string, resort: ResortOption, park: stri
       boardingLabel: contemporary ? "No vehicle needed" : "Magic Kingdom direction",
       routeNumber:"No route number — use the walking path, Resort Monorail or resort boat",
       publishedSchedule:"Continuous resort transportation when operating",
-      travelMin:10, travelMax:30, walkToStop:5, arrivalBuffer:15,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps: contemporary
         ? ["Follow the signed walking path from Contemporary to Magic Kingdom.", "Continue through security and the tapstiles."]
         : [`Walk from ${resort.shortName} to the monorail platform or boat dock.`, "Use the Magic Kingdom direction.", "Continue through security and the tapstiles."],
@@ -221,12 +224,13 @@ function parkRoute(date: string, title: string, resort: ResortOption, park: stri
 }
 
 function diningRoute(date: string, resort: ResortOption): RoutePlan {
+  const timing = getResortTransportationRoute(resort.id, "Grand Floridian");
   if (resort.id === "grand") {
     return {
       key:`${date}-${resort.id}-1900`, date, title:"Tuesday: 1900 Park Fare", from:resort.shortName, to:"1900 Park Fare",
       targetLabel:"Desired restaurant arrival", defaultTarget:"17:30", primary:"Walk inside Grand Floridian",
       boardingLabel:"No vehicle needed", routeNumber:"No route number", publishedSchedule:"No transportation required",
-      travelMin:5, travelMax:10, walkToStop:0, arrivalBuffer:10,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:["Walk through Grand Floridian to 1900 Park Fare."], backup:"Ask a Cast Member for directions inside the resort.", busAssist:false,
     };
   }
@@ -237,7 +241,7 @@ function diningRoute(date: string, resort: ResortOption): RoutePlan {
       targetLabel:"Desired restaurant arrival", defaultTarget:"17:30", primary:"Resort Monorail or resort boat",
       boardingLabel:"Grand Floridian direction", routeNumber:"No route number — use Resort Monorail or resort boat",
       publishedSchedule:"Continuous resort transportation when operating",
-      travelMin:15, travelMax:35, walkToStop:5, arrivalBuffer:10,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Walk from ${resort.shortName} to its monorail platform or boat dock.`, "Travel to Grand Floridian.", "Walk to 1900 Park Fare."],
       backup:"Use Minnie Van or rideshare for a hard dining deadline.", busAssist:false,
     };
@@ -248,19 +252,20 @@ function diningRoute(date: string, resort: ResortOption): RoutePlan {
     targetLabel:"Desired restaurant arrival", defaultTarget:"17:30", primary:"Bus to Magic Kingdom, then Resort Monorail or boat",
     boardingLabel:"Magic Kingdom", routeNumber:"No public route number — first board the bus marked Magic Kingdom",
     publishedSchedule:"No fixed public timetable — allow extra transfer time",
-    travelMin:50, travelMax:75, walkToStop:10, arrivalBuffer:10,
+    travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
     steps:[`Walk from ${resort.shortName} to its bus stop.`, "Board the bus labeled Magic Kingdom.", "At Magic Kingdom, follow signs to the Resort Monorail or Grand Floridian boat dock.", "Exit at Grand Floridian and walk to 1900 Park Fare."],
     backup:"Minnie Van or rideshare is the safer backup for a hard reservation time.", busAssist:true,
   };
 }
 
 function transferRoute(date: string, origin: ResortOption, destination: ResortOption): RoutePlan {
+  const timing = getResortTransferRoute(origin.id, destination.id);
   if (origin.id === destination.id) {
     return {
       key:`${date}-${origin.id}-same`, date, title:`Friday: stay at ${destination.shortName}`, from:origin.shortName, to:destination.shortName,
       targetLabel:"Desired resort arrival", defaultTarget:"15:00", primary:"No resort transfer needed",
       boardingLabel:"No vehicle needed", routeNumber:"No route number", publishedSchedule:"No transportation required",
-      travelMin:0, travelMax:0, walkToStop:0, arrivalBuffer:0,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:["Keep the same resort room plan unless the reservation changes."], backup:"None needed.", busAssist:false,
     };
   }
@@ -271,7 +276,7 @@ function transferRoute(date: string, origin: ResortOption, destination: ResortOp
       targetLabel:"Desired new-resort arrival", defaultTarget:"15:00", primary:"Bus to Animal Kingdom, then bus to the selected AKL building",
       boardingLabel:"Animal Kingdom first", routeNumber:"No public route number — use destination-labeled buses",
       publishedSchedule:"No direct resort-to-resort timetable; this route requires a transfer",
-      travelMin:45, travelMax:75, walkToStop:10, arrivalBuffer:0,
+      travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
       steps:[`Board the Animal Kingdom bus at ${origin.shortName}.`, "At Animal Kingdom, locate the resort-bus load zones.", `Board the bus labeled ${destination.name}.`, `Confirm ${destination.shortName} before boarding.`],
       backup:"Use Disney luggage transfer for bags and rideshare for the family; that is usually simpler than the free two-bus route.", busAssist:true,
     };
@@ -283,7 +288,7 @@ function transferRoute(date: string, origin: ResortOption, destination: ResortOp
     targetLabel:"Desired new-resort arrival", defaultTarget:"15:00", primary:`Bus to ${hub}, then continue to ${destination.shortName}`,
     boardingLabel:`${hub} first`, routeNumber:"No public route number — use destination-labeled transportation",
     publishedSchedule:"No direct resort-to-resort timetable; allow transfer time",
-    travelMin:45, travelMax:80, walkToStop:10, arrivalBuffer:0,
+    travelMin:timing.travelMin, travelMax:timing.travelMax, walkToStop:timing.walkToStop, arrivalBuffer:timing.arrivalBuffer,
     steps:[`Board the ${hub} bus at ${origin.shortName}.`, `At ${hub}, follow signs for transportation to ${destination.shortName}.`, `Confirm the destination before boarding.`],
     backup:"Use Disney luggage transfer for bags and rideshare for the family when changing resorts.", busAssist:true,
   };

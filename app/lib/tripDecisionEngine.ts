@@ -3,10 +3,12 @@ import type { TripProfile, TripReservation } from "./tripProfile";
 import { buildReservationWarnings } from "./tripProfile";
 import {
   ResortPlan,
-  RESORT_OPTIONS,
-  getResortOption,
   previousDate,
 } from "./tripResorts";
+import {
+  getResortTransportationRoute,
+  transportationRouteRisk,
+} from "./transportationPlanning";
 import {
   DecisionEvidence,
   DecisionEvidenceAvailability,
@@ -153,34 +155,6 @@ function reservationImpact(
   };
 }
 
-function resortTravelPenalty(resortId: string | undefined, park: string) {
-  const resort = getResortOption(resortId);
-
-  if (park === "Epcot") {
-    if (resort.category === "epcot-resort") return { score: 0, note: `${resort.shortName} gives EPCOT its strongest access advantage.` };
-    if (resort.category === "skyliner" || resort.category === "monorail-resort") return { score: 1, note: `${resort.shortName} has a useful EPCOT connection.` };
-    return { score: 3, note: `${resort.shortName} requires a longer EPCOT transfer.` };
-  }
-
-  if (park === "Hollywood Studios") {
-    if (resort.category === "epcot-resort" || resort.category === "skyliner") return { score: 0, note: `${resort.shortName} is well positioned for Hollywood Studios.` };
-    return { score: 2, note: `${resort.shortName} normally requires bus transportation to Hollywood Studios.` };
-  }
-
-  if (park === "Magic Kingdom") {
-    if (resort.category === "monorail-resort") return { score: 0, note: `${resort.shortName} is highly convenient for Magic Kingdom.` };
-    if (resort.category === "epcot-resort" || resort.category === "akl") return { score: 4, note: `${resort.shortName} is a relatively long Magic Kingdom transfer.` };
-    return { score: 2, note: `${resort.shortName} uses direct destination-labeled bus service to Magic Kingdom.` };
-  }
-
-  if (park === "Animal Kingdom") {
-    if (resort.category === "akl") return { score: 0, note: `${resort.shortName} is the strongest location for Animal Kingdom.` };
-    return { score: 2, note: `${resort.shortName} normally requires bus transportation to Animal Kingdom.` };
-  }
-
-  return { score: 2, note: `${resort.shortName} has standard Disney transportation access.` };
-}
-
 function scenarioResortRisk(assignments: Record<string, string>, resortPlan: ResortPlan) {
   let score = 0;
   const notes: string[] = [];
@@ -189,30 +163,29 @@ function scenarioResortRisk(assignments: Record<string, string>, resortPlan: Res
   for (const [date, park] of Object.entries(assignments)) {
     const originNight = previousDate(date);
     const resortId = resortPlan[originNight];
-    const resortKnown = Boolean(resortId && RESORT_OPTIONS.some((resort) => resort.id === resortId));
-    const result = resortKnown ? resortTravelPenalty(resortId, park) : {
-      score: 0,
-      note: `The origin resort for ${park} on ${date} is not assignable yet.`,
-    };
+    const route = getResortTransportationRoute(resortId, park);
+    const routeRisk = transportationRouteRisk(route);
     const item = createDecisionEvidence({
       id: `transportation:${date}:${park}`,
       signal: "transportation",
       label: `${park} transportation`,
-      availability: resortKnown ? "available" : "not_assignable",
+      availability: route.assignable ? "available" : "not_assignable",
       provenance: "browser:resort-plan",
       freshness: {
         status: "not_applicable",
         detail: "The saved overnight resort is a planning selection rather than time-sensitive live evidence.",
       },
-      confidence: !resortKnown ? "not_applicable" : resortId === "value_tbd" ? "low" : "medium",
-      contribution: result.score,
-      explanation: result.note,
+      confidence: !route.assignable ? "not_applicable" : resortId === "value_tbd" ? "low" : "medium",
+      contribution: routeRisk,
+      explanation: route.assignable
+        ? `${route.explanation} This route is assigned from the ${originNight} overnight stay.`
+        : `The origin resort for ${park} on ${date} is not assignable yet.`,
       affectedDate: date,
       affectedPark: park,
     });
     evidence.push(item);
     score += item.contribution;
-    if (result.score === 0 || result.score >= 3) notes.push(result.note);
+    if (routeRisk === 0 || routeRisk >= 3) notes.push(item.explanation);
   }
 
   return { score: Math.round(score * 10) / 10, notes: Array.from(new Set(notes)), evidence };

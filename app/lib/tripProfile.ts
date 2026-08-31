@@ -1,4 +1,5 @@
-import { ResortPlan, getResortOption, previousDate } from "./tripResorts";
+import { ResortPlan, previousDate } from "./tripResorts";
+import { getResortTransportationRoute } from "./transportationPlanning";
 
 export type TripProfile = {
   tripName: string;
@@ -152,58 +153,21 @@ function originNightForReservation(reservation: TripReservation) {
     : previousDate(reservation.date);
 }
 
-function routeFromResort(resortId: string | undefined, location: string) {
-  const resort = getResortOption(resortId);
-  const short = resort.shortName;
-
-  if (location === "MCO Departure") {
-    return { origin: short, route: "Rideshare, rental car or airport transfer", travelMinutes: 75 };
-  }
-  if (location === "MCO Arrival") {
-    return { origin: "MCO", route: "Arrival transport to the selected resort", travelMinutes: 0 };
-  }
-  if (location === "Epcot" && resort.category === "epcot-resort") {
-    return { origin: short, route: "Walk to Epcot International Gateway", travelMinutes: 25 };
-  }
-  if (location === "Epcot" && resort.category === "skyliner") {
-    return { origin: short, route: "Disney Skyliner to Epcot", travelMinutes: 55 };
-  }
-  if (location === "Hollywood Studios" && resort.category === "skyliner") {
-    return { origin: short, route: "Disney Skyliner to Hollywood Studios", travelMinutes: 50 };
-  }
-  if (location === "Hollywood Studios" && resort.category === "epcot-resort") {
-    return { origin: short, route: "Walk or Friendship Boat to Hollywood Studios", travelMinutes: 50 };
-  }
-  if (location === "Magic Kingdom" && resort.category === "monorail-resort") {
-    return { origin: short, route: resort.id === "contemporary" ? "Walk to Magic Kingdom" : "Resort Monorail or boat", travelMinutes: 40 };
-  }
-  if (location === "Grand Floridian" && resort.category === "monorail-resort") {
-    return { origin: short, route: "Resort Monorail or boat to Grand Floridian", travelMinutes: 45 };
-  }
-  if (location === "Grand Floridian") {
-    return { origin: short, route: "Bus to Magic Kingdom, then Resort Monorail or boat", travelMinutes: 95 };
-  }
-  if (location === "Beach Club" && resort.category === "epcot-resort") {
-    return { origin: short, route: "Walk within the Epcot resort area", travelMinutes: 25 };
-  }
-  if (location === "Animal Kingdom Lodge" && resort.category === "akl") {
-    return { origin: short, route: "Walk or internal resort transportation", travelMinutes: 20 };
-  }
-  if (["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"].includes(location)) {
-    const fasterAk = resort.category === "akl" && location === "Animal Kingdom";
-    return { origin: short, route: `Disney bus labeled ${location}`, travelMinutes: fasterAk ? 50 : 75 };
-  }
-
-  return { origin: short, route: "Disney transportation or rideshare", travelMinutes: 75 };
-}
-
 export function reservationPlan(reservation: TripReservation, resortPlan: ResortPlan): ReservationPlan {
   if (!reservation.time) {
     return { route: "Add a time to calculate leave-by guidance.", origin: "", travelMinutes: 0 };
   }
 
   const originNight = originNightForReservation(reservation);
-  const route = routeFromResort(originNight ? resortPlan[originNight] : undefined, reservation.location);
+  const timing = getResortTransportationRoute(
+    originNight ? resortPlan[originNight] : undefined,
+    reservation.location,
+  );
+  const route = {
+    origin: timing.origin,
+    route: timing.mode,
+    travelMinutes: timing.walkToStop + timing.travelMax,
+  };
 
   if (reservation.location === "MCO Arrival") {
     return { ...route };

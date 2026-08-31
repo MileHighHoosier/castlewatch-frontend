@@ -1,6 +1,8 @@
 import type { SpecialEventIntelligenceData, SpecialEventSignal } from "../components/SpecialEventIntelligence";
 import type { TripProfile, TripReservation } from "./tripProfile";
 import { buildReservationWarnings } from "./tripProfile";
+import type { LightningLane } from "./lightningLane";
+import type { TripWeatherSnapshot } from "./weatherReliability";
 import {
   ResortPlan,
   previousDate,
@@ -16,6 +18,10 @@ import {
   createDecisionEvidence,
   sumDecisionEvidence,
 } from "./tripDecisionEvidence";
+import {
+  scenarioLightningLaneEvidence,
+  scenarioWeatherEvidence,
+} from "./tripDecisionPlanningSignals";
 
 export type {
   DecisionEvidence,
@@ -56,6 +62,8 @@ export type DecisionScenario = {
   reservationRisk: number;
   resortTravelRisk: number;
   forecastRisk: number;
+  weatherRisk: number;
+  lightningLaneRisk: number;
   affectedConfirmed: TripReservation[];
   affectedProvisional: TripReservation[];
   reasons: string[];
@@ -91,6 +99,9 @@ type BuildDecisionInput = {
   reservations: TripReservation[];
   resortPlan: ResortPlan;
   profile: TripProfile;
+  weather?: TripWeatherSnapshot | null;
+  lightningLanes?: LightningLane[];
+  nowIso?: string;
 };
 
 const PARKS = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"];
@@ -303,6 +314,9 @@ function buildScenario(
   reservations: TripReservation[],
   resortPlan: ResortPlan,
   profile: TripProfile,
+  weather: TripWeatherSnapshot | null | undefined,
+  lightningLanes: LightningLane[],
+  nowIso: string,
 ): DecisionScenario {
   const assignments = scenarioAssignments(days);
   const event = scenarioEventRisk(id, intelligence);
@@ -310,11 +324,15 @@ function buildScenario(
   const reservationSignal = reservationEvidence(id, reservation, profile.noParkHopping);
   const resort = scenarioResortRisk(assignments, resortPlan);
   const forecast = scenarioForecastRisk(days);
+  const weatherEvidence = scenarioWeatherEvidence(days, weather, nowIso);
+  const lightningLane = scenarioLightningLaneEvidence(id, days, lightningLanes, profile.noParkHopping);
   const evidence = [
     event.evidence,
     reservationSignal,
     ...resort.evidence,
     ...forecast.evidence,
+    ...weatherEvidence,
+    ...lightningLane.evidence,
   ];
   const score = sumDecisionEvidence(evidence);
 
@@ -322,6 +340,7 @@ function buildScenario(
     ...event.notes,
     ...resort.notes,
     ...forecast.notes,
+    ...lightningLane.notes,
   ];
 
   if (reservation.confirmed.length) {
@@ -339,6 +358,8 @@ function buildScenario(
     reservationRisk: sumDecisionEvidence(evidence, "reservations"),
     resortTravelRisk: sumDecisionEvidence(evidence, "transportation"),
     forecastRisk: sumDecisionEvidence(evidence, "historical_crowds"),
+    weatherRisk: sumDecisionEvidence(evidence, "weather"),
+    lightningLaneRisk: sumDecisionEvidence(evidence, "lightning_lane"),
     affectedConfirmed: reservation.confirmed,
     affectedProvisional: reservation.provisional,
     reasons: Array.from(new Set(reasons)).slice(0, 8),
@@ -392,16 +413,34 @@ function forecastReadiness(baseDays: DecisionDay[], alternateDays: DecisionDay[]
   return { id: "crowds", label: "Historical crowd signals", status: "watch", detail: `${unavailable} compared park-day forecast${unavailable === 1 ? " is" : "s are"} unavailable.` };
 }
 
-function weatherReadiness(): DecisionReadiness {
-  return {
-    id: "weather",
-    label: "Weather readiness",
-    status: "pending",
-    detail: "A reliable trip-week forecast is not available this far out. The live heat/storm guard is ready for the travel window.",
-  };
+function weatherReadiness(scenarios: DecisionScenario[]): DecisionReadiness {
+  const evidence = scenarios.flatMap((scenario) => scenario.evidence.filter((item) => item.signal === "weather"));
+  const available = evidence.filter((item) => item.availability === "available").length;
+  if (available) {
+    return { id: "weather", label: "Weather readiness", status: "ready", detail: `${available} scenario weather assignment${available === 1 ? " is" : "s are"} inside the trustworthy horizon and included in scoring.` };
+  }
+  if (evidence.some((item) => item.availability === "stale")) {
+    return { id: "weather", label: "Weather readiness", status: "watch", detail: "Saved weather evidence is stale, so it is visible but neutral until refreshed." };
+  }
+  if (evidence.length && evidence.every((item) => item.availability === "out_of_horizon")) {
+    return { id: "weather", label: "Weather readiness", status: "pending", detail: "Trip Week is outside CastleWatch's 7-day trustworthy weather horizon; weather is explicitly neutral." };
+  }
+  return { id: "weather", label: "Weather readiness", status: "pending", detail: "No date-assignable trustworthy weather evidence is available; the live heat/storm guard remains ready for the travel window." };
 }
 
-function lightningLaneReadiness(intelligence?: SpecialEventIntelligenceData): DecisionReadiness {
+function lightningLaneReadiness(
+  intelligence: SpecialEventIntelligenceData | undefined,
+  lanes: LightningLane[],
+  scenarios: DecisionScenario[],
+): DecisionReadiness {
+  const evidence = scenarios.flatMap((scenario) => scenario.evidence.filter((item) => item.signal === "lightning_lane"));
+  const assignable = evidence.filter((item) => item.availability === "available").length;
+  if (assignable) {
+    return { id: "lightning-lane", label: "Lightning Lane readiness", status: "ready", detail: `${assignable} scenario window assignment${assignable === 1 ? " is" : "s are"} date- and park-specific and included in scoring.` };
+  }
+  if (lanes.length) {
+    return { id: "lightning-lane", label: "Lightning Lane readiness", status: "watch", detail: "Saved windows without both a Trip Week date and park remain backward-compatible and neutral." };
+  }
   const hoursReady = intelligence?.sources?.find((source) => source.id === "park_hours")?.data_status === "official";
   return {
     id: "lightning-lane",
@@ -430,10 +469,12 @@ function decisionConfidence(
 }
 
 export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecision {
+  const nowIso = input.nowIso || new Date().toISOString();
+  const lightningLanes = input.lightningLanes || [];
   const baseAssignments = scenarioAssignments(input.baseDays);
   const warnings = buildReservationWarnings(input.reservations, baseAssignments, input.profile.noParkHopping);
-  const base = buildScenario("base", input.baseDays, input.intelligence, input.reservations, input.resortPlan, input.profile);
-  const alternate = buildScenario("alternate", input.alternateDays, input.intelligence, input.reservations, input.resortPlan, input.profile);
+  const base = buildScenario("base", input.baseDays, input.intelligence, input.reservations, input.resortPlan, input.profile, input.weather, lightningLanes, nowIso);
+  const alternate = buildScenario("alternate", input.alternateDays, input.intelligence, input.reservations, input.resortPlan, input.profile, input.weather, lightningLanes, nowIso);
   const preferredScenario: DecisionScenarioId = base.score <= alternate.score ? "base" : "alternate";
   const scoreDifference = Math.abs(base.score - alternate.score);
   const calendarRecommendation = input.intelligence?.recommendation?.status;
@@ -459,11 +500,11 @@ export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecisi
   } else if (preferredScenario === "alternate") {
     status = "swap";
     headline = "The MNSSHP alternate is the better current plan";
-    summary = `The alternate scores ${scoreDifference.toFixed(1)} points better after combining event risk, reservations, resort travel and historical crowd signals.`;
+    summary = `The alternate scores ${scoreDifference.toFixed(1)} points better after combining events, reservations, travel, crowds, weather and Lightning Lane constraints.`;
   } else {
     status = "keep";
     headline = "Keep the current park order";
-    summary = `The base plan scores ${scoreDifference.toFixed(1)} points better after combining event risk, reservations, resort travel and historical crowd signals.`;
+    summary = `The base plan scores ${scoreDifference.toFixed(1)} points better after combining events, reservations, travel, crowds, weather and Lightning Lane constraints.`;
   }
 
   const confidence = decisionConfidence(input.intelligence, input.reservations, scoreDifference);
@@ -479,8 +520,8 @@ export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecisi
     reservationReadiness(input.reservations, warnings),
     resortReadiness(input.resortPlan),
     forecastReadiness(input.baseDays, input.alternateDays),
-    weatherReadiness(),
-    lightningLaneReadiness(input.intelligence),
+    weatherReadiness([base, alternate]),
+    lightningLaneReadiness(input.intelligence, lightningLanes, [base, alternate]),
   ];
 
   const nextActions: string[] = [];
@@ -502,6 +543,6 @@ export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecisi
     blockers: Array.from(new Set(blockers)),
     nextActions: Array.from(new Set(nextActions)).slice(0, 4),
     readiness,
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowIso,
   };
 }

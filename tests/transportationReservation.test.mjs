@@ -7,7 +7,10 @@ import {
 } from "../app/lib/tripProfile.ts";
 import { DEFAULT_RESORT_PLAN } from "../app/lib/tripResorts.ts";
 import {
+  getResortTransferRoute,
+  getResortTransportationRoute,
   projectTransportationArrival,
+  transportationRouteRisk,
   transportationLeaveBy,
 } from "../app/lib/transportationPlanning.ts";
 
@@ -60,9 +63,9 @@ test("reservation leave-by guidance uses the correct overnight resort", () => {
   assert.deepEqual(boutique, {
     origin: "Value Resort",
     route: "Disney bus labeled Magic Kingdom",
-    travelMinutes: 75,
+    travelMinutes: 55,
     requiredArrival: "8:30 AM",
-    leaveBy: "7:15 AM",
+    leaveBy: "7:35 AM",
   });
 
   const akershus = reservationPlan(reservation({
@@ -95,7 +98,7 @@ test("afternoon dining and departure guidance use the same-day and final-night r
   }), DEFAULT_RESORT_PLAN);
   assert.equal(parkFare.origin, "Beach Club");
   assert.equal(parkFare.requiredArrival, "5:10 PM");
-  assert.equal(parkFare.leaveBy, "3:35 PM");
+  assert.equal(parkFare.leaveBy, "3:45 PM");
 
   const departure = reservationPlan(reservation({
     id: "departure",
@@ -109,6 +112,73 @@ test("afternoon dining and departure guidance use the same-day and final-night r
   assert.equal(departure.origin, "AKL Jambo House");
   assert.equal(departure.requiredArrival, "7:00 AM");
   assert.equal(departure.leaveBy, "5:45 AM");
+});
+
+test("Getting There, reservations and Trip Week share one assignable route model", () => {
+  const popToEpcot = getResortTransportationRoute("pop", "Epcot");
+  assert.deepEqual(
+    {
+      assignable: popToEpcot.assignable,
+      mode: popToEpcot.mode,
+      travelMin: popToEpcot.travelMin,
+      travelMax: popToEpcot.travelMax,
+      walkToStop: popToEpcot.walkToStop,
+      arrivalBuffer: popToEpcot.arrivalBuffer,
+      risk: transportationRouteRisk(popToEpcot),
+    },
+    {
+      assignable: true,
+      mode: "Disney Skyliner to Epcot",
+      travelMin: 20,
+      travelMax: 40,
+      walkToStop: 10,
+      arrivalBuffer: 15,
+      risk: 2,
+    },
+  );
+
+  const beachToEpcot = getResortTransportationRoute("beach", "Epcot");
+  assert.equal(beachToEpcot.mode, "Walk to Epcot International Gateway");
+  assert.equal(beachToEpcot.walkToStop + beachToEpcot.travelMax, 25);
+  assert.equal(transportationRouteRisk(beachToEpcot), 0);
+});
+
+test("unknown resort routes stay unassignable and neutral", () => {
+  const route = getResortTransportationRoute("missing-resort", "Magic Kingdom");
+  assert.equal(route.assignable, false);
+  assert.equal(route.origin, "Unassigned resort");
+  assert.equal(route.travelMax, 0);
+  assert.equal(transportationRouteRisk(route), 0);
+
+  const guidance = reservationPlan(
+    reservation(),
+    { ...DEFAULT_RESORT_PLAN, "2027-10-09": "missing-resort" },
+  );
+  assert.equal(guidance.origin, "Unassigned resort");
+  assert.equal(guidance.travelMinutes, 0);
+  assert.equal(guidance.leaveBy, "8:30 AM");
+});
+
+test("resort transfers use the shared conservative transfer timing", () => {
+  const aklTransfer = getResortTransferRoute("beach", "akl_jambo");
+  assert.deepEqual(
+    {
+      assignable: aklTransfer.assignable,
+      mode: aklTransfer.mode,
+      travelMin: aklTransfer.travelMin,
+      travelMax: aklTransfer.travelMax,
+      walkToStop: aklTransfer.walkToStop,
+    },
+    {
+      assignable: true,
+      mode: "Bus to Animal Kingdom, then bus to the selected AKL building",
+      travelMin: 45,
+      travelMax: 75,
+      walkToStop: 10,
+    },
+  );
+  assert.equal(getResortTransferRoute("beach", "beach").travelMax, 0);
+  assert.equal(getResortTransferRoute("missing", "beach").assignable, false);
 });
 
 test("Getting There leave-by and bus projections use the conservative route allowance", () => {

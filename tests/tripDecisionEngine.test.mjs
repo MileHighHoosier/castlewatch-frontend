@@ -275,6 +275,27 @@ test("an unknown origin resort is not assignable and does not silently fall back
   assert.equal(alternateEvidence?.contribution, 0);
 });
 
+test("base and alternate transportation evidence follows the dated overnight resort", () => {
+  const result = decision({ resortPlan: DEFAULT_RESORT_PLAN });
+  assert.equal(result.scenarios.base.resortTravelRisk, 6);
+  assert.equal(result.scenarios.alternate.resortTravelRisk, 8);
+
+  const baseEpcot = result.scenarios.base.evidence.find(
+    (item) => item.signal === "transportation" && item.affectedDate === "2027-10-13",
+  );
+  assert.equal(baseEpcot?.affectedPark, "Epcot");
+  assert.equal(baseEpcot?.contribution, 0);
+  assert.match(baseEpcot?.explanation || "", /Beach Club.*International Gateway/i);
+  assert.match(baseEpcot?.explanation || "", /2027-10-12 overnight stay/i);
+
+  const alternateMagicKingdom = result.scenarios.alternate.evidence.find(
+    (item) => item.signal === "transportation" && item.affectedDate === "2027-10-13",
+  );
+  assert.equal(alternateMagicKingdom?.affectedPark, "Magic Kingdom");
+  assert.equal(alternateMagicKingdom?.contribution, 2);
+  assert.match(alternateMagicKingdom?.explanation || "", /Beach Club.*Magic Kingdom/i);
+});
+
 test("baseline outcomes remain stable across keep, swap, wait and review fixtures", () => {
   const fixtures = [
     {

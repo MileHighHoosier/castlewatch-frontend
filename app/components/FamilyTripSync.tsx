@@ -71,6 +71,7 @@ function ensureStyle() {
     .family-sync-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
     .family-sync-remote { border:1px solid rgba(255,255,255,.11); border-radius:12px; padding:9px 10px; margin-top:10px; background:rgba(0,0,0,.08); }
     .family-sync-remote strong { display:block; margin-bottom:3px; }
+    .family-sync-remote > span { display:block; }
     .family-sync-awareness { border:1px solid rgba(255,255,255,.13); border-radius:12px; padding:10px; margin-top:10px; background:rgba(0,0,0,.1); }
     .family-sync-awareness strong { display:block; margin-bottom:4px; }
     .family-sync-awareness span { display:block; color:var(--muted); font-size:11px; line-height:1.4; }

@@ -247,6 +247,13 @@ test("manual backup UI is confirmed, up-to-date only, and content-identical", as
   assert.match(source, /without changing reservations, the trip profile or the active park order/);
 });
 
+test("shared-plan metadata renders on separate lines", async () => {
+  const source = await readFile(new URL("../app/components/FamilyTripSync.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /\.family-sync-remote > span \{ display:block; \}/);
+  assert.match(source, /Credential: \{familyTripAuthorizationDescription\(authorization\)\}/);
+});
+
 test("manual backup rejects a response that does not preserve the shared payload", async () => {
   const originalFetch = globalThis.fetch;
   const value = payload();

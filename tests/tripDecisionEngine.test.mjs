@@ -92,6 +92,7 @@ function decision(overrides = {}) {
     reservations: [reservation()],
     resortPlan: RESOLVED_RESORT_PLAN,
     profile: PROFILE,
+    nowIso: "2026-08-31T12:00:00.000Z",
     ...overrides,
   });
 }
@@ -198,6 +199,8 @@ test("each scenario exposes the typed evidence contract and totals its contribut
     "backend:historical-forecast",
     "browser:trip-reservations",
     "browser:resort-plan",
+    "browser:weather-advisory",
+    "browser:lightning-lane",
   ]);
 
   for (const scenario of Object.values(result.scenarios)) {
@@ -294,6 +297,122 @@ test("base and alternate transportation evidence follows the dated overnight res
   assert.equal(alternateMagicKingdom?.affectedPark, "Magic Kingdom");
   assert.equal(alternateMagicKingdom?.contribution, 2);
   assert.match(alternateMagicKingdom?.explanation || "", /Beach Club.*Magic Kingdom/i);
+});
+
+test("long-range weather is explicit, out of horizon and neutral", () => {
+  const result = decision({
+    weather: {
+      mode: "storm",
+      forecastDate: "2027-10-10",
+      observedAt: "2026-08-31T11:00:00.000Z",
+      freshness: "current",
+      source: "auto",
+      headline: "Storm Watch",
+    },
+  });
+
+  for (const scenario of Object.values(result.scenarios)) {
+    const weather = scenario.evidence.filter((item) => item.signal === "weather");
+    assert.ok(weather.length > 0);
+    assert.ok(weather.every((item) => item.availability === "out_of_horizon"));
+    assert.ok(weather.every((item) => item.contribution === 0));
+    assert.equal(scenario.weatherRisk, 0);
+  }
+  assert.equal(result.readiness.find((item) => item.id === "weather")?.status, "pending");
+  assert.match(result.readiness.find((item) => item.id === "weather")?.detail || "", /7-day.*neutral/i);
+});
+
+test("current date-assigned weather contributes only inside the trustworthy horizon", () => {
+  const result = decision({
+    nowIso: "2027-10-10T12:00:00.000Z",
+    weather: {
+      mode: "storm",
+      forecastDate: "2027-10-10",
+      observedAt: "2027-10-10T10:00:00.000Z",
+      freshness: "current",
+      source: "auto",
+      headline: "Storm Watch",
+    },
+  });
+
+  assert.equal(result.scenarios.base.weatherRisk, 4);
+  assert.equal(result.scenarios.alternate.weatherRisk, 4);
+  assert.equal(result.readiness.find((item) => item.id === "weather")?.status, "ready");
+});
+
+test("stale weather remains visible and contributes zero", () => {
+  const result = decision({
+    nowIso: "2027-10-10T12:00:00.000Z",
+    weather: {
+      mode: "hot",
+      forecastDate: "2027-10-10",
+      observedAt: "2027-10-10T01:00:00.000Z",
+      freshness: "current",
+      source: "auto",
+      headline: "Heat Advisory",
+    },
+  });
+
+  const evidence = result.scenarios.base.evidence.find(
+    (item) => item.signal === "weather" && item.affectedDate === "2027-10-10",
+  );
+  assert.equal(evidence?.availability, "stale");
+  assert.equal(evidence?.contribution, 0);
+  assert.equal(result.scenarios.base.weatherRisk, 0);
+  assert.equal(result.readiness.find((item) => item.id === "weather")?.status, "watch");
+});
+
+test("legacy Lightning Lane windows remain backward-compatible and neutral", () => {
+  const result = decision({
+    lightningLanes: [{
+      id: "legacy-window",
+      name: "Guardians",
+      start: "10:00",
+      end: "11:00",
+      used: false,
+    }],
+  });
+
+  for (const scenario of Object.values(result.scenarios)) {
+    const evidence = scenario.evidence.find((item) => item.id.endsWith("legacy-window"));
+    assert.equal(evidence?.availability, "not_assignable");
+    assert.equal(evidence?.contribution, 0);
+    assert.equal(scenario.lightningLaneRisk, 0);
+  }
+  assert.equal(result.readiness.find((item) => item.id === "lightning-lane")?.status, "watch");
+});
+
+test("date- and park-assigned Lightning Lane windows affect only conflicting scenarios", () => {
+  const result = decision({
+    lightningLanes: [{
+      id: "epcot-window",
+      name: "Guardians",
+      start: "10:00",
+      end: "11:00",
+      used: false,
+      date: "2027-10-13",
+      park: "Epcot",
+    }],
+  });
+
+  assert.equal(result.scenarios.base.lightningLaneRisk, 0);
+  assert.equal(result.scenarios.alternate.lightningLaneRisk, 6);
+  assert.ok(result.scenarios.alternate.reasons.some((reason) => /Guardians.*Epcot.*Magic Kingdom/i.test(reason)));
+  assert.equal(result.readiness.find((item) => item.id === "lightning-lane")?.status, "ready");
+
+  const hoppingAllowed = decision({
+    profile: { ...PROFILE, noParkHopping: false },
+    lightningLanes: [{
+      id: "epcot-window",
+      name: "Guardians",
+      start: "10:00",
+      end: "11:00",
+      used: false,
+      date: "2027-10-13",
+      park: "Epcot",
+    }],
+  });
+  assert.equal(hoppingAllowed.scenarios.alternate.lightningLaneRisk, 3);
 });
 
 test("baseline outcomes remain stable across keep, swap, wait and review fixtures", () => {

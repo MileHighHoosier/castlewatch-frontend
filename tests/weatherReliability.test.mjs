@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveWeatherRefresh } from "../app/lib/weatherReliability.ts";
+import {
+  WEATHER_AUTO_CHECKED_STORAGE_KEY,
+  WEATHER_AUTO_FRESHNESS_STORAGE_KEY,
+  WEATHER_AUTO_HEADLINE_STORAGE_KEY,
+  WEATHER_AUTO_MODE_STORAGE_KEY,
+  WEATHER_MANUAL_DATE_STORAGE_KEY,
+  WEATHER_MODE_SOURCE_STORAGE_KEY,
+  WEATHER_RISK_MODE_STORAGE_KEY,
+  loadTripWeatherSnapshot,
+  resolveWeatherRefresh,
+} from "../app/lib/weatherReliability.ts";
 
 const LAST_OK = "2026-08-22T17:00:00.000Z";
 const NOW = "2026-08-22T18:00:00.000Z";
@@ -12,6 +22,14 @@ function snapshot(overrides = {}) {
     lastSuccessfulCheck: null,
     freshness: "unknown",
     ...overrides,
+  };
+}
+
+function storage(values = {}) {
+  return {
+    getItem(key) {
+      return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+    },
   };
 }
 
@@ -123,4 +141,42 @@ test("a malformed active-advisory payload does not clear a prior guard", () => {
   assert.equal(decision.snapshot.lastSuccessfulCheck, LAST_OK);
   assert.equal(decision.snapshot.freshness, "stale");
   assert.equal(decision.clearPreviouslyAutomaticMode, false);
+});
+
+test("trip weather snapshot preserves automatic freshness and its observed date", () => {
+  const result = loadTripWeatherSnapshot(storage({
+    [WEATHER_MODE_SOURCE_STORAGE_KEY]: "auto",
+    [WEATHER_AUTO_MODE_STORAGE_KEY]: "storm",
+    [WEATHER_AUTO_HEADLINE_STORAGE_KEY]: "Storm Watch",
+    [WEATHER_AUTO_CHECKED_STORAGE_KEY]: "2027-10-10T10:00:00.000Z",
+    [WEATHER_AUTO_FRESHNESS_STORAGE_KEY]: "current",
+  }));
+
+  assert.deepEqual(result, {
+    mode: "storm",
+    forecastDate: "2027-10-10",
+    observedAt: "2027-10-10T10:00:00.000Z",
+    freshness: "current",
+    source: "auto",
+    headline: "Storm Watch",
+  });
+});
+
+test("manual trip weather is assignable only when its saved date is present", () => {
+  const current = loadTripWeatherSnapshot(storage({
+    [WEATHER_MODE_SOURCE_STORAGE_KEY]: "manual",
+    [WEATHER_RISK_MODE_STORAGE_KEY]: "hot",
+    [WEATHER_MANUAL_DATE_STORAGE_KEY]: "2027-10-10",
+  }));
+  assert.equal(current.mode, "hot");
+  assert.equal(current.forecastDate, "2027-10-10");
+  assert.equal(current.freshness, "current");
+
+  const legacy = loadTripWeatherSnapshot(storage({
+    [WEATHER_MODE_SOURCE_STORAGE_KEY]: "manual",
+    [WEATHER_RISK_MODE_STORAGE_KEY]: "hot",
+  }));
+  assert.equal(legacy.mode, "hot");
+  assert.equal(legacy.forecastDate, null);
+  assert.equal(legacy.freshness, "unknown");
 });

@@ -3,19 +3,26 @@
 import { useEffect } from "react";
 import { fetchWeatherAdvisory } from "../lib/api";
 import {
+  WEATHER_AUTO_CHECKED_STORAGE_KEY,
+  WEATHER_AUTO_FRESHNESS_STORAGE_KEY,
+  WEATHER_AUTO_HEADLINE_STORAGE_KEY,
+  WEATHER_AUTO_MODE_STORAGE_KEY,
+  WEATHER_MANUAL_DATE_STORAGE_KEY,
+  WEATHER_MODE_SOURCE_STORAGE_KEY,
+  WEATHER_RISK_MODE_STORAGE_KEY,
   resolveWeatherRefresh,
   type WeatherAdvisorySnapshot,
   type WeatherFreshness,
   type WeatherMode,
 } from "../lib/weatherReliability";
 
-const STORAGE_KEY = "castlewatch.weatherRiskMode.v1";
-const MODE_SOURCE_KEY = "castlewatch.weatherRiskModeSource.v1";
-const AUTO_ADVISORY_KEY = "castlewatch.weatherAutoAdvisoryMode.v1";
-const AUTO_ADVISORY_HEADLINE_KEY = "castlewatch.weatherAutoAdvisoryHeadline.v1";
-const AUTO_ADVISORY_CHECKED_KEY = "castlewatch.weatherAutoAdvisoryChecked.v1";
-const AUTO_ADVISORY_FRESHNESS_KEY = "castlewatch.weatherAutoAdvisoryFreshness.v1";
-const MANUAL_OVERRIDE_DATE_KEY = "castlewatch.weatherManualOverrideDate.v1";
+const STORAGE_KEY = WEATHER_RISK_MODE_STORAGE_KEY;
+const MODE_SOURCE_KEY = WEATHER_MODE_SOURCE_STORAGE_KEY;
+const AUTO_ADVISORY_KEY = WEATHER_AUTO_MODE_STORAGE_KEY;
+const AUTO_ADVISORY_HEADLINE_KEY = WEATHER_AUTO_HEADLINE_STORAGE_KEY;
+const AUTO_ADVISORY_CHECKED_KEY = WEATHER_AUTO_CHECKED_STORAGE_KEY;
+const AUTO_ADVISORY_FRESHNESS_KEY = WEATHER_AUTO_FRESHNESS_STORAGE_KEY;
+const MANUAL_OVERRIDE_DATE_KEY = WEATHER_MANUAL_DATE_STORAGE_KEY;
 const STYLE_ID = "castlewatch-weather-aware-style";
 
 const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: string; note: string }> = {
@@ -93,12 +100,8 @@ function setWeatherMode(mode: WeatherMode, source: "manual" | "auto" = "manual")
   window.localStorage.setItem(STORAGE_KEY, mode);
   window.localStorage.setItem(MODE_SOURCE_KEY, source);
 
-  if (source === "manual" && mode === "normal") {
+  if (source === "manual") {
     window.localStorage.setItem(MANUAL_OVERRIDE_DATE_KEY, todayKey());
-  }
-
-  if (source === "manual" && mode !== "normal") {
-    window.localStorage.removeItem(MANUAL_OVERRIDE_DATE_KEY);
   }
 }
 

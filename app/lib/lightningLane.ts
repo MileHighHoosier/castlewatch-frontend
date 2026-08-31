@@ -1,4 +1,13 @@
 export const LIGHTNING_LANE_CONFLICT_SOON_MINUTES = 60;
+export const LIGHTNING_LANE_STORAGE_KEY = "castlewatch.lightningLanes.v1";
+export const LIGHTNING_LANE_PARKS = [
+  "Magic Kingdom",
+  "Epcot",
+  "Hollywood Studios",
+  "Animal Kingdom",
+] as const;
+
+export type LightningLanePark = (typeof LIGHTNING_LANE_PARKS)[number];
 
 export type LightningLane = {
   id: string;
@@ -6,7 +15,17 @@ export type LightningLane = {
   start: string;
   end: string;
   used: boolean;
+  date?: string;
+  park?: LightningLanePark;
 };
+
+function isTripDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isLightningLanePark(value: unknown): value is LightningLanePark {
+  return LIGHTNING_LANE_PARKS.includes(value as LightningLanePark);
+}
 
 function clockMinutes(value: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
@@ -23,6 +42,10 @@ export function isValidLightningLane(lane: unknown): lane is LightningLane {
   const candidate = lane as Partial<LightningLane>;
   const start = typeof candidate.start === "string" ? clockMinutes(candidate.start) : null;
   const end = typeof candidate.end === "string" ? clockMinutes(candidate.end) : null;
+  const hasDate = candidate.date !== undefined;
+  const hasPark = candidate.park !== undefined;
+  const assignmentIsValid = !hasDate && !hasPark
+    || (isTripDate(candidate.date) && isLightningLanePark(candidate.park));
 
   return typeof candidate.id === "string"
     && candidate.id.length > 0
@@ -31,7 +54,8 @@ export function isValidLightningLane(lane: unknown): lane is LightningLane {
     && start !== null
     && end !== null
     && end > start
-    && typeof candidate.used === "boolean";
+    && typeof candidate.used === "boolean"
+    && assignmentIsValid;
 }
 
 export function parseLightningLanes(raw: string | null): LightningLane[] {

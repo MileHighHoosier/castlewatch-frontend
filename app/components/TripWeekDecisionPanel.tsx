@@ -28,6 +28,15 @@ import type {
   TripWeekApprovalState,
   TripWeekScenarioId,
 } from "../lib/tripWeekApproval";
+import {
+  LIGHTNING_LANE_STORAGE_KEY,
+  parseLightningLanes,
+  type LightningLane,
+} from "../lib/lightningLane";
+import {
+  loadTripWeatherSnapshot,
+  type TripWeatherSnapshot,
+} from "../lib/weatherReliability";
 
 type PlanDay = DecisionDay & {
   type?: string;
@@ -51,8 +60,14 @@ type Props = {
   onLockChange: (locked: boolean) => void;
 };
 
-function snapshotKey(profile: TripProfile, reservations: TripReservation[], resorts: ResortPlan) {
-  return JSON.stringify({ profile, reservations, resorts });
+function snapshotKey(
+  profile: TripProfile,
+  reservations: TripReservation[],
+  resorts: ResortPlan,
+  weather: TripWeatherSnapshot,
+  lightningLanes: LightningLane[],
+) {
+  return JSON.stringify({ profile, reservations, resorts, weather, lightningLanes });
 }
 
 function loadSnapshot() {
@@ -60,6 +75,8 @@ function loadSnapshot() {
     profile: loadTripProfile(),
     reservations: loadReservations(),
     resorts: loadResortPlan(),
+    weather: loadTripWeatherSnapshot(window.localStorage),
+    lightningLanes: parseLightningLanes(window.localStorage.getItem(LIGHTNING_LANE_STORAGE_KEY)),
   };
 }
 
@@ -122,18 +139,28 @@ export default function TripWeekDecisionPanel({
   const [profile, setProfile] = useState<TripProfile>({ ...DEFAULT_TRIP_PROFILE });
   const [reservations, setReservations] = useState<TripReservation[]>([]);
   const [resorts, setResorts] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
+  const [weather, setWeather] = useState<TripWeatherSnapshot | null>(null);
+  const [lightningLanes, setLightningLanes] = useState<LightningLane[]>([]);
 
   useEffect(() => {
     let lastKey = "";
 
     function refresh() {
       const snapshot = loadSnapshot();
-      const nextKey = snapshotKey(snapshot.profile, snapshot.reservations, snapshot.resorts);
+      const nextKey = snapshotKey(
+        snapshot.profile,
+        snapshot.reservations,
+        snapshot.resorts,
+        snapshot.weather,
+        snapshot.lightningLanes,
+      );
       if (nextKey === lastKey) return;
       lastKey = nextKey;
       setProfile(snapshot.profile);
       setReservations(snapshot.reservations);
       setResorts(snapshot.resorts);
+      setWeather(snapshot.weather);
+      setLightningLanes(snapshot.lightningLanes);
     }
 
     refresh();
@@ -165,7 +192,9 @@ export default function TripWeekDecisionPanel({
     reservations,
     resortPlan: resorts,
     profile,
-  }), [baseDays, alternateDays, plan.special_event_intelligence, profile, reservations, resorts]);
+    weather,
+    lightningLanes,
+  }), [baseDays, alternateDays, lightningLanes, plan.special_event_intelligence, profile, reservations, resorts, weather]);
 
   const changes = useMemo(() => buildScenarioChanges(
     approval.activeScenario,

@@ -39,6 +39,16 @@ test("new windows require a ride, valid clock values and an end after the start"
   assert.equal(isValidLightningLane(lane({ start: "25:00" })), false);
   assert.equal(isValidLightningLane(lane({ end: "10:30" })), false);
   assert.equal(isValidLightningLane(lane({ start: "12:00", end: "11:00" })), false);
+  assert.equal(isValidLightningLane(lane({ date: "2027-10-13" })), false);
+  assert.equal(isValidLightningLane(lane({ park: "Epcot" })), false);
+  assert.equal(isValidLightningLane(lane({ date: "2027-10-13", park: "Epcot" })), true);
+  assert.equal(isValidLightningLane(lane({ date: "2027-10-13", park: "Other" })), false);
+});
+
+test("persisted legacy windows remain valid while assigned windows retain date and park", () => {
+  const legacy = lane({ id: "legacy" });
+  const assigned = lane({ id: "assigned", date: "2027-10-13", park: "Epcot" });
+  assert.deepEqual(parseLightningLanes(JSON.stringify([legacy, assigned])), [legacy, assigned]);
 });
 
 test("status distinguishes used, expired, active, soon and later windows", () => {

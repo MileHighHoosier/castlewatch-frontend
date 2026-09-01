@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 import type { TripWeekDecision } from "../lib/tripDecisionEngine";
+import {
+  buildScenarioEvidenceGroups,
+  evidenceContext,
+  evidenceProvenanceLabel,
+  evidenceStateLabel,
+  riskPointsLabel,
+} from "../lib/tripDecisionExplanation";
 import { scenarioLabel } from "../lib/tripWeekApproval";
 import type {
   TripWeekApprovalState,
@@ -80,6 +87,21 @@ function ensureStyle() {
     .trip-decision-change-reservations { margin-top:4px; color:var(--muted); font-size:11px; }
     .trip-decision-details { border-top:1px solid rgba(255,255,255,.1); margin-top:10px; padding-top:9px; }
     .trip-decision-details summary { cursor:pointer; font-weight:900; }
+    .trip-decision-control-note { border:1px solid rgba(99,164,255,.3); border-radius:11px; padding:8px 9px; margin:9px 0; background:rgba(99,164,255,.055); font-size:11px; line-height:1.4; }
+    .trip-decision-evidence-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:9px; }
+    .trip-decision-evidence-scenario { border:1px solid rgba(255,255,255,.11); border-radius:12px; padding:9px; min-width:0; background:rgba(0,0,0,.08); }
+    .trip-decision-evidence-scenario h4 { margin:0 0 7px; }
+    .trip-decision-reservation-impact { border:1px solid rgba(255,184,76,.26); border-radius:10px; padding:8px; margin-bottom:8px; font-size:11px; line-height:1.35; }
+    .trip-decision-reservation-impact strong { display:block; margin-bottom:2px; }
+    .trip-decision-evidence-group { border-top:1px solid rgba(255,255,255,.09); padding:7px 0; }
+    .trip-decision-evidence-group:first-of-type { border-top:0; }
+    .trip-decision-evidence-group-heading { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+    .trip-decision-evidence-group-heading span { font-size:10px; font-weight:900; white-space:nowrap; }
+    .trip-decision-evidence-state { color:var(--muted); font-size:10px; margin-top:1px; }
+    .trip-decision-evidence-list { list-style:none; margin:5px 0 0; padding:0; display:grid; gap:5px; }
+    .trip-decision-evidence-item { border-left:2px solid rgba(99,164,255,.32); padding-left:7px; font-size:10px; line-height:1.35; }
+    .trip-decision-evidence-item strong { display:block; }
+    .trip-decision-evidence-meta { color:var(--muted); }
     .trip-decision-readiness { display:grid; gap:7px; margin-top:9px; }
     .trip-decision-readiness-row { border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px; display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:start; }
     .trip-decision-dot { width:9px; height:9px; border-radius:50%; margin-top:4px; background:rgba(255,255,255,.35); }
@@ -91,6 +113,7 @@ function ensureStyle() {
     .trip-decision-readiness-row span { color:var(--muted); font-size:11px; line-height:1.35; }
     @media (max-width:700px) {
       .trip-decision-score-grid { grid-template-columns:1fr; }
+      .trip-decision-evidence-grid { grid-template-columns:1fr; }
       .trip-decision-heading, .trip-decision-current { flex-direction:column; align-items:flex-start; }
       .trip-decision-actions { display:grid; grid-template-columns:1fr; }
     }
@@ -261,6 +284,10 @@ export default function TripWeekDecisionCard({
         </div>
       )}
 
+      <div className="trip-decision-control-note">
+        <strong>Plan changes are never automatic.</strong> CastleWatch explains the recommendation first; you choose whether to apply, undo, lock or unlock a park order.
+      </div>
+
       <div className="trip-decision-actions">
         {recommendationCanApply && (
           <button className="trip-decision-button trip-decision-button-primary" type="button" onClick={() => setPreviewOpen((open) => !open)}>
@@ -348,6 +375,60 @@ export default function TripWeekDecisionCard({
         ) : (
           <p className="muted">No scenario-specific advantage is strong enough yet.</p>
         )}
+      </details>
+
+      <details className="trip-decision-details">
+        <summary>Decision evidence &amp; reservation impact</summary>
+        <p className="muted">Every score contribution names its state and source. Unavailable, stale, out-of-horizon and unassignable evidence stays visible and contributes zero.</p>
+        <div className="trip-decision-evidence-grid">
+          {(["base", "alternate"] as const).map((scenarioId) => {
+            const scenario = decision.scenarios[scenarioId];
+            const affectedReservations = [
+              ...scenario.affectedConfirmed.map((reservation) => ({ ...reservation, impactStatus: "Confirmed conflict" })),
+              ...scenario.affectedProvisional.map((reservation) => ({ ...reservation, impactStatus: "Provisional review" })),
+            ];
+            return (
+              <article className="trip-decision-evidence-scenario" key={scenarioId}>
+                <h4>{scenario.label} · {scenario.score} points</h4>
+                <div className="trip-decision-reservation-impact">
+                  <strong>Affected reservations</strong>
+                  {affectedReservations.length ? (
+                    <ul className="trip-decision-list">
+                      {affectedReservations.map((reservation) => (
+                        <li key={reservation.id}>
+                          {reservation.impactStatus}: {reservation.title} · {formatDate(reservation.date)} at {reservation.time} · {reservation.location}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : "No saved reservations conflict with this park order."}
+                </div>
+                {buildScenarioEvidenceGroups(scenario).map((group) => (
+                  <div className="trip-decision-evidence-group" key={group.signal}>
+                    <div className="trip-decision-evidence-group-heading">
+                      <strong>{group.label}</strong>
+                      <span>{riskPointsLabel(group.contribution)}</span>
+                    </div>
+                    <div className="trip-decision-evidence-state">{group.state}</div>
+                    <ul className="trip-decision-evidence-list">
+                      {group.evidence.map((evidence) => {
+                        const context = evidenceContext(evidence);
+                        return (
+                          <li className="trip-decision-evidence-item" key={evidence.id}>
+                            <strong>{evidence.label} · {riskPointsLabel(evidence.contribution)}</strong>
+                            <div className="trip-decision-evidence-meta">
+                              {evidenceStateLabel(evidence)} · {evidenceProvenanceLabel(evidence.provenance)}{context ? ` · ${context}` : ""}
+                            </div>
+                            <div>{evidence.explanation}</div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </article>
+            );
+          })}
+        </div>
       </details>
 
       <details className="trip-decision-details">

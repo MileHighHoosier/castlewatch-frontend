@@ -9,6 +9,8 @@ import {
   TripReservation,
   buildReservationWarnings,
   loadTripProfile,
+  loadRawReservations,
+  validReservationCollection,
   newReservation,
   reservationPlan,
   saveReservations,
@@ -79,10 +81,12 @@ export default function TripProfileReservations({
   onReservationsChange,
 }: Props) {
   const [profile, setProfile] = useState<TripProfile>({ ...DEFAULT_TRIP_PROFILE });
+  const [reservationError, setReservationError] = useState("");
 
   useEffect(() => {
     ensureStyle();
     setProfile(loadTripProfile());
+    if (!validReservationCollection(loadRawReservations())) setReservationError("Stored reservations are invalid. Edits are paused to preserve the original data. Repair the source or explicitly download a valid shared plan.");
   }, []);
 
   function updateProfile<K extends keyof TripProfile>(key: K, value: TripProfile[K]) {
@@ -92,9 +96,17 @@ export default function TripProfileReservations({
   }
 
   function commitReservations(next: TripReservation[]) {
+    if (!validReservationCollection(loadRawReservations())) {
+      setReservationError("Stored reservations are invalid. No reservation changes were saved.");
+      return;
+    }
     const sorted = [...next].sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+    try { saveReservations(sorted); } catch (error) {
+      setReservationError(error instanceof Error ? error.message : "Reservation changes could not be saved.");
+      return;
+    }
+    setReservationError("");
     onReservationsChange(sorted);
-    saveReservations(sorted);
   }
 
   function addReservation(templateIndex?: number) {
@@ -124,6 +136,7 @@ export default function TripProfileReservations({
       </summary>
 
       <div className="trip-profile-content">
+        {reservationError && <p role="alert">{reservationError}</p>}
         <div className="trip-profile-grid">
           <label className="trip-profile-field">
             <span>Trip name</span>

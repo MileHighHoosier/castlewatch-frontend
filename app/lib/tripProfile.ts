@@ -1,5 +1,6 @@
 import { ResortPlan, previousDate } from "./tripResorts";
 import { getResortTransportationRoute } from "./transportationPlanning";
+import { calendarDay } from "./tripDate";
 
 export type TripProfile = {
   tripName: string;
@@ -98,18 +99,42 @@ export function saveTripProfile(profile: TripProfile) {
   window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
 }
 
-export function loadReservations(): TripReservation[] {
+export function isTripReservation(value: unknown): value is TripReservation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (!["id", "title", "date", "time", "location", "notes"].every((key) => typeof row[key] === "string")) return false;
+  return Boolean((row.id as string).trim())
+    && ["dining", "experience", "tour", "flight", "other"].includes(row.type as string)
+    && ["provisional", "confirmed"].includes(row.status as string)
+    && (row.date === "" || calendarDay(row.date as string) !== null)
+    && (row.time === "" || /^([01]\d|2[0-3]):[0-5]\d$/.test(row.time as string))
+    && [row.durationMinutes, row.arrivalBufferMinutes].every((minutes) => typeof minutes === "number" && Number.isFinite(minutes) && minutes >= 0);
+}
+
+export function validReservationCollection(value: unknown): value is TripReservation[] {
+  return Array.isArray(value) && value.every(isTripReservation)
+    && new Set(value.map((row) => row.id)).size === value.length;
+}
+
+// Keep invalid source data intact. Rendering may omit it, but sync and edits must not silently erase it.
+export function loadRawReservations(): unknown {
   if (typeof window === "undefined") return [];
   try {
     const stored = window.localStorage.getItem(RESERVATION_STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return parsed;
   } catch {
-    return [];
+    return null;
   }
 }
 
+export function loadReservations(): TripReservation[] {
+  const raw = loadRawReservations();
+  return validReservationCollection(raw) ? raw : [];
+}
+
 export function saveReservations(reservations: TripReservation[]) {
+  if (!validReservationCollection(reservations)) throw new Error("Invalid reservation data. Original stored data has not been changed.");
   if (typeof window === "undefined") return;
   window.localStorage.setItem(RESERVATION_STORAGE_KEY, JSON.stringify(reservations));
 }

@@ -2,7 +2,8 @@ import {
   DEFAULT_TRIP_PROFILE,
   TripProfile,
   TripReservation,
-  loadReservations,
+  loadRawReservations,
+  validReservationCollection,
   loadTripProfile,
   saveReservations,
   saveTripProfile,
@@ -28,8 +29,10 @@ import {
 
 export { FAMILY_KEY_STORAGE_KEY } from "./familyTripAuthorization";
 export const FAMILY_SYNC_METADATA_STORAGE_KEY = "castlewatch.family-sync-metadata.v1";
+export const FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY = "castlewatch.family-payload-extensions.v1";
 
 export type FamilyTripPayload = {
+  [key: string]: unknown;
   schemaVersion: 1;
   tripProfile: TripProfile;
   reservations: TripReservation[];
@@ -203,16 +206,31 @@ export function createFamilySyncMetadata(version: number, payload: FamilyTripPay
 }
 
 export function buildLocalFamilyTripPayload(): FamilyTripPayload {
+  let extensions: Partial<FamilyTripPayload> = loadFamilySyncMetadata()?.baselinePayload || {};
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) extensions = parsed;
+    } catch { /* Server compatibility guard rejects a lossy write if this sidecar is damaged. */ }
+  }
   return {
-    schemaVersion: 1,
-    tripProfile: loadTripProfile(),
-    reservations: loadReservations(),
-    resortPlan: loadResortPlan(),
-    approval: loadTripWeekApproval(),
+    ...extensions,
+    schemaVersion: extensions.schemaVersion ?? 1,
+    tripProfile: { ...extensions.tripProfile, ...loadTripProfile() },
+    reservations: loadRawReservations() as TripReservation[],
+    resortPlan: { ...extensions.resortPlan, ...loadResortPlan() },
+    approval: { ...extensions.approval, ...loadTripWeekApproval() },
   };
 }
 
+export function validateFamilyTripPayload(payload: FamilyTripPayload) {
+  if (payload?.schemaVersion !== 1) throw new Error("This shared payload requires a newer browser version. Update before applying or saving it.");
+  if (!validReservationCollection(payload.reservations)) throw new Error("Invalid reservation data. Repair the source or explicitly download a valid shared plan; nothing was saved.");
+}
+
 function normalizePayload(payload: FamilyTripPayload): AppliedFamilyTrip {
+  validateFamilyTripPayload(payload);
   const tripProfile = { ...DEFAULT_TRIP_PROFILE, ...(payload?.tripProfile || {}) };
   const reservations = Array.isArray(payload?.reservations) ? payload.reservations : [];
   const resortPlan = { ...DEFAULT_RESORT_PLAN, ...(payload?.resortPlan || {}) };
@@ -230,6 +248,7 @@ function normalizePayload(payload: FamilyTripPayload): AppliedFamilyTrip {
 
 export function applyFamilyTripPayload(payload: FamilyTripPayload): AppliedFamilyTrip {
   const normalized = normalizePayload(payload);
+  if (typeof window !== "undefined") window.localStorage.setItem(FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY, JSON.stringify(payload));
   saveTripProfile(normalized.tripProfile);
   saveReservations(normalized.reservations);
   saveResortPlan(normalized.resortPlan);
@@ -400,6 +419,7 @@ export async function saveFamilyTrip(
   expectedVersion: number,
   payload: FamilyTripPayload,
 ): Promise<FamilyTripDocument> {
+  validateFamilyTripPayload(payload);
   const result = await rawSyncRequest({
     action: "write",
     ...familyTripAuthorizationPayload(authorization),

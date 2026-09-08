@@ -1,6 +1,6 @@
 import type { SpecialEventIntelligenceData, SpecialEventSignal } from "../components/SpecialEventIntelligence";
 import type { TripProfile, TripReservation } from "./tripProfile";
-import { buildReservationWarnings } from "./tripProfile";
+import { buildReservationWarnings, validReservationCollection } from "./tripProfile";
 import type { LightningLane } from "./lightningLane";
 import type { TripWeatherSnapshot } from "./weatherReliability";
 import {
@@ -93,6 +93,7 @@ export type TripWeekDecision = {
 };
 
 type BuildDecisionInput = {
+  reservationDataInvalid?: boolean;
   baseDays: DecisionDay[];
   alternateDays: DecisionDay[];
   intelligence?: SpecialEventIntelligenceData;
@@ -469,13 +470,15 @@ function decisionConfidence(
 }
 
 export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecision {
+  const invalidReservations = input.reservationDataInvalid === true || !validReservationCollection(input.reservations);
+  if (invalidReservations) input = { ...input, reservations: [] };
   const nowIso = input.nowIso || new Date().toISOString();
   const lightningLanes = input.lightningLanes || [];
-  const baseAssignments = scenarioAssignments(input.baseDays);
-  const warnings = buildReservationWarnings(input.reservations, baseAssignments, input.profile.noParkHopping);
   const base = buildScenario("base", input.baseDays, input.intelligence, input.reservations, input.resortPlan, input.profile, input.weather, lightningLanes, nowIso);
   const alternate = buildScenario("alternate", input.alternateDays, input.intelligence, input.reservations, input.resortPlan, input.profile, input.weather, lightningLanes, nowIso);
   const preferredScenario: DecisionScenarioId = base.score <= alternate.score ? "base" : "alternate";
+  const preferredAssignments = scenarioAssignments(preferredScenario === "base" ? input.baseDays : input.alternateDays);
+  const warnings = buildReservationWarnings(input.reservations, preferredAssignments, input.profile.noParkHopping);
   const scoreDifference = Math.abs(base.score - alternate.score);
   const calendarRecommendation = input.intelligence?.recommendation?.status;
   const confirmedConflictOnPreferred = (preferredScenario === "base" ? base : alternate).affectedConfirmed.length > 0;
@@ -485,7 +488,11 @@ export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecisi
   let headline: string;
   let summary: string;
 
-  if (calendarRecommendation === "wait_for_calendar") {
+  if (invalidReservations) {
+    status = "review";
+    headline = "Repair reservation data before changing the park order";
+    summary = "Stored reservation data could not be validated. The original data is preserved; applying or locking a recommendation is paused.";
+  } else if (calendarRecommendation === "wait_for_calendar") {
     status = "wait";
     headline = preferredScenario === "base" ? "Keep the base plan provisional" : "The alternate currently scores better, but wait before switching";
     summary = `CastleWatch scores the ${preferredScenario === "base" ? "base plan" : "MNSSHP alternate"} lower-risk by ${scoreDifference.toFixed(1)} points, but the official party calendar has not triggered a schedule change.`;
@@ -510,6 +517,7 @@ export function buildTripWeekDecision(input: BuildDecisionInput): TripWeekDecisi
   const confidence = decisionConfidence(input.intelligence, input.reservations, scoreDifference);
   const preferred = preferredScenario === "base" ? base : alternate;
   const blockers: string[] = [];
+  if (invalidReservations) blockers.push("Invalid reservation data must be repaired before applying or locking a plan.");
   if (calendarRecommendation === "wait_for_calendar") blockers.push("Official 2027 MNSSHP dates are not loaded.");
   if (input.intelligence?.overall_status === "stale" || input.intelligence?.overall_status === "unavailable") blockers.push("The official calendar source is stale or unavailable.");
   if (preferred.affectedConfirmed.length) blockers.push(`${preferred.affectedConfirmed.length} confirmed reservation${preferred.affectedConfirmed.length === 1 ? " conflicts" : "s conflict"} with the preferred scenario.`);

@@ -1,4 +1,5 @@
 "use client";
+import { tripDateKey } from "../lib/tripDate";
 
 import { useEffect } from "react";
 import { fetchWeatherAdvisory } from "../lib/api";
@@ -47,7 +48,7 @@ const WEATHER_MODES: Record<WeatherMode, { label: string; icon: string; title: s
 };
 
 function todayKey() {
-  return new Date().toLocaleDateString("en-CA");
+  return tripDateKey()!;
 }
 
 function isWeatherMode(value: string | null): value is WeatherMode {

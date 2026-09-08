@@ -26,8 +26,16 @@ import {
   familyTripAuthorizationPayload,
   rejectProtectedDeviceAuthorization,
 } from "./familyTripAuthorization";
+import {
+  BookingTarget,
+  BOOKING_TARGETS_STORAGE_KEY,
+  loadRawBookingTargets,
+  normalizeBookingTargets,
+  replaceRawBookingTargets,
+} from "./bookingTargets";
 
 export { FAMILY_KEY_STORAGE_KEY } from "./familyTripAuthorization";
+export { BOOKING_TARGETS_STORAGE_KEY } from "./bookingTargets";
 export const FAMILY_SYNC_METADATA_STORAGE_KEY = "castlewatch.family-sync-metadata.v1";
 export const FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY = "castlewatch.family-payload-extensions.v1";
 
@@ -38,6 +46,7 @@ export type FamilyTripPayload = {
   reservations: TripReservation[];
   resortPlan: ResortPlan;
   approval: TripWeekApprovalState;
+  bookingTargets?: unknown;
 };
 
 export type FamilyTripDocument = {
@@ -88,6 +97,7 @@ export type AppliedFamilyTrip = {
   reservations: TripReservation[];
   resortPlan: ResortPlan;
   approval: TripWeekApprovalState;
+  bookingTargets: BookingTarget[];
 };
 
 export type FamilyTripSyncMetadata = {
@@ -214,7 +224,7 @@ export function buildLocalFamilyTripPayload(): FamilyTripPayload {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) extensions = parsed;
     } catch { /* Server compatibility guard rejects a lossy write if this sidecar is damaged. */ }
   }
-  return {
+  const payload: FamilyTripPayload = {
     ...extensions,
     schemaVersion: extensions.schemaVersion ?? 1,
     tripProfile: { ...extensions.tripProfile, ...loadTripProfile() },
@@ -222,6 +232,9 @@ export function buildLocalFamilyTripPayload(): FamilyTripPayload {
     resortPlan: { ...extensions.resortPlan, ...loadResortPlan() },
     approval: { ...extensions.approval, ...loadTripWeekApproval() },
   };
+  const rawBookingTargets = loadRawBookingTargets();
+  if (rawBookingTargets !== undefined) payload.bookingTargets = rawBookingTargets;
+  return payload;
 }
 
 export function validateFamilyTripPayload(payload: FamilyTripPayload) {
@@ -235,6 +248,7 @@ function normalizePayload(payload: FamilyTripPayload): AppliedFamilyTrip {
   const reservations = Array.isArray(payload?.reservations) ? payload.reservations : [];
   const resortPlan = { ...DEFAULT_RESORT_PLAN, ...(payload?.resortPlan || {}) };
   const approval = { ...DEFAULT_TRIP_WEEK_APPROVAL, ...(payload?.approval || {}) };
+  const bookingTargets = normalizeBookingTargets(payload?.bookingTargets);
 
   if (approval.activeScenario !== "base" && approval.activeScenario !== "alternate") {
     approval.activeScenario = "base";
@@ -243,12 +257,16 @@ function normalizePayload(payload: FamilyTripPayload): AppliedFamilyTrip {
     approval.previousScenario = null;
   }
 
-  return { tripProfile, reservations, resortPlan, approval };
+  return { tripProfile, reservations, resortPlan, approval, bookingTargets };
 }
 
 export function applyFamilyTripPayload(payload: FamilyTripPayload): AppliedFamilyTrip {
   const normalized = normalizePayload(payload);
   if (typeof window !== "undefined") window.localStorage.setItem(FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY, JSON.stringify(payload));
+  replaceRawBookingTargets(
+    payload.bookingTargets,
+    Object.prototype.hasOwnProperty.call(payload, "bookingTargets"),
+  );
   saveTripProfile(normalized.tripProfile);
   saveReservations(normalized.reservations);
   saveResortPlan(normalized.resortPlan);

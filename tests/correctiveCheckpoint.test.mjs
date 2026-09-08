@@ -22,13 +22,13 @@ function storage(t) {
 
 test("apply/build preserves future root fields and nested approval extensions without phantom changes", (t) => {
   storage(t);
-  const remote = {...payload(), bookingTargets: [{id: "future", detail: {version: 2}}], futureFlag: false};
+  const remote = {...payload(), futurePlanningData: [{id: "future", detail: {version: 2}}], futureFlag: false};
   remote.approval.futureReview = {reviewed: true};
   applyFamilyTripPayload(remote);
   assert.equal(fingerprintFamilyTripPayload(buildLocalFamilyTripPayload()), fingerprintFamilyTripPayload(remote));
   const older = payload();
   applyFamilyTripPayload(older);
-  assert.equal("bookingTargets" in buildLocalFamilyTripPayload(), false, "explicit replacement does not retain stale extensions");
+  assert.equal("futurePlanningData" in buildLocalFamilyTripPayload(), false, "explicit replacement does not retain stale extensions");
 });
 
 test("unsupported schema and malformed downloads leave storage unchanged", (t) => {
@@ -43,10 +43,10 @@ test("unsupported schema and malformed downloads leave storage unchanged", (t) =
 
 test("upgraded browsers preserve metadata-only extensions; damaged sidecars do not crash; future schema is not downcast", async (t) => {
   const entries = storage(t);
-  saveFamilySyncMetadata(createFamilySyncMetadata(2, {...payload(), bookingTargets: [{id:"retained"}]}));
+  saveFamilySyncMetadata(createFamilySyncMetadata(2, {...payload(), futurePlanningData: [{id:"retained"}]}));
   for (const raw of ["null", "[]", "broken"]) {
     entries.set(FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY, raw);
-    assert.deepEqual(buildLocalFamilyTripPayload().bookingTargets,[{id:"retained"}]);
+    assert.deepEqual(buildLocalFamilyTripPayload().futurePlanningData,[{id:"retained"}]);
   }
   entries.set(FAMILY_PAYLOAD_EXTENSIONS_STORAGE_KEY, JSON.stringify({...payload(),schemaVersion:2}));
   assert.equal(buildLocalFamilyTripPayload().schemaVersion,2);

@@ -203,8 +203,8 @@ export default function FamilyTripHistory() {
       if (!restored.payload) throw new Error("The restored shared version did not include a trip payload.");
 
       const nextMetadata = createFamilySyncMetadata(restored.version, restored.payload);
-      saveFamilySyncMetadata(nextMetadata);
       applyFamilyTripPayload(restored.payload);
+      saveFamilySyncMetadata(nextMetadata);
       window.location.reload();
     } catch (restoreError) {
       if (restoreError instanceof FamilyTripSyncError && restoreError.document) {

@@ -1,4 +1,5 @@
 "use client";
+import { tripDateKey } from "../lib/tripDate";
 
 import { useEffect } from "react";
 import type { LightningLane } from "../lib/lightningLane";
@@ -60,7 +61,7 @@ function currentTripAssignment(): Pick<LightningLane, "date" | "park"> | Record<
   const park = activeParkName();
   if (!LIGHTNING_LANE_PARKS.includes(park as (typeof LIGHTNING_LANE_PARKS)[number])) return {};
   return {
-    date: new Date().toLocaleDateString("en-CA"),
+    date: tripDateKey()!,
     park: park as (typeof LIGHTNING_LANE_PARKS)[number],
   };
 }

@@ -19,6 +19,8 @@ Before cross-cutting or architectural changes, inspect both repositories. The ba
 
 Do not use old chat history as the source of truth when current code/documentation disagrees.
 
+Read backend `PROJECT_TRACKER.md` for the current checkpoint, blockers and next action. CW-016 (pre–Phase 2A corrections) is under review; Phase 2A feature work is paused until separate corrective release verification/finalization. Backend compatibility protection must deploy before frontend preservation or future shared fields. Do not omit unknown root fields, silently clean malformed reservations into writes, or downcast an unsupported payload schema.
+
 ## Change rules
 
 1. Preserve user-visible behavior unless the task explicitly requires a change or a change is necessary for security/reliability.
@@ -45,9 +47,9 @@ The account/device migration is complete and production-verified through Section
 
 ## Trip Week decision engine
 
-`app/lib/tripDecisionEngine.ts` is an existing partial implementation of Trip Week Phase 2. Do not restart or replace it casually.
+`app/lib/tripDecisionEngine.ts` contains the Section 8 unified evidence/scoring implementation. Do not restart or replace it casually.
 
-Current inputs include event risk, reservation conflicts, no-park-hopping, resort/transportation convenience and historical forecast signals. Weather and Lightning Lane are not yet fully integrated scenario-scoring inputs.
+Current inputs include event risk, reservation conflicts, no-park-hopping, shared resort/transportation routes, historical forecasts and usable date/park-assigned weather and Lightning Lane signals. Missing/stale/unassignable signals remain neutral. Corrective tests protect preferred-scenario blockers, malformed-input Review, Orlando calendar boundaries and elapsed-time weather reevaluation.
 
 Any major change to this engine requires checking backend `trip_week.py`, calendar/event intelligence, reservation state and resort/transportation logic.
 

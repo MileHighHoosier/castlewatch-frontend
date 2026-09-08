@@ -49,13 +49,11 @@ The frontend is well beyond its original Phase One starter state. Major implemen
 
 ## Current development phase
 
-CastleWatch is in **Rebaseline & Stabilization**, not a new feature sprint.
+Sections 1–8 have historical finalization records. Section 8 implemented unified evidence/scoring, shared transportation, assignable weather/Lightning Lane inputs and explanation UI. Family-key recovery remains enabled.
 
-Sections 1–5 of Rebaseline & Stabilization are complete. The private-family account/device migration passed production Owner/Editor/Viewer, recovery and revocation verification on August 29, 2026; the family-key recovery path remains enabled.
+The September 7, 2026 repo-first audit identified compatibility, reservation and date/freshness gaps. **The pre–Phase 2A corrective checkpoint (CW-016) is under review, not deployed or finalized.** These files reconstruct the lost temporary corrective commit from its surviving exact Git tree; the reconstruction has a new commit identity. Reservation Awareness Phase 2 has a scope contract, but Phase 2A booking-target feature work is paused pending these corrections.
 
-Section 6 production smoke verification is next and has not started.
-
-After stabilization, the next major product objective is to **complete Trip Week Phase 2 - Unified Recommendation Engine**. The engine already exists in partial form; it should not be restarted from scratch.
+See backend [PROJECT_TRACKER.md](https://github.com/MileHighHoosier/castlewatch-2027/blob/main/PROJECT_TRACKER.md) and [corrective record](https://github.com/MileHighHoosier/castlewatch-2027/blob/fix/pre-phase-2a-corrective-reconstructed-20260908/docs/pre-phase-2a-corrective.md) for the current handoff. Next action: review the paired reconstructed pull requests and exact-head CI. Merge/deploy requires separate authorization and backend-first rollout; old-client writes that omit newer root fields must be rejected before new fields are introduced.
 
 ## Canonical project documentation
 

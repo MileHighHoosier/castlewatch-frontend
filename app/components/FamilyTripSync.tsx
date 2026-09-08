@@ -464,10 +464,13 @@ export default function FamilyTripSync() {
   function download() {
     if (!remote?.payload) return;
     clearMessages();
-    const nextMetadata = createFamilySyncMetadata(remote.version, remote.payload);
-    saveFamilySyncMetadata(nextMetadata);
-    applyFamilyTripPayload(remote.payload);
-    window.location.reload();
+    try {
+      applyFamilyTripPayload(remote.payload);
+      saveFamilySyncMetadata(createFamilySyncMetadata(remote.version, remote.payload));
+      window.location.reload();
+    } catch (error) {
+      handleFailure(error);
+    }
   }
 
   function disconnect() {

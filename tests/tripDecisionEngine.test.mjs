@@ -97,6 +97,26 @@ function decision(overrides = {}) {
   });
 }
 
+test("blockers follow the preferred alternate, not the displaced base park assignment", () => {
+  const result = decision({intelligence: intelligence({baseRisk: 20}), reservations: [reservation({date: "2027-10-13", location: "Magic Kingdom"})]});
+  assert.equal(result.preferredScenario, "alternate");
+  assert.equal(result.scenarios.alternate.affectedConfirmed.length, 0);
+  assert.deepEqual(result.blockers, []);
+});
+
+test("intrinsic timing conflicts remain blockers even on the preferred alternate", () => {
+  const first = reservation({date:"2027-10-13",location:"Magic Kingdom"});
+  const result = decision({intelligence:intelligence({baseRisk:20}), reservations:[first,{...first,id:"second"}]});
+  assert.equal(result.preferredScenario,"alternate");
+  assert.ok(result.blockers.some((text) => text.includes("timing conflict")));
+});
+
+test("malformed direct engine input does not crash or permit locking", () => {
+  const result = decision({reservations:[null]});
+  assert.equal(result.status, "review");
+  assert.ok(result.blockers.some((text) => text.includes("Invalid reservation")));
+});
+
 test("an unreleased calendar keeps the park order provisional and returns Wait", () => {
   const result = decision({
     intelligence: intelligence({

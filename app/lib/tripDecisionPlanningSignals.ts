@@ -1,4 +1,5 @@
 import type { LightningLane } from "./lightningLane";
+import { tripDateKey } from "./tripDate";
 import type { TripWeatherSnapshot } from "./weatherReliability";
 import {
   createDecisionEvidence,
@@ -34,7 +35,8 @@ function effectiveWeatherAvailability(
   now: Date,
 ): DecisionEvidenceAvailability {
   const target = utcDay(day.date);
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const today = utcDay(tripDateKey(now) || "");
+  if (today === null) return "unavailable";
   if (target === null) return "not_assignable";
 
   const daysAway = Math.round((target - today) / 86400000);
@@ -44,7 +46,9 @@ function effectiveWeatherAvailability(
   if (snapshot.freshness !== "current") return "unavailable";
   if (snapshot.forecastDate !== day.date) return "not_assignable";
 
-  if (snapshot.source === "auto" && snapshot.observedAt) {
+  if (snapshot.source !== "auto" && snapshot.source !== "manual") return "unavailable";
+  if (snapshot.source === "auto") {
+    if (!snapshot.observedAt) return "stale";
     const observed = new Date(snapshot.observedAt);
     if (Number.isNaN(observed.getTime())) return "stale";
     const ageHours = (now.getTime() - observed.getTime()) / 3600000;
@@ -59,10 +63,9 @@ export function scenarioWeatherEvidence(
   nowIso: string,
 ): DecisionEvidence[] {
   const now = new Date(nowIso);
-  const safeNow = Number.isNaN(now.getTime()) ? new Date(0) : now;
 
   return days.filter((day) => day.park).map((day) => {
-    const availability = effectiveWeatherAvailability(day, snapshot, safeNow);
+    const availability = effectiveWeatherAvailability(day, snapshot, now);
     const explanation = availability === "out_of_horizon"
       ? `${day.date} is outside CastleWatch's ${TRIP_WEATHER_HORIZON_DAYS}-day trustworthy weather horizon; weather is neutral.`
       : availability === "stale"

@@ -1,3 +1,4 @@
+import { calendarDay, tripDateKey } from "./tripDate";
 export type WeatherMode = "normal" | "hot" | "storm";
 export type AutomaticWeatherMode = "hot" | "storm";
 export type WeatherFreshness = "current" | "stale" | "unknown";
@@ -31,8 +32,7 @@ function savedFreshness(value: string | null): WeatherFreshness {
 
 function isoDate(value: string | null) {
   if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  return tripDateKey(value);
 }
 
 export function loadTripWeatherSnapshot(storage: StorageReader): TripWeatherSnapshot {
@@ -43,7 +43,7 @@ export function loadTripWeatherSnapshot(storage: StorageReader): TripWeatherSnap
   if (source === "manual") {
     return {
       mode: savedWeatherMode(storage.getItem(WEATHER_RISK_MODE_STORAGE_KEY)),
-      forecastDate: /^\d{4}-\d{2}-\d{2}$/.test(manualDate || "") ? manualDate : null,
+      forecastDate: calendarDay(manualDate || "") !== null ? manualDate : null,
       observedAt: null,
       freshness: manualDate ? "current" : "unknown",
       source,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { subscribeDecisionClock } from "../lib/decisionClock";
 import FamilyTripDeviceCredentialDiagnostic from "./FamilyTripDeviceCredentialDiagnostic";
 import FamilyTripDevices from "./FamilyTripDevices";
 import FamilyTripHistory from "./FamilyTripHistory";
@@ -13,6 +14,8 @@ import {
   TripProfile,
   TripReservation,
   loadReservations,
+  loadRawReservations,
+  validReservationCollection,
   loadTripProfile,
 } from "../lib/tripProfile";
 import {
@@ -141,11 +144,16 @@ export default function TripWeekDecisionPanel({
   const [resorts, setResorts] = useState<ResortPlan>({ ...DEFAULT_RESORT_PLAN });
   const [weather, setWeather] = useState<TripWeatherSnapshot | null>(null);
   const [lightningLanes, setLightningLanes] = useState<LightningLane[]>([]);
+  const [nowIso, setNowIso] = useState<string | undefined>();
+  const [invalidReservations, setInvalidReservations] = useState(false);
+
+  useEffect(() => subscribeDecisionClock(setNowIso, window), []);
 
   useEffect(() => {
     let lastKey = "";
 
     function refresh() {
+      setInvalidReservations(!validReservationCollection(loadRawReservations()));
       const snapshot = loadSnapshot();
       const nextKey = snapshotKey(
         snapshot.profile,
@@ -190,11 +198,13 @@ export default function TripWeekDecisionPanel({
     alternateDays,
     intelligence: plan.special_event_intelligence,
     reservations,
+    reservationDataInvalid: invalidReservations,
     resortPlan: resorts,
     profile,
     weather,
     lightningLanes,
-  }), [baseDays, alternateDays, lightningLanes, plan.special_event_intelligence, profile, reservations, resorts, weather]);
+    nowIso,
+  }), [baseDays, alternateDays, lightningLanes, plan.special_event_intelligence, profile, reservations, resorts, weather, nowIso, invalidReservations]);
 
   const changes = useMemo(() => buildScenarioChanges(
     approval.activeScenario,

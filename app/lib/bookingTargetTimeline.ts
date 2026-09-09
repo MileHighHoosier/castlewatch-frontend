@@ -35,13 +35,39 @@ function dayDistance(fromDate: string, toDate: string): number | null {
 }
 
 export function bookingWindowReadiness(window: BookingWindowResult, todayDate: string): BookingReadiness {
-  if (calendarDay(todayDate) === null || window.opening.status === "invalid" || window.deadline.status === "invalid") {
+  if (calendarDay(todayDate) === null) {
     return {
       id: "invalid",
       label: "Review dates",
-      detail: calendarDay(todayDate) === null
-        ? "CastleWatch could not determine today's planning date."
-        : "The current booking rule or date input is inconsistent.",
+      detail: "CastleWatch could not determine today's planning date.",
+      tone: "warning",
+    };
+  }
+
+  const missingPlanningDate = window.targetId !== null
+    && window.desiredTripDate === null
+    && window.opening.date === null
+    && window.opening.source === "none";
+  if (missingPlanningDate) {
+    return {
+      id: "not_scheduled",
+      label: "Date needed",
+      detail: "Add a verified rule and desired trip date, or a clearly labeled manual opening date.",
+      tone: "neutral",
+    };
+  }
+
+  const optionalDeadlineAbsent = window.opening.source === "manual_override"
+    && window.opening.status === "ready"
+    && window.desiredTripDate === null
+    && window.ruleVerification === "unavailable"
+    && window.deadline.date === null
+    && window.deadline.source === "none";
+  if (window.opening.status === "invalid" || (window.deadline.status === "invalid" && !optionalDeadlineAbsent)) {
+    return {
+      id: "invalid",
+      label: "Review dates",
+      detail: "The current booking rule or date input is inconsistent.",
       tone: "warning",
     };
   }

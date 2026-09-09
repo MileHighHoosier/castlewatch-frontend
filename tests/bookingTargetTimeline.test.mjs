@@ -68,6 +68,38 @@ test("unverified, unavailable and inconsistent rules stay neutral and explicit",
   assert.equal(bookingWindowReadiness(missingProvenance, "2027-08-01").label, "Verify source");
 });
 
+test("a newly quick-added target stays neutral until planning inputs are added", () => {
+  const window = calculateBookingWindow(target({
+    desiredTripDate: "",
+    bookingRule: null,
+  }));
+  assert.deepEqual(bookingWindowReadiness(window, "2027-08-01"), {
+    id: "not_scheduled",
+    label: "Date needed",
+    detail: "Add a verified rule and desired trip date, or a clearly labeled manual opening date.",
+    tone: "neutral",
+  });
+});
+
+test("a manual opening date remains valid when the optional deadline and trip date are absent", () => {
+  const window = calculateBookingWindow(target({
+    desiredTripDate: "",
+    bookingRule: null,
+    manualOverride: {
+      openingDate: "2027-08-10",
+      deadlineDate: null,
+      note: "Family-selected call date",
+    },
+  }));
+  assert.equal(window.deadline.status, "invalid");
+  assert.deepEqual(bookingWindowReadiness(window, "2027-08-01"), {
+    id: "upcoming",
+    label: "Opens in 9 days",
+    detail: "Opening date: 2027-08-10.",
+    tone: "upcoming",
+  });
+});
+
 test("manual opening dates drive ordering without claiming an official rule", () => {
   const rows = buildBookingTimeline([
     target({ id: "calculated", priority: "standard" }),

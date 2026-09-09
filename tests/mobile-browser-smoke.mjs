@@ -238,7 +238,7 @@ async function run() {
             return document.readyState === "complete" && button && parseFloat(getComputedStyle(button).minHeight) >= 44;
           }, "production stylesheet");
           const topButtons = Array.from(document.querySelectorAll(".top-park-button"));
-          if (topButtons.length !== 6) throw new Error("Expected six primary navigation buttons");
+          if (topButtons.length !== 7) throw new Error("Expected seven primary navigation buttons");
           const minimumTopButtonHeight = Math.min(...topButtons.map((button) => button.getBoundingClientRect().height));
           if (minimumTopButtonHeight < 44) {
             throw new Error("Primary navigation touch target is " + minimumTopButtonHeight + "px at viewport " + window.innerWidth + "px");
@@ -289,6 +289,18 @@ async function run() {
           epcot.click();
           await waitFor(() => document.querySelector(".command-center h2")?.textContent === "Epcot", "park switch");
 
+          const bookingPlanner = buttonNamed(".top-park-button", "🎟️Booking Planner");
+          if (!bookingPlanner) throw new Error("Booking Planner navigation button is missing");
+          bookingPlanner.click();
+          await waitFor(() => document.querySelector(".booking-planner h2")?.textContent === "Reservation Window Planner", "Booking Planner");
+          const addBbb = buttonNamed(".booking-planner-add button", "+ Bibbidi Bobbidi Boutique");
+          if (!addBbb) throw new Error("Bibbidi Bobbidi Boutique quick-add is missing");
+          addBbb.click();
+          const bookingTarget = await waitFor(() => document.querySelector(".booking-target-card"), "booking target card");
+          if (!bookingTarget.textContent.includes("Bibbidi Bobbidi Boutique")) throw new Error("Added booking target is missing");
+          const editTarget = bookingTarget.querySelector(".booking-target-editor > summary");
+          if (!editTarget || editTarget.getBoundingClientRect().height < 42) throw new Error("Booking target editor touch target is too small");
+
           const overflow = document.documentElement.scrollWidth - window.innerWidth;
           if (overflow > 1) throw new Error("Mobile page has horizontal overflow of " + overflow + "px");
 
@@ -299,7 +311,7 @@ async function run() {
             lightningLaneRestored: !document.querySelector(".lightning-lane-row"),
             activitiesHeading: "Shows & family activities",
             characterPanel: characterPanel.querySelector("h3")?.textContent,
-            selectedPark: document.querySelector(".command-center h2")?.textContent,
+            bookingTarget: bookingTarget.querySelector("h3")?.textContent,
             horizontalOverflow: overflow,
           };
         })()
@@ -313,12 +325,12 @@ async function run() {
     }
     const result = evaluation.result?.value;
     assert.deepEqual(result.viewport, [390, 844]);
-    assert.equal(result.navButtons, 6);
+    assert.equal(result.navButtons, 7);
     assert.equal(result.navColumns, 3);
     assert.equal(result.lightningLaneRestored, true);
     assert.equal(result.activitiesHeading, "Shows & family activities");
     assert.equal(result.characterPanel, "Characters & meet-and-greets");
-    assert.equal(result.selectedPark, "Epcot");
+    assert.equal(result.bookingTarget, "Bibbidi Bobbidi Boutique");
     assert.ok(result.horizontalOverflow <= 1);
     console.log("CastleWatch mobile browser smoke passed", result);
   } catch (error) {

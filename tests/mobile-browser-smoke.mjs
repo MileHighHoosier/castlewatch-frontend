@@ -238,7 +238,7 @@ async function run() {
             return document.readyState === "complete" && button && parseFloat(getComputedStyle(button).minHeight) >= 44;
           }, "production stylesheet");
           const topButtons = Array.from(document.querySelectorAll(".top-park-button"));
-          if (topButtons.length !== 6) throw new Error("Expected six primary navigation buttons");
+          if (topButtons.length !== 7) throw new Error("Expected seven primary navigation buttons");
           const minimumTopButtonHeight = Math.min(...topButtons.map((button) => button.getBoundingClientRect().height));
           if (minimumTopButtonHeight < 44) {
             throw new Error("Primary navigation touch target is " + minimumTopButtonHeight + "px at viewport " + window.innerWidth + "px");
@@ -289,6 +289,55 @@ async function run() {
           epcot.click();
           await waitFor(() => document.querySelector(".command-center h2")?.textContent === "Epcot", "park switch");
 
+          const bookingPlanner = buttonNamed(".top-park-button", "🎟️Booking Planner");
+          if (!bookingPlanner) throw new Error("Booking Planner navigation button is missing");
+          bookingPlanner.click();
+          await waitFor(() => document.querySelector(".booking-planner h2")?.textContent === "Reservation Window Planner", "Booking Planner");
+          const addBbb = buttonNamed(".booking-planner-add button", "+ Bibbidi Bobbidi Boutique");
+          if (!addBbb) throw new Error("Bibbidi Bobbidi Boutique quick-add is missing");
+          addBbb.click();
+          const bookingTarget = await waitFor(() => document.querySelector(".booking-target-card"), "booking target card");
+          if (!bookingTarget.textContent.includes("Bibbidi Bobbidi Boutique")) throw new Error("Added booking target is missing");
+          await waitFor(
+            () => bookingTarget.classList.contains("booking-target-neutral")
+              && bookingTarget.querySelector(".booking-readiness")?.textContent === "Date needed",
+            "neutral quick-add readiness",
+          );
+          const editTarget = bookingTarget.querySelector(".booking-target-editor > summary");
+          if (!editTarget || editTarget.getBoundingClientRect().height < 42) throw new Error("Booking target editor touch target is too small");
+          editTarget.click();
+          const plannerInput = (label) => {
+            const row = Array.from(bookingTarget.querySelectorAll(".booking-target-form label"))
+              .find((candidate) => candidate.querySelector("span")?.textContent === label);
+            return row?.querySelector("input");
+          };
+          const setPlannerInput = (label, value) => {
+            const input = plannerInput(label);
+            if (!input) throw new Error(label + " input is missing");
+            const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
+            if (!setter) throw new Error(label + " input cannot be updated");
+            setter.call(input, value);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          setPlannerInput("Rule source", "Family research");
+          await waitFor(
+            () => bookingTarget.querySelector(".booking-readiness")?.textContent === "Date needed",
+            "source-only neutral readiness",
+          );
+          const planningDate = await waitFor(() => {
+            const value = document.querySelector(".booking-planner-today strong")?.textContent?.trim();
+            return /^\\d{4}-\\d{2}-\\d{2}$/.test(value || "") ? value : null;
+          }, "planning date");
+          const manualOpening = new Date(planningDate + "T12:00:00Z");
+          manualOpening.setUTCDate(manualOpening.getUTCDate() + 9);
+          setPlannerInput("Manual opening date", manualOpening.toISOString().slice(0, 10));
+          await waitFor(
+            () => bookingTarget.classList.contains("booking-target-upcoming")
+              && bookingTarget.querySelector(".booking-readiness")?.textContent === "Opens in 9 days",
+            "manual opening readiness",
+          );
+
           const overflow = document.documentElement.scrollWidth - window.innerWidth;
           if (overflow > 1) throw new Error("Mobile page has horizontal overflow of " + overflow + "px");
 
@@ -299,7 +348,8 @@ async function run() {
             lightningLaneRestored: !document.querySelector(".lightning-lane-row"),
             activitiesHeading: "Shows & family activities",
             characterPanel: characterPanel.querySelector("h3")?.textContent,
-            selectedPark: document.querySelector(".command-center h2")?.textContent,
+            bookingTarget: bookingTarget.querySelector("h3")?.textContent,
+            bookingReadiness: bookingTarget.querySelector(".booking-readiness")?.textContent,
             horizontalOverflow: overflow,
           };
         })()
@@ -313,12 +363,13 @@ async function run() {
     }
     const result = evaluation.result?.value;
     assert.deepEqual(result.viewport, [390, 844]);
-    assert.equal(result.navButtons, 6);
+    assert.equal(result.navButtons, 7);
     assert.equal(result.navColumns, 3);
     assert.equal(result.lightningLaneRestored, true);
     assert.equal(result.activitiesHeading, "Shows & family activities");
     assert.equal(result.characterPanel, "Characters & meet-and-greets");
-    assert.equal(result.selectedPark, "Epcot");
+    assert.equal(result.bookingTarget, "Bibbidi Bobbidi Boutique");
+    assert.equal(result.bookingReadiness, "Opens in 9 days");
     assert.ok(result.horizontalOverflow <= 1);
     console.log("CastleWatch mobile browser smoke passed", result);
   } catch (error) {

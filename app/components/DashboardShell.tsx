@@ -9,6 +9,7 @@ import WeatherAwarePlanning from "./WeatherAwarePlanning";
 import ShowTimesActivityLayer from "./ShowTimesActivityLayer";
 import CharacterMeetLayer from "./CharacterMeetLayer";
 import TripWeekPlanner from "./TripWeekPlanner";
+import BookingTargetPlanner from "./BookingTargetPlanner";
 
 const PARKS = [
   { name: "Magic Kingdom", icon: "🏰" },
@@ -17,7 +18,7 @@ const PARKS = [
   { name: "Animal Kingdom", icon: "🌳" },
 ];
 
-type ActiveSection = "park" | "transportation" | "tripWeek";
+type ActiveSection = "park" | "transportation" | "tripWeek" | "bookingPlanner";
 
 export default function DashboardShell() {
   const [selectedPark, setSelectedPark] = useState("Magic Kingdom");
@@ -64,11 +65,22 @@ export default function DashboardShell() {
           <span className="top-park-icon" aria-hidden="true">🧭</span>
           <span className="top-park-label">Getting There</span>
         </button>
+
+        <button
+          className={`top-park-button ${activeSection === "bookingPlanner" ? "top-park-button-active" : ""}`}
+          onClick={() => setActiveSection("bookingPlanner")}
+          type="button"
+        >
+          <span className="top-park-icon" aria-hidden="true">🎟️</span>
+          <span className="top-park-label">Booking Planner</span>
+        </button>
       </nav>
 
       <section className="grid">
         {activeSection === "transportation" ? (
           <TransportationPlanner />
+        ) : activeSection === "bookingPlanner" ? (
+          <BookingTargetPlanner />
         ) : activeSection === "tripWeek" ? (
           <TripWeekPlanner />
         ) : (

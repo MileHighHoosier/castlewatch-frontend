@@ -146,6 +146,24 @@ export function saveBookingTargets(targets: BookingTarget[]) {
   window.localStorage.setItem(BOOKING_TARGETS_STORAGE_KEY, JSON.stringify(targets));
 }
 
+export function updateBookingTargets(
+  change: (current: BookingTarget[]) => BookingTarget[],
+): BookingTarget[] {
+  const raw = loadRawBookingTargets();
+  let current: BookingTarget[];
+  if (raw === undefined) {
+    current = [];
+  } else if (validBookingTargetCollection(raw)) {
+    current = raw;
+  } else {
+    throw new Error("Stored booking-target data changed to an unsupported shape. Nothing was saved.");
+  }
+
+  const next = change(current);
+  saveBookingTargets(next);
+  return next;
+}
+
 export function replaceRawBookingTargets(value: unknown, present: boolean) {
   if (typeof window === "undefined") return;
   if (present) window.localStorage.setItem(BOOKING_TARGETS_STORAGE_KEY, JSON.stringify(value));

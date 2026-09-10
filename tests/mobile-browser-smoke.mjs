@@ -325,8 +325,10 @@ async function run() {
             () => bookingTarget.querySelector(".booking-readiness")?.textContent === "Date needed",
             "source-only neutral readiness",
           );
-          const planningDate = document.querySelector(".booking-planner-today strong")?.textContent;
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(planningDate || "")) throw new Error("Planning date is unavailable");
+          const planningDate = await waitFor(() => {
+            const value = document.querySelector(".booking-planner-today strong")?.textContent?.trim();
+            return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null;
+          }, "planning date");
           const manualOpening = new Date(planningDate + "T12:00:00Z");
           manualOpening.setUTCDate(manualOpening.getUTCDate() + 9);
           setPlannerInput("Manual opening date", manualOpening.toISOString().slice(0, 10));

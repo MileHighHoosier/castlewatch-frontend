@@ -34,6 +34,16 @@ function dayDistance(fromDate: string, toDate: string): number | null {
   return from === null || to === null ? null : Math.round((to - from) / 86_400_000);
 }
 
+function onlyNeedsDesiredTripDate(
+  date: BookingWindowResult["opening"] | BookingWindowResult["deadline"],
+  label: "opening" | "deadline",
+) {
+  return date.date === null
+    && date.source === "none"
+    && date.status === "invalid"
+    && date.detail === `Add a valid desired trip date before calculating the ${label} date.`;
+}
+
 export function bookingWindowReadiness(window: BookingWindowResult, todayDate: string): BookingReadiness {
   if (calendarDay(todayDate) === null) {
     return {
@@ -44,10 +54,14 @@ export function bookingWindowReadiness(window: BookingWindowResult, todayDate: s
     };
   }
 
+  const openingOnlyNeedsTripDate = onlyNeedsDesiredTripDate(window.opening, "opening");
+  const deadlineOnlyNeedsTripDate = onlyNeedsDesiredTripDate(window.deadline, "deadline");
   const missingPlanningDate = window.targetId !== null
     && window.desiredTripDate === null
     && window.opening.date === null
-    && window.opening.source === "none";
+    && window.opening.source === "none"
+    && openingOnlyNeedsTripDate
+    && deadlineOnlyNeedsTripDate;
   if (missingPlanningDate) {
     return {
       id: "not_scheduled",
@@ -60,9 +74,7 @@ export function bookingWindowReadiness(window: BookingWindowResult, todayDate: s
   const optionalDeadlineAbsent = window.opening.source === "manual_override"
     && window.opening.status === "ready"
     && window.desiredTripDate === null
-    && window.ruleVerification === "unavailable"
-    && window.deadline.date === null
-    && window.deadline.source === "none";
+    && deadlineOnlyNeedsTripDate;
   if (window.opening.status === "invalid" || (window.deadline.status === "invalid" && !optionalDeadlineAbsent)) {
     return {
       id: "invalid",

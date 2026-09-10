@@ -100,6 +100,60 @@ test("a manual opening date remains valid when the optional deadline and trip da
   });
 });
 
+test("source-only rule metadata does not invalidate a labeled manual opening date", () => {
+  const window = calculateBookingWindow(target({
+    desiredTripDate: "",
+    bookingRule: {
+      provenance: { source: "Family research", sourceUrl: null, asOfDate: null },
+      verification: "needs_verification",
+      openingDaysBeforeTrip: null,
+      deadlineDaysBeforeTrip: null,
+    },
+    manualOverride: {
+      openingDate: "2027-08-10",
+      deadlineDate: null,
+      note: "Family-selected call date",
+    },
+  }));
+  assert.deepEqual(bookingWindowReadiness(window, "2027-08-01"), {
+    id: "upcoming",
+    label: "Opens in 9 days",
+    detail: "Opening date: 2027-08-10.",
+    tone: "upcoming",
+  });
+});
+
+test("missing dates do not hide an inconsistent rule", () => {
+  const window = calculateBookingWindow(target({
+    desiredTripDate: "",
+    bookingRule: {
+      ...target().bookingRule,
+      verification: "unavailable",
+      openingDaysBeforeTrip: 1,
+      deadlineDaysBeforeTrip: 60,
+    },
+  }));
+  assert.equal(bookingWindowReadiness(window, "2027-08-01").id, "invalid");
+});
+
+test("a manual opening date does not suppress an inconsistent optional deadline rule", () => {
+  const window = calculateBookingWindow(target({
+    desiredTripDate: "",
+    bookingRule: {
+      ...target().bookingRule,
+      verification: "unavailable",
+      openingDaysBeforeTrip: 1,
+      deadlineDaysBeforeTrip: 60,
+    },
+    manualOverride: {
+      openingDate: "2027-08-10",
+      deadlineDate: null,
+      note: "Family-selected call date",
+    },
+  }));
+  assert.equal(bookingWindowReadiness(window, "2027-08-01").id, "invalid");
+});
+
 test("manual opening dates drive ordering without claiming an official rule", () => {
   const rows = buildBookingTimeline([
     target({ id: "calculated", priority: "standard" }),

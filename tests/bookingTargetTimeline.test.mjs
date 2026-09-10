@@ -183,6 +183,8 @@ test("Phase 2B planner stays declarative and does not mutate reservation or itin
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|\.innerHTML\s*=/);
   assert.doesNotMatch(source, /saveReservations|saveTripProfile|saveResortPlan|saveTripWeekApproval/);
   assert.doesNotMatch(source, /updateTarget\([^)]*,\s*\{\s*status:/);
+  assert.match(source, /updateBookingTargets\(change\)/);
+  assert.doesNotMatch(source, /commit\(targets/);
   assert.match(source, /Targets never create or change reservations or your itinerary/);
   assert.match(source, /does not assume an official booking policy/);
 });

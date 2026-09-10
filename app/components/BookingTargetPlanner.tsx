@@ -9,7 +9,7 @@ import {
   BookingWindowOverride,
   BookingWindowRule,
   loadRawBookingTargets,
-  saveBookingTargets,
+  updateBookingTargets,
   validBookingTargetCollection,
 } from "../lib/bookingTargets";
 import { buildBookingTimeline } from "../lib/bookingTargetTimeline";
@@ -103,14 +103,9 @@ export default function BookingTargetPlanner() {
 
   const timeline = useMemo(() => buildBookingTimeline(targets, todayDate), [targets, todayDate]);
 
-  function commit(next: BookingTarget[]) {
-    const current = loadRawBookingTargets();
-    if (current !== undefined && !validBookingTargetCollection(current)) {
-      setStorageError("Stored booking-target data changed to an unsupported shape. Nothing was saved.");
-      return;
-    }
+  function commit(change: (current: BookingTarget[]) => BookingTarget[]) {
     try {
-      saveBookingTargets(next);
+      const next = updateBookingTargets(change);
       setTargets(next);
       setStorageError("");
     } catch (error) {
@@ -119,24 +114,22 @@ export default function BookingTargetPlanner() {
   }
 
   function addTarget(title: string, targetType: BookingTargetType) {
-    commit([...targets, newTarget(title, targetType)]);
+    commit((current) => [...current, newTarget(title, targetType)]);
   }
 
-  function updateTarget(id: string, patch: Partial<BookingTarget>) {
-    commit(targets.map((target) => target.id === id ? { ...target, ...patch } : target));
+  function updateTarget(id: string, change: (target: BookingTarget) => Partial<BookingTarget>) {
+    commit((current) => current.map((target) => target.id === id ? { ...target, ...change(target) } : target));
   }
 
   function updateRule(id: string, change: (rule: BookingWindowRule) => BookingWindowRule) {
-    const target = targets.find((row) => row.id === id);
-    if (!target) return;
-    updateTarget(id, { bookingRule: change(target.bookingRule || emptyRule()) });
+    updateTarget(id, (target) => ({ bookingRule: change(target.bookingRule || emptyRule()) }));
   }
 
   function updateOverride(id: string, patch: Partial<BookingWindowOverride>) {
-    const target = targets.find((row) => row.id === id);
-    if (!target) return;
-    const next = { openingDate: null, deadlineDate: null, note: "", ...target.manualOverride, ...patch };
-    updateTarget(id, { manualOverride: next.openingDate || next.deadlineDate || next.note ? next : null });
+    updateTarget(id, (target) => {
+      const next = { openingDate: null, deadlineDate: null, note: "", ...target.manualOverride, ...patch };
+      return { manualOverride: next.openingDate || next.deadlineDate || next.note ? next : null };
+    });
   }
 
   return (
@@ -208,10 +201,10 @@ export default function BookingTargetPlanner() {
               <details className="booking-target-editor">
                 <summary>Edit planning details</summary>
                 <div className="booking-target-form">
-                  <label><span>Name</span><input value={target.title} onChange={(event) => updateTarget(target.id, { title: event.target.value || "Untitled target" })} /></label>
-                  <label><span>Type</span><select value={target.targetType} onChange={(event) => updateTarget(target.id, { targetType: event.target.value as BookingTargetType })}><option value="dining">Dining</option><option value="experience">Experience</option><option value="tour">Tour</option><option value="other">Other</option></select></label>
-                  <label><span>Priority</span><select value={target.priority} onChange={(event) => updateTarget(target.id, { priority: event.target.value as BookingTargetPriority })}><option value="must_do">Must do</option><option value="high">High</option><option value="standard">Standard</option><option value="low">Low</option></select></label>
-                  <label><span>Desired trip date</span><input type="date" value={target.desiredTripDate} onChange={(event) => updateTarget(target.id, { desiredTripDate: event.target.value })} /></label>
+                  <label><span>Name</span><input value={target.title} onChange={(event) => updateTarget(target.id, () => ({ title: event.target.value || "Untitled target" }))} /></label>
+                  <label><span>Type</span><select value={target.targetType} onChange={(event) => updateTarget(target.id, () => ({ targetType: event.target.value as BookingTargetType }))}><option value="dining">Dining</option><option value="experience">Experience</option><option value="tour">Tour</option><option value="other">Other</option></select></label>
+                  <label><span>Priority</span><select value={target.priority} onChange={(event) => updateTarget(target.id, () => ({ priority: event.target.value as BookingTargetPriority }))}><option value="must_do">Must do</option><option value="high">High</option><option value="standard">Standard</option><option value="low">Low</option></select></label>
+                  <label><span>Desired trip date</span><input type="date" value={target.desiredTripDate} onChange={(event) => updateTarget(target.id, () => ({ desiredTripDate: event.target.value }))} /></label>
                   <label><span>Rule verification</span><select value={rule?.verification || "needs_verification"} onChange={(event) => updateRule(target.id, (current) => ({ ...current, verification: event.target.value as BookingRuleVerification }))}><option value="needs_verification">Needs verification</option><option value="verified">Verified</option><option value="unavailable">Unavailable</option></select></label>
                   <label><span>Rule source</span><input placeholder="Official page or family research" value={rule?.provenance.source || ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, source: event.target.value } }))} /></label>
                   <label><span>Source URL</span><input inputMode="url" placeholder="https://…" value={rule?.provenance.sourceUrl || ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, sourceUrl: event.target.value || null } }))} /></label>
@@ -221,12 +214,12 @@ export default function BookingTargetPlanner() {
                   <label><span>Manual opening date</span><input type="date" value={target.manualOverride?.openingDate || ""} onChange={(event) => updateOverride(target.id, { openingDate: event.target.value || null })} /></label>
                   <label><span>Manual deadline date</span><input type="date" value={target.manualOverride?.deadlineDate || ""} onChange={(event) => updateOverride(target.id, { deadlineDate: event.target.value || null })} /></label>
                   <label className="booking-target-wide"><span>Override note</span><input placeholder="Why the family chose these dates" value={target.manualOverride?.note || ""} onChange={(event) => updateOverride(target.id, { note: event.target.value })} /></label>
-                  <label className="booking-target-wide"><span>Planning notes</span><textarea value={target.notes} onChange={(event) => updateTarget(target.id, { notes: event.target.value })} /></label>
+                  <label className="booking-target-wide"><span>Planning notes</span><textarea value={target.notes} onChange={(event) => updateTarget(target.id, () => ({ notes: event.target.value }))} /></label>
                 </div>
                 <div className="booking-target-editor-actions">
-                  <button type="button" onClick={() => updateTarget(target.id, { bookingRule: null })}>Clear rule</button>
-                  <button type="button" onClick={() => updateTarget(target.id, { manualOverride: null })}>Clear overrides</button>
-                  <button className="booking-target-remove" type="button" onClick={() => commit(targets.filter((row) => row.id !== target.id))}>Remove planning target</button>
+                  <button type="button" onClick={() => updateTarget(target.id, () => ({ bookingRule: null }))}>Clear rule</button>
+                  <button type="button" onClick={() => updateTarget(target.id, () => ({ manualOverride: null }))}>Clear overrides</button>
+                  <button className="booking-target-remove" type="button" onClick={() => commit((current) => current.filter((row) => row.id !== target.id))}>Remove planning target</button>
                 </div>
               </details>
             </article>

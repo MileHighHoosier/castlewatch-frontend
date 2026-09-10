@@ -7,6 +7,7 @@ import {
   loadRawBookingTargets,
   normalizeBookingTargets,
   saveBookingTargets,
+  updateBookingTargets,
   validBookingTargetCollection,
 } from "../app/lib/bookingTargets.ts";
 import {
@@ -174,10 +175,34 @@ test("local booking-target storage renders malformed data safely and refuses los
   assert.deepEqual(loadBookingTargets(), []);
   assert.deepEqual(loadRawBookingTargets(), { malformed: true });
   assert.throws(() => saveBookingTargets([{ id: "partial" }]), /Invalid booking-target data/);
+  assert.throws(() => updateBookingTargets(() => [target()]), /unsupported shape/);
   assert.equal(entries.get(BOOKING_TARGETS_STORAGE_KEY), JSON.stringify({ malformed: true }));
 
   saveBookingTargets([target()]);
   assert.deepEqual(loadBookingTargets(), [target()]);
+});
+
+test("a stale planner write preserves valid targets added by another tab", (t) => {
+  storage(t);
+  const stalePlannerSnapshot = [target()];
+  saveBookingTargets(stalePlannerSnapshot);
+
+  const otherTabTarget = target({
+    id: "dining-2027",
+    title: "Cinderella's Royal Table",
+    targetType: "dining",
+    priority: "high",
+  });
+  saveBookingTargets([...stalePlannerSnapshot, otherTabTarget]);
+
+  const saved = updateBookingTargets((current) => current.map((row) => (
+    row.id === stalePlannerSnapshot[0].id ? { ...row, notes: "Updated from the stale tab" } : row
+  )));
+
+  assert.deepEqual(saved.map((row) => row.id), ["bbb-2027", "dining-2027"]);
+  assert.equal(saved[0].notes, "Updated from the stale tab");
+  assert.deepEqual(saved[1], otherTabTarget);
+  assert.deepEqual(loadBookingTargets(), saved);
 });
 
 test("family sync preserves valid, malformed, and absent booking-target payloads exactly", (t) => {

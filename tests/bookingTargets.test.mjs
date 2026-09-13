@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { lockManager } from "./bookingTargetLockFixture.mjs";
+import { withBookingTargetsWriteLock } from "../app/lib/bookingTargetWriteLock.ts";
 import {
   BOOKING_TARGETS_STORAGE_KEY,
   calculateBookingWindow,
@@ -60,6 +62,8 @@ function storage(t) {
   const entries = new Map();
   const previous = global.window;
   global.window = {
+    dispatchEvent: () => true,
+    navigator: { locks: lockManager() },
     localStorage: {
       getItem: (key) => entries.get(key) ?? null,
       setItem: (key, value) => entries.set(key, value),
@@ -169,20 +173,20 @@ test("inconsistent or malformed rules fail neutral without changing itinerary da
   assert.equal(malformed.opening.status, "invalid");
 });
 
-test("local booking-target storage renders malformed data safely and refuses lossy edits", (t) => {
+test("local booking-target storage renders malformed data safely and refuses lossy edits", async (t) => {
   const entries = storage(t);
   entries.set(BOOKING_TARGETS_STORAGE_KEY, JSON.stringify({ malformed: true }));
   assert.deepEqual(loadBookingTargets(), []);
   assert.deepEqual(loadRawBookingTargets(), { malformed: true });
   assert.throws(() => saveBookingTargets([{ id: "partial" }]), /Invalid booking-target data/);
-  assert.throws(() => updateBookingTargets(() => [target()]), /unsupported shape/);
+  await assert.rejects(updateBookingTargets(() => [target()]), /unsupported shape/);
   assert.equal(entries.get(BOOKING_TARGETS_STORAGE_KEY), JSON.stringify({ malformed: true }));
 
   saveBookingTargets([target()]);
   assert.deepEqual(loadBookingTargets(), [target()]);
 });
 
-test("a stale planner write preserves valid targets added by another tab", (t) => {
+test("a stale planner write preserves valid targets added by another tab", async (t) => {
   storage(t);
   const stalePlannerSnapshot = [target()];
   saveBookingTargets(stalePlannerSnapshot);
@@ -195,7 +199,7 @@ test("a stale planner write preserves valid targets added by another tab", (t) =
   });
   saveBookingTargets([...stalePlannerSnapshot, otherTabTarget]);
 
-  const saved = updateBookingTargets((current) => current.map((row) => (
+  const saved = await updateBookingTargets((current) => current.map((row) => (
     row.id === stalePlannerSnapshot[0].id ? { ...row, notes: "Updated from the stale tab" } : row
   )));
 
@@ -203,6 +207,83 @@ test("a stale planner write preserves valid targets added by another tab", (t) =
   assert.equal(saved[0].notes, "Updated from the stale tab");
   assert.deepEqual(saved[1], otherTabTarget);
   assert.deepEqual(loadBookingTargets(), saved);
+});
+
+test("a second tab requesting a write after the first read cannot interleave its save", async (t) => {
+  storage(t);
+  const operations = {
+    add: (rows) => [...rows, target({ id: "tab-a-added" })],
+    edit: (rows) => rows.map((row) => ({ ...row, notes: "Tab A edit" })),
+    clearRule: (rows) => rows.map((row) => ({ ...row, bookingRule: null })),
+    clearOverrides: (rows) => rows.map((row) => ({ ...row, manualOverride: null })),
+    remove: (rows) => rows.filter((row) => row.id !== "bbb-2027"),
+  };
+  for (const [name, operation] of Object.entries(operations)) {
+    const initial = [target({ manualOverride: { openingDate: "2027-08-10", deadlineDate: null, note: "Family date" }, futureField: { keep: true } })];
+    saveBookingTargets(initial);
+    const other = target({ id: "tab-b-added", futureField: { keep: "B" } });
+    let second;
+    let secondRan = false;
+    await updateBookingTargets((current) => {
+      // Tab B requests its mutation exactly between A's read and write.
+      second = updateBookingTargets((latest) => {
+        secondRan = true;
+        assert.deepEqual(latest, operation(initial), name + " must commit before B reads");
+        return [...latest, other];
+      });
+      assert.equal(secondRan, false);
+      return operation(current);
+    });
+    await second;
+    assert.deepEqual(loadBookingTargets(), [...operation(initial), other], name);
+  }
+});
+
+test("queued planner writes validate storage after an explicit shared replacement releases the lock", async (t) => {
+  const entries = storage(t);
+  for (const raw of [{ futureShape: 2 }, [target({ desiredTripDate: "2027-02-29" })], null]) {
+    saveBookingTargets([target()]);
+    let release;
+    let entered;
+    const acquired = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    const replacement = withBookingTargetsWriteLock(async () => {
+      entered();
+      await gate;
+      applyFamilyTripPayload(payload(raw));
+    });
+    await acquired;
+    let mutationRan = false;
+    const queued = updateBookingTargets((rows) => { mutationRan = true; return [...rows, target({ id: "new" })]; });
+    const rejected = assert.rejects(queued, /unsupported shape/);
+    release();
+    await replacement;
+    await rejected;
+    assert.equal(mutationRan, false);
+    assert.equal(entries.get(BOOKING_TARGETS_STORAGE_KEY), JSON.stringify(raw));
+    assert.equal(fingerprintFamilyTripPayload(buildLocalFamilyTripPayload()), fingerprintFamilyTripPayload(payload(raw)));
+  }
+});
+
+test("unavailable locks and failed writes preserve storage and release queued work", async (t) => {
+  const entries = storage(t);
+  saveBookingTargets([target()]);
+  const before = entries.get(BOOKING_TARGETS_STORAGE_KEY);
+  const locks = window.navigator.locks;
+  window.navigator.locks = undefined;
+  let mutationRan = false;
+  await assert.rejects(updateBookingTargets(() => { mutationRan = true; return []; }), /cannot safely coordinate/);
+  assert.equal(mutationRan, false);
+  assert.equal(entries.get(BOOKING_TARGETS_STORAGE_KEY), before);
+  window.navigator.locks = locks;
+  const setItem = window.localStorage.setItem;
+  window.localStorage.setItem = () => { throw new Error("Storage quota fixture"); };
+  await assert.rejects(updateBookingTargets(() => []), /Storage quota fixture/);
+  assert.equal(entries.get(BOOKING_TARGETS_STORAGE_KEY), before);
+  window.localStorage.setItem = setItem;
+  await assert.rejects(updateBookingTargets(() => { throw new Error("Mutation fixture"); }), /Mutation fixture/);
+  await updateBookingTargets((rows) => [...rows, target({ id: "after-error" })]);
+  assert.equal(loadBookingTargets().length, 2);
 });
 
 test("family sync preserves valid, malformed, and absent booking-target payloads exactly", (t) => {

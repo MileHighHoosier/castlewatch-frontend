@@ -25,6 +25,7 @@ import {
   restoreFamilyTripVersion,
   saveFamilySyncMetadata,
 } from "../lib/familyTripSync";
+import { withBookingTargetsWriteLock } from "../lib/bookingTargetWriteLock";
 
 const STYLE_ID = "castlewatch-family-history-style";
 
@@ -183,29 +184,33 @@ export default function FamilyTripHistory() {
     setError(null);
     setSuccess(null);
     try {
-      const selectedAuthorization = loadFamilyTripAuthorization();
-      if (!selectedAuthorization) throw new Error("Reconnect the Shared Family Plan before restoring a backup.");
-      if (!canRestoreFamilyTrip(selectedAuthorization)) {
-        throw new Error("Viewer access cannot restore a shared version.");
-      }
+      // Acquire before the remote restore so an unsupported browser cannot
+      // change the server and only then discover it cannot safely apply locally.
+      await withBookingTargetsWriteLock(async () => {
+        const selectedAuthorization = loadFamilyTripAuthorization();
+        if (!selectedAuthorization) throw new Error("Reconnect the Shared Family Plan before restoring a backup.");
+        if (!canRestoreFamilyTrip(selectedAuthorization)) {
+          throw new Error("Viewer access cannot restore a shared version.");
+        }
 
-      const current = await fetchFamilyTrip(selectedAuthorization);
-      const currentAnalysis = analyzeFamilyTripSync(
-        buildLocalFamilyTripPayload(),
-        current,
-        loadFamilySyncMetadata(),
-      );
-      if (currentAnalysis.id !== "up_to_date") {
-        throw new Error("Restore stopped because the sync state changed. Resolve the Shared Family Plan status and try again.");
-      }
+        const current = await fetchFamilyTrip(selectedAuthorization);
+        const currentAnalysis = analyzeFamilyTripSync(
+          buildLocalFamilyTripPayload(),
+          current,
+          loadFamilySyncMetadata(),
+        );
+        if (currentAnalysis.id !== "up_to_date") {
+          throw new Error("Restore stopped because the sync state changed. Resolve the Shared Family Plan status and try again.");
+        }
 
-      const restored = await restoreFamilyTripVersion(selectedAuthorization, current.version, selected.version);
-      if (!restored.payload) throw new Error("The restored shared version did not include a trip payload.");
+        const restored = await restoreFamilyTripVersion(selectedAuthorization, current.version, selected.version);
+        if (!restored.payload) throw new Error("The restored shared version did not include a trip payload.");
 
-      const nextMetadata = createFamilySyncMetadata(restored.version, restored.payload);
-      applyFamilyTripPayload(restored.payload);
-      saveFamilySyncMetadata(nextMetadata);
-      window.location.reload();
+        const nextMetadata = createFamilySyncMetadata(restored.version, restored.payload);
+        applyFamilyTripPayload(restored.payload);
+        saveFamilySyncMetadata(nextMetadata);
+        window.location.reload();
+      });
     } catch (restoreError) {
       if (restoreError instanceof FamilyTripSyncError && restoreError.document) {
         setRemote(restoreError.document);

@@ -1,4 +1,5 @@
 import { calendarDay, TRIP_TIME_ZONE } from "./tripDate";
+import { BOOKING_TARGETS_UPDATED_EVENT, withBookingTargetsWriteLock } from "./bookingTargetWriteLock";
 
 export type BookingTargetType = "dining" | "experience" | "tour" | "other";
 export type BookingTargetPriority = "must_do" | "high" | "standard" | "low";
@@ -146,22 +147,27 @@ export function saveBookingTargets(targets: BookingTarget[]) {
   window.localStorage.setItem(BOOKING_TARGETS_STORAGE_KEY, JSON.stringify(targets));
 }
 
-export function updateBookingTargets(
+export async function updateBookingTargets(
   change: (current: BookingTarget[]) => BookingTarget[],
-): BookingTarget[] {
-  const raw = loadRawBookingTargets();
-  let current: BookingTarget[];
-  if (raw === undefined) {
-    current = [];
-  } else if (validBookingTargetCollection(raw)) {
-    current = raw;
-  } else {
-    throw new Error("Stored booking-target data changed to an unsupported shape. Nothing was saved.");
-  }
+): Promise<BookingTarget[]> {
+  return withBookingTargetsWriteLock(() => {
+    // Read and validate only after acquiring the cross-tab lock. Never carry a
+    // pre-lock snapshot into this critical section, and never await within it.
+    const raw = loadRawBookingTargets();
+    let current: BookingTarget[];
+    if (raw === undefined) {
+      current = [];
+    } else if (validBookingTargetCollection(raw)) {
+      current = raw;
+    } else {
+      throw new Error("Stored booking-target data changed to an unsupported shape. Nothing was saved.");
+    }
 
-  const next = change(current);
-  saveBookingTargets(next);
-  return next;
+    const next = change(current);
+    saveBookingTargets(next);
+    window.dispatchEvent(new Event(BOOKING_TARGETS_UPDATED_EVENT));
+    return next;
+  });
 }
 
 export function replaceRawBookingTargets(value: unknown, present: boolean) {

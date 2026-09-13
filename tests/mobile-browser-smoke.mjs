@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { verifyBookingTargetMultiTab } from "./bookingTargetMultiTabSmoke.mjs";
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -76,12 +77,12 @@ async function waitForServer(url) {
   });
 }
 
-async function connectToPage(debugPort) {
+async function connectToPage(debugPort, targetId) {
   const page = await retry("Chrome DevTools page", async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const targets = await response.json();
-    const target = targets.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
+    const target = targets.find((item) => item.type === "page" && item.webSocketDebuggerUrl && (!targetId || item.id === targetId));
     if (!target) throw new Error("No debuggable page target");
     return target;
   });
@@ -372,6 +373,16 @@ async function run() {
     assert.equal(result.bookingReadiness, "Opens in 9 days");
     assert.ok(result.horizontalOverflow <= 1);
     console.log("CastleWatch mobile browser smoke passed", result);
+    const { targetId } = await cdp.send("Target.createTarget", { url: appUrl });
+    const second = await connectToPage(debugPort, targetId);
+    try {
+      await second.send("Runtime.enable");
+      await second.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+      await verifyBookingTargetMultiTab(cdp, second);
+    } finally {
+      second.socket.close();
+      await cdp.send("Target.closeTarget", { targetId });
+    }
   } catch (error) {
     if (serverOutput) console.error("Next.js output:\n" + serverOutput);
     if (chromeOutput) console.error("Chrome output:\n" + chromeOutput);

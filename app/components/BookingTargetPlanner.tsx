@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookingRuleVerification,
   BookingTarget,
@@ -8,6 +8,7 @@ import {
   BookingTargetType,
   BookingWindowOverride,
   BookingWindowRule,
+  BOOKING_TARGETS_STORAGE_KEY,
   loadRawBookingTargets,
   updateBookingTargets,
   validBookingTargetCollection,
@@ -15,6 +16,7 @@ import {
 import { buildBookingTimeline } from "../lib/bookingTargetTimeline";
 import { subscribeDecisionClock } from "../lib/decisionClock";
 import { tripDateKey } from "../lib/tripDate";
+import { BOOKING_TARGETS_UPDATED_EVENT } from "../lib/bookingTargetWriteLock";
 
 const TARGET_TEMPLATES: Array<{ title: string; targetType: BookingTargetType }> = [
   { title: "Bibbidi Bobbidi Boutique", targetType: "experience" },
@@ -83,42 +85,85 @@ function safeSourceUrl(value: string | null) {
   return value && /^https?:\/\//i.test(value) ? value : null;
 }
 
+// Capture the primitive while the event is current; a queued lock must never
+// read a later value from the mutable input element.
+function inputValue(change: (value: string) => void) {
+  return (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => change(event.currentTarget.value);
+}
+
 export default function BookingTargetPlanner() {
   const [targets, setTargets] = useState<BookingTarget[]>([]);
   const [todayDate, setTodayDate] = useState("");
   const [storageError, setStorageError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const pendingWrites = useRef(0);
+  const mounted = useRef(false);
 
-  useEffect(() => {
+  const refreshTargets = useCallback(() => {
+    if (pendingWrites.current > 0) return;
     const raw = loadRawBookingTargets();
     if (raw === undefined) {
       setTargets([]);
     } else if (validBookingTargetCollection(raw)) {
       setTargets(raw);
     } else {
+      setTargets([]);
       setStorageError("Stored booking-target data has an unsupported or malformed shape. Editing is paused so the original data cannot be overwritten.");
+      return;
     }
-
-    return subscribeDecisionClock((nowIso) => setTodayDate(tripDateKey(nowIso) || ""), window);
+    setStorageError("");
   }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    refreshTargets();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === BOOKING_TARGETS_STORAGE_KEY || event.key === null) refreshTargets();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", refreshTargets);
+    window.addEventListener(BOOKING_TARGETS_UPDATED_EVENT, refreshTargets);
+    const stopClock = subscribeDecisionClock((nowIso) => setTodayDate(tripDateKey(nowIso) || ""), window);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", refreshTargets);
+      window.removeEventListener(BOOKING_TARGETS_UPDATED_EVENT, refreshTargets);
+      stopClock();
+    };
+  }, [refreshTargets]);
 
   const timeline = useMemo(() => buildBookingTimeline(targets, todayDate), [targets, todayDate]);
 
-  function commit(change: (current: BookingTarget[]) => BookingTarget[]) {
+  async function commit(change: (current: BookingTarget[]) => BookingTarget[]) {
+    if (storageError) return;
+    pendingWrites.current += 1;
+    setSaving(true);
+    setSaveError("");
+    // Keep typing responsive while persistence waits. This is only a UI draft;
+    // the write callback is separately applied to storage under the lock.
+    setTargets(change);
     try {
-      const next = updateBookingTargets(change);
-      setTargets(next);
-      setStorageError("");
+      await updateBookingTargets(change);
     } catch (error) {
-      setStorageError(error instanceof Error ? error.message : "Booking-target changes could not be saved.");
+      if (mounted.current) setSaveError(error instanceof Error ? error.message : "Booking-target changes could not be saved.");
+    } finally {
+      pendingWrites.current -= 1;
+      if (mounted.current && pendingWrites.current === 0) {
+        setSaving(false);
+        refreshTargets();
+      }
     }
   }
 
   function addTarget(title: string, targetType: BookingTargetType) {
-    commit((current) => [...current, newTarget(title, targetType)]);
+    const target = newTarget(title, targetType);
+    void commit((current) => [...current, target]);
   }
 
   function updateTarget(id: string, change: (target: BookingTarget) => Partial<BookingTarget>) {
-    commit((current) => current.map((target) => target.id === id ? { ...target, ...change(target) } : target));
+    void commit((current) => current.map((target) => target.id === id ? { ...target, ...change(target) } : target));
   }
 
   function updateRule(id: string, change: (rule: BookingWindowRule) => BookingWindowRule) {
@@ -133,7 +178,7 @@ export default function BookingTargetPlanner() {
   }
 
   return (
-    <section className="card booking-planner">
+    <section className="card booking-planner" aria-busy={saving}>
       <header className="booking-planner-header">
         <div>
           <h2>Reservation Window Planner</h2>
@@ -148,6 +193,8 @@ export default function BookingTargetPlanner() {
       </aside>
 
       {storageError && <p className="booking-planner-error" role="alert">{storageError}</p>}
+      {saveError && <p className="booking-planner-error" role="alert">{saveError}</p>}
+      {saving && <p className="muted" role="status">Saving planning changes…</p>}
 
       <div className="booking-planner-add" aria-label="Add a booking target">
         {TARGET_TEMPLATES.map((template) => (
@@ -167,7 +214,7 @@ export default function BookingTargetPlanner() {
           const rule = target.bookingRule;
           const sourceUrl = safeSourceUrl(rule?.provenance.sourceUrl || null);
           return (
-            <article className={`booking-target-card booking-target-${readiness.tone}`} key={target.id}>
+            <article className={`booking-target-card booking-target-${readiness.tone}`} key={target.id} data-target-id={target.id}>
               <div className="booking-target-top">
                 <div>
                   <div className="booking-target-kicker">{PRIORITY_LABELS[target.priority]} priority · {target.targetType}</div>
@@ -201,20 +248,20 @@ export default function BookingTargetPlanner() {
               <details className="booking-target-editor">
                 <summary>Edit planning details</summary>
                 <div className="booking-target-form">
-                  <label><span>Name</span><input value={target.title} onChange={(event) => updateTarget(target.id, () => ({ title: event.target.value || "Untitled target" }))} /></label>
-                  <label><span>Type</span><select value={target.targetType} onChange={(event) => updateTarget(target.id, () => ({ targetType: event.target.value as BookingTargetType }))}><option value="dining">Dining</option><option value="experience">Experience</option><option value="tour">Tour</option><option value="other">Other</option></select></label>
-                  <label><span>Priority</span><select value={target.priority} onChange={(event) => updateTarget(target.id, () => ({ priority: event.target.value as BookingTargetPriority }))}><option value="must_do">Must do</option><option value="high">High</option><option value="standard">Standard</option><option value="low">Low</option></select></label>
-                  <label><span>Desired trip date</span><input type="date" value={target.desiredTripDate} onChange={(event) => updateTarget(target.id, () => ({ desiredTripDate: event.target.value }))} /></label>
-                  <label><span>Rule verification</span><select value={rule?.verification || "needs_verification"} onChange={(event) => updateRule(target.id, (current) => ({ ...current, verification: event.target.value as BookingRuleVerification }))}><option value="needs_verification">Needs verification</option><option value="verified">Verified</option><option value="unavailable">Unavailable</option></select></label>
-                  <label><span>Rule source</span><input placeholder="Official page or family research" value={rule?.provenance.source || ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, source: event.target.value } }))} /></label>
-                  <label><span>Source URL</span><input inputMode="url" placeholder="https://…" value={rule?.provenance.sourceUrl || ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, sourceUrl: event.target.value || null } }))} /></label>
-                  <label><span>Rule as-of date</span><input type="date" value={rule?.provenance.asOfDate || ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, asOfDate: event.target.value || null } }))} /></label>
-                  <label><span>Opening days before trip</span><input type="number" min="0" max="3660" value={rule?.openingDaysBeforeTrip ?? ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, openingDaysBeforeTrip: numericOffset(event.target.value) }))} /></label>
-                  <label><span>Deadline days before trip</span><input type="number" min="0" max="3660" value={rule?.deadlineDaysBeforeTrip ?? ""} onChange={(event) => updateRule(target.id, (current) => ({ ...current, deadlineDaysBeforeTrip: numericOffset(event.target.value) }))} /></label>
-                  <label><span>Manual opening date</span><input type="date" value={target.manualOverride?.openingDate || ""} onChange={(event) => updateOverride(target.id, { openingDate: event.target.value || null })} /></label>
-                  <label><span>Manual deadline date</span><input type="date" value={target.manualOverride?.deadlineDate || ""} onChange={(event) => updateOverride(target.id, { deadlineDate: event.target.value || null })} /></label>
-                  <label className="booking-target-wide"><span>Override note</span><input placeholder="Why the family chose these dates" value={target.manualOverride?.note || ""} onChange={(event) => updateOverride(target.id, { note: event.target.value })} /></label>
-                  <label className="booking-target-wide"><span>Planning notes</span><textarea value={target.notes} onChange={(event) => updateTarget(target.id, () => ({ notes: event.target.value }))} /></label>
+                  <label><span>Name</span><input value={target.title} onChange={inputValue((value) => updateTarget(target.id, () => ({ title: value || "Untitled target" })))} /></label>
+                  <label><span>Type</span><select value={target.targetType} onChange={inputValue((value) => updateTarget(target.id, () => ({ targetType: value as BookingTargetType })))}><option value="dining">Dining</option><option value="experience">Experience</option><option value="tour">Tour</option><option value="other">Other</option></select></label>
+                  <label><span>Priority</span><select value={target.priority} onChange={inputValue((value) => updateTarget(target.id, () => ({ priority: value as BookingTargetPriority })))}><option value="must_do">Must do</option><option value="high">High</option><option value="standard">Standard</option><option value="low">Low</option></select></label>
+                  <label><span>Desired trip date</span><input type="date" value={target.desiredTripDate} onChange={inputValue((value) => updateTarget(target.id, () => ({ desiredTripDate: value })))} /></label>
+                  <label><span>Rule verification</span><select value={rule?.verification || "needs_verification"} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, verification: value as BookingRuleVerification })))}><option value="needs_verification">Needs verification</option><option value="verified">Verified</option><option value="unavailable">Unavailable</option></select></label>
+                  <label><span>Rule source</span><input placeholder="Official page or family research" value={rule?.provenance.source || ""} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, source: value } })))} /></label>
+                  <label><span>Source URL</span><input inputMode="url" placeholder="https://…" value={rule?.provenance.sourceUrl || ""} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, sourceUrl: value || null } })))} /></label>
+                  <label><span>Rule as-of date</span><input type="date" value={rule?.provenance.asOfDate || ""} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, provenance: { ...current.provenance, asOfDate: value || null } })))} /></label>
+                  <label><span>Opening days before trip</span><input type="number" min="0" max="3660" value={rule?.openingDaysBeforeTrip ?? ""} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, openingDaysBeforeTrip: numericOffset(value) })))} /></label>
+                  <label><span>Deadline days before trip</span><input type="number" min="0" max="3660" value={rule?.deadlineDaysBeforeTrip ?? ""} onChange={inputValue((value) => updateRule(target.id, (current) => ({ ...current, deadlineDaysBeforeTrip: numericOffset(value) })))} /></label>
+                  <label><span>Manual opening date</span><input type="date" value={target.manualOverride?.openingDate || ""} onChange={inputValue((value) => updateOverride(target.id, { openingDate: value || null }))} /></label>
+                  <label><span>Manual deadline date</span><input type="date" value={target.manualOverride?.deadlineDate || ""} onChange={inputValue((value) => updateOverride(target.id, { deadlineDate: value || null }))} /></label>
+                  <label className="booking-target-wide"><span>Override note</span><input placeholder="Why the family chose these dates" value={target.manualOverride?.note || ""} onChange={inputValue((value) => updateOverride(target.id, { note: value }))} /></label>
+                  <label className="booking-target-wide"><span>Planning notes</span><textarea value={target.notes} onChange={inputValue((value) => updateTarget(target.id, () => ({ notes: value })))} /></label>
                 </div>
                 <div className="booking-target-editor-actions">
                   <button type="button" onClick={() => updateTarget(target.id, () => ({ bookingRule: null }))}>Clear rule</button>

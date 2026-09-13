@@ -34,6 +34,7 @@ import {
   saveFamilyTrip,
 } from "../lib/familyTripSync";
 import useFamilyTripAutosave, { FAMILY_SYNC_UPDATED_EVENT } from "./useFamilyTripAutosave";
+import { withBookingTargetsWriteLock } from "../lib/bookingTargetWriteLock";
 
 const STYLE_ID = "castlewatch-family-sync-style";
 const LOCAL_CHECK_INTERVAL_MS = 1_000;
@@ -461,15 +462,22 @@ export default function FamilyTripSync() {
     setBusy(false);
   }
 
-  function download() {
+  async function download() {
     if (!remote?.payload) return;
+    const downloaded = remote;
+    const payload = remote.payload;
+    setBusy(true);
     clearMessages();
     try {
-      applyFamilyTripPayload(remote.payload);
-      saveFamilySyncMetadata(createFamilySyncMetadata(remote.version, remote.payload));
-      window.location.reload();
+      await withBookingTargetsWriteLock(() => {
+        applyFamilyTripPayload(payload);
+        saveFamilySyncMetadata(createFamilySyncMetadata(downloaded.version, payload));
+        window.location.reload();
+      });
     } catch (error) {
       handleFailure(error);
+    } finally {
+      setBusy(false);
     }
   }
 

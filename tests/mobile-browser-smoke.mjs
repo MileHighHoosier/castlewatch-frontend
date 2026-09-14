@@ -339,6 +339,81 @@ async function run() {
             "manual opening readiness",
           );
 
+          const lifecycle = bookingTarget.querySelector(".booking-lifecycle");
+          if (!lifecycle || lifecycle.querySelector("summary").getBoundingClientRect().height < 44) {
+            throw new Error("Booking lifecycle control is missing or too small");
+          }
+          lifecycle.querySelector("summary").click();
+          const lifecycleInput = (label) => {
+            const row = Array.from(lifecycle.querySelectorAll("label"))
+              .find((candidate) => candidate.querySelector("span")?.textContent === label);
+            return row?.querySelector("input, select");
+          };
+          const setLifecycleInput = (label, value) => {
+            const input = lifecycleInput(label);
+            if (!input) throw new Error(label + " lifecycle input is missing");
+            const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
+            if (!setter) throw new Error(label + " lifecycle input cannot be updated");
+            setter.call(input, value);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          const lifecycleButton = (label) => buttonNamed(".booking-lifecycle-actions button", label);
+          setLifecycleInput("Attempt/result note", "Family called at opening");
+          lifecycleButton("Record attempt").click();
+          await waitFor(
+            () => bookingTarget.textContent.includes("Target state: Attempted")
+              && bookingTarget.querySelector(".booking-attempt-list")?.textContent.includes("Family called at opening"),
+            "recorded attempt state",
+          );
+          lifecycleButton("Record unavailable result").click();
+          await waitFor(
+            () => bookingTarget.textContent.includes("Target state: Unavailable")
+              && bookingTarget.querySelectorAll(".booking-attempt-list li").length === 2,
+            "unavailable result state",
+          );
+          setLifecycleInput("Backup choice", "Alternate character meal");
+          setLifecycleInput("Backup note", "Family-selected fallback; availability not checked");
+          lifecycleButton("Select this backup").click();
+          await waitFor(
+            () => bookingTarget.textContent.includes("Target state: Backup selected")
+              && bookingTarget.querySelector(".booking-lifecycle-fallback")?.textContent.includes("Alternate character meal"),
+            "backup selection state",
+          );
+
+          const reservationFixture = [{
+            id: "mobile-reservation-bbb",
+            type: "experience",
+            title: "Bibbidi Bobbidi Boutique",
+            date: "2027-10-09",
+            time: "12:00",
+            location: "Magic Kingdom",
+            status: "confirmed",
+            durationMinutes: 90,
+            arrivalBufferMinutes: 30,
+            notes: "Rendered Phase 2C fixture",
+          }];
+          const reservationRaw = JSON.stringify(reservationFixture);
+          localStorage.setItem("castlewatch.trip-reservations.v1", reservationRaw);
+          window.dispatchEvent(new Event("focus"));
+          await waitFor(() => lifecycleInput("Existing reservation to link")?.querySelectorAll("option").length === 2, "existing reservation option");
+          setLifecycleInput("Existing reservation to link", "mobile-reservation-bbb");
+          lifecycleButton("Link reservation & mark booked").click();
+          await waitFor(
+            () => bookingTarget.textContent.includes("Target state: Booked")
+              && bookingTarget.querySelector(".booking-lifecycle-linked")?.textContent.includes("Bibbidi Bobbidi Boutique"),
+            "booked reservation link state",
+          );
+          if (localStorage.getItem("castlewatch.trip-reservations.v1") !== reservationRaw) {
+            throw new Error("Booking lifecycle changed reservation storage");
+          }
+          lifecycleButton("Unlink booking and return to attempted").click();
+          await waitFor(
+            () => bookingTarget.textContent.includes("Target state: Attempted")
+              && !bookingTarget.querySelector(".booking-lifecycle-linked"),
+            "explicit booking unlink state",
+          );
+
           const overflow = document.documentElement.scrollWidth - window.innerWidth;
           if (overflow > 1) throw new Error("Mobile page has horizontal overflow of " + overflow + "px");
 
@@ -351,6 +426,8 @@ async function run() {
             characterPanel: characterPanel.querySelector("h3")?.textContent,
             bookingTarget: bookingTarget.querySelector("h3")?.textContent,
             bookingReadiness: bookingTarget.querySelector(".booking-readiness")?.textContent,
+            bookingLifecycle: bookingTarget.querySelector(".booking-rule-summary")?.textContent,
+            bookingAttempts: bookingTarget.querySelectorAll(".booking-attempt-list li").length,
             horizontalOverflow: overflow,
           };
         })()
@@ -371,6 +448,8 @@ async function run() {
     assert.equal(result.characterPanel, "Characters & meet-and-greets");
     assert.equal(result.bookingTarget, "Bibbidi Bobbidi Boutique");
     assert.equal(result.bookingReadiness, "Opens in 9 days");
+    assert.match(result.bookingLifecycle, /Target state: Attempted/);
+    assert.equal(result.bookingAttempts, 3);
     assert.ok(result.horizontalOverflow <= 1);
     console.log("CastleWatch mobile browser smoke passed", result);
     const { targetId } = await cdp.send("Target.createTarget", { url: appUrl });

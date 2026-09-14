@@ -178,11 +178,10 @@ test("inconsistent family overrides are shown as invalid", () => {
   assert.match(readiness.detail, /opening date is after the deadline/i);
 });
 
-test("Phase 2B planner stays declarative and does not mutate reservation or itinerary controls", async () => {
+test("Phase 2C keeps Phase 2B planning declarative and does not mutate reservation or itinerary controls", async () => {
   const source = await readFile(new URL("../app/components/BookingTargetPlanner.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|\.innerHTML\s*=/);
-  assert.doesNotMatch(source, /saveReservations|saveTripProfile|saveResortPlan|saveTripWeekApproval/);
-  assert.doesNotMatch(source, /updateTarget\([^)]*,\s*\{\s*status:/);
+  assert.doesNotMatch(source, /saveReservations|newReservation|saveTripProfile|saveResortPlan|saveTripWeekApproval/);
   assert.match(source, /updateBookingTargets\(change\)/);
   assert.doesNotMatch(source, /commit\(targets/);
   assert.match(source, /Targets never create or change reservations or your itinerary/);

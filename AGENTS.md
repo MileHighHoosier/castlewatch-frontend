@@ -19,7 +19,7 @@ Before cross-cutting or architectural changes, inspect both repositories. The ba
 
 Do not use old chat history as the source of truth when current code/documentation disagrees.
 
-Read backend `PROJECT_TRACKER.md` for the current checkpoint, blockers and next action. CW-016 (pre–Phase 2A corrections) is under review; Phase 2A feature work is paused until separate corrective release verification/finalization. Backend compatibility protection must deploy before frontend preservation or future shared fields. Do not omit unknown root fields, silently clean malformed reservations into writes, or downcast an unsupported payload schema.
+Read backend `PROJECT_TRACKER.md` for the current checkpoint, blockers and next action. Reservation Awareness Phase 2C is active only under the bounded CW-019 checkpoint; publication, review and finalization remain separate approvals. Do not omit unknown root fields, silently clean malformed reservations or booking targets into writes, or downcast an unsupported payload schema.
 
 ## Change rules
 

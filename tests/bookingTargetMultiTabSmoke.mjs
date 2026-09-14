@@ -81,7 +81,15 @@ async function action(page, operation) {
     }
     const card = document.querySelector('[data-target-id="multi-tab-A"]');
     if (!card) throw new Error("Multi-tab target is missing");
-    const editor = card.querySelector("details");
+    if (op === "recordAttempt") {
+      const workflow = card.querySelector(".booking-lifecycle");
+      if (!workflow.open) workflow.querySelector("summary").click();
+      const button = [...workflow.querySelectorAll("button")].find((node) => node.textContent === "Record attempt");
+      if (!button) throw new Error("Missing planner lifecycle attempt action");
+      button.click();
+      return;
+    }
+    const editor = card.querySelector(".booking-target-editor");
     if (!editor.open) editor.querySelector("summary").click();
     if (op === "edit") {
       const row = [...card.querySelectorAll("label")].find((node) => node.querySelector("span")?.textContent === "Planning notes");
@@ -118,7 +126,7 @@ export async function verifyBookingTargetMultiTab(first, second) {
   await waitFor(second, () => Boolean(document.querySelector(".booking-planner")), "second planner rendered");
   await settled(first);
 
-  for (const op of ["add", "edit", "clearRule", "clearOverrides", "remove"]) {
+  for (const op of ["add", "edit", "clearRule", "clearOverrides", "recordAttempt", "remove"]) {
     for (const reverse of [false, true]) {
       await seed(first, second);
       await hold(first);
@@ -143,6 +151,11 @@ export async function verifyBookingTargetMultiTab(first, second) {
         if (op === "edit") assert.equal(edited.notes, "Captured queued edit");
         if (op === "clearRule") assert.equal(edited.bookingRule, null);
         if (op === "clearOverrides") assert.equal(edited.manualOverride, null);
+        if (op === "recordAttempt") {
+          assert.equal(edited.status, "attempted");
+          assert.equal(edited.attempts.length, 1);
+          assert.equal(edited.attempts[0].result, "attempted");
+        }
       }
       if (op === "add") assert.equal(rows.filter((row) => row.title === "New booking target").length, 1);
       for (const page of [first, second]) {
@@ -180,5 +193,5 @@ export async function verifyBookingTargetMultiTab(first, second) {
       await waitFor(page, () => Boolean(document.querySelector(".booking-planner")), "remount planner");
     }
   }
-  console.log("CastleWatch rendered multi-tab planner smoke passed: 10 ordered action pairs; 3 malformed/future-storage interleavings");
+  console.log("CastleWatch rendered multi-tab planner smoke passed: 12 ordered action pairs; 3 malformed/future-storage interleavings");
 }

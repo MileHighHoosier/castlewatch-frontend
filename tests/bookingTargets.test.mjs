@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { lockManager } from "./bookingTargetLockFixture.mjs";
 import { withBookingTargetsWriteLock } from "../app/lib/bookingTargetWriteLock.ts";
+import { applyBookingLifecycleAction } from "../app/lib/bookingTargetLifecycle.ts";
 import {
   BOOKING_TARGETS_STORAGE_KEY,
   calculateBookingWindow,
@@ -239,6 +240,31 @@ test("a second tab requesting a write after the first read cannot interleave its
   }
 });
 
+test("a queued lifecycle attempt uses the latest valid target collection", async (t) => {
+  storage(t);
+  const initial = [target({ futureField: { keep: "phase-2a" } })];
+  saveBookingTargets(initial);
+  const other = target({ id: "tab-b-target", title: "Tab B target" });
+  let lifecycleWrite;
+  await updateBookingTargets((current) => {
+    lifecycleWrite = updateBookingTargets((latest) => latest.map((row) => row.id === "bbb-2027"
+      ? applyBookingLifecycleAction(row, {
+        type: "record_attempt",
+        attemptId: "tab-a-attempt",
+        attemptedOn: "2027-08-10",
+        note: "Queued lifecycle action",
+      })
+      : row));
+    return [...current, other];
+  });
+  await lifecycleWrite;
+  const saved = loadBookingTargets();
+  assert.deepEqual(saved.map((row) => row.id), ["bbb-2027", "tab-b-target"]);
+  assert.deepEqual(saved[0].futureField, { keep: "phase-2a" });
+  assert.equal(saved[0].status, "attempted");
+  assert.equal(saved[0].attempts[0].note, "Queued lifecycle action");
+});
+
 test("queued planner writes validate storage after an explicit shared replacement releases the lock", async (t) => {
   const entries = storage(t);
   for (const raw of [{ futureShape: 2 }, [target({ desiredTripDate: "2027-02-29" })], null]) {
@@ -288,7 +314,12 @@ test("unavailable locks and failed writes preserve storage and release queued wo
 
 test("family sync preserves valid, malformed, and absent booking-target payloads exactly", (t) => {
   storage(t);
-  for (const source of [payload([target()]), payload({ futureShape: 2 }), payload()]) {
+  const lifecycleTarget = target({
+    status: "backup",
+    attempts: [{ id: "attempt-1", attemptedOn: "2027-08-10", result: "unavailable", note: "No times found", reservationId: null }],
+    fallbackChoice: { title: "Alternate meal", selectedOn: "2027-08-10", note: "Family choice" },
+  });
+  for (const source of [payload([target()]), payload([lifecycleTarget]), payload({ futureShape: 2 }), payload()]) {
     const applied = applyFamilyTripPayload(source);
     assert.deepEqual(applied.bookingTargets, Array.isArray(source.bookingTargets) ? source.bookingTargets : []);
     assert.equal(

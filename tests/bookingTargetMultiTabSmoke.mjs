@@ -126,6 +126,22 @@ async function settled(page) {
   await waitFor(page, plannerWritesSettled, "planner lock queue drained and rendering finished", LOCK);
 }
 
+export async function waitForPlannerStorageConvergence(readViews, pause = () => new Promise((resolve) => setTimeout(resolve, 50)), attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const [firstRaw, secondRaw] = await readViews();
+    if (firstRaw !== null && firstRaw === secondRaw) return JSON.parse(firstRaw);
+    await pause();
+  }
+  throw new Error("Multi-tab smoke timed out: both tabs observe the same stored planner collection");
+}
+
+async function convergedRows(first, second) {
+  return waitForPlannerStorageConvergence(() => Promise.all([
+    evaluate(first, (key) => localStorage.getItem(key), KEY),
+    evaluate(second, (key) => localStorage.getItem(key), KEY),
+  ]));
+}
+
 export async function verifyBookingTargetMultiTab(first, second) {
   await waitFor(second, () => document.readyState === "complete" && [...document.querySelectorAll(".top-park-button")].some((node) => node.textContent.includes("Booking Planner")), "second tab hydrated");
   await evaluate(second, () => [...document.querySelectorAll(".top-park-button")].find((node) => node.textContent.includes("Booking Planner")).click());
@@ -147,7 +163,10 @@ export async function verifyBookingTargetMultiTab(first, second) {
       }
       await settled(first);
       await settled(second);
-      const rows = await evaluate(first, (key) => JSON.parse(localStorage.getItem(key)), KEY);
+      // Lock completion proves both writes returned, but Chromium may deliver
+      // the final writer's storage update to the observing renderer later.
+      // Compare both renderer-local views before evaluating preservation.
+      const rows = await convergedRows(first, second);
       assert.deepEqual(rows.find((row) => row.id === initial[1].id), initial[1]);
       assert.equal(rows.filter((row) => row.title === "Cinderella's Royal Table").length, 1, op + " preserves the other tab's addition");
       const edited = rows.find((row) => row.id === initial[0].id);

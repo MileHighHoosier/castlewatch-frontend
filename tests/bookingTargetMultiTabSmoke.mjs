@@ -116,8 +116,14 @@ async function pending(page, count) {
   }, "both planner actions queued behind real browser lock", LOCK, count);
 }
 
+export async function plannerWritesSettled(lock, locks = navigator.locks, root = document) {
+  const state = await locks.query();
+  const lockQueueIdle = [...state.held, ...state.pending].every((item) => item.name !== lock);
+  return lockQueueIdle && Boolean(root.querySelector('.booking-planner[aria-busy="false"]'));
+}
+
 async function settled(page) {
-  await waitFor(page, () => Boolean(document.querySelector('.booking-planner[aria-busy="false"]')), "planner finished saving");
+  await waitFor(page, plannerWritesSettled, "planner lock queue drained and rendering finished", LOCK);
 }
 
 export async function verifyBookingTargetMultiTab(first, second) {

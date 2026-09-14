@@ -197,8 +197,8 @@ export async function updateBookingTargets(
   change: (current: BookingTarget[]) => BookingTarget[],
 ): Promise<BookingTarget[]> {
   return withBookingTargetsWriteLock(() => {
-    // Read and validate only after acquiring the cross-tab lock. Never carry a
-    // pre-lock snapshot into this critical section, and never await within it.
+    // Read and validate only after the lock helper's storage-visibility turn.
+    // Never carry a pre-lock snapshot into this critical section.
     const raw = loadRawBookingTargets();
     let current: BookingTarget[];
     if (raw === undefined) {

@@ -210,6 +210,35 @@ test("a stale planner write preserves valid targets added by another tab", async
   assert.deepEqual(loadBookingTargets(), saved);
 });
 
+test("a newly acquired lock yields for delayed cross-tab storage visibility before reading", async (t) => {
+  const entries = storage(t);
+  const initial = [target()];
+  const otherTabTarget = target({ id: "delayed-tab-target", title: "Delayed tab target" });
+  saveBookingTargets(initial);
+
+  // Model a real browser granting the lock before this renderer has observed
+  // the previous tab's localStorage update. A synchronous lock callback would
+  // read the stale collection and erase the other target.
+  window.navigator.locks = {
+    request(name, options, callback) {
+      assert.equal(name, "castlewatch.booking-targets.v1.write");
+      assert.equal(options.mode, "exclusive");
+      return callback({ name, mode: "exclusive" });
+    },
+  };
+  let mutationRan = false;
+  const queued = updateBookingTargets((current) => {
+    mutationRan = true;
+    return [...current, target({ id: "current-tab-target", title: "Current tab target" })];
+  });
+  assert.equal(mutationRan, false, "the writer must yield after lock acquisition before reading");
+
+  entries.set(BOOKING_TARGETS_STORAGE_KEY, JSON.stringify([...initial, otherTabTarget]));
+  const saved = await queued;
+  assert.deepEqual(saved.map((row) => row.id), ["bbb-2027", "delayed-tab-target", "current-tab-target"]);
+  assert.deepEqual(loadBookingTargets(), saved);
+});
+
 test("a second tab requesting a write after the first read cannot interleave its save", async (t) => {
   storage(t);
   const operations = {

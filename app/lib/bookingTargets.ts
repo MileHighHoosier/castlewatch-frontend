@@ -4,6 +4,7 @@ import { BOOKING_TARGETS_UPDATED_EVENT, withBookingTargetsWriteLock } from "./bo
 export type BookingTargetType = "dining" | "experience" | "tour" | "other";
 export type BookingTargetPriority = "must_do" | "high" | "standard" | "low";
 export type BookingTargetStatus = "planned" | "attempted" | "booked" | "unavailable" | "backup";
+export type BookingAttemptResult = "attempted" | "booked" | "unavailable";
 export type BookingRuleVerification = "verified" | "needs_verification" | "unavailable";
 
 export type BookingRuleProvenance = {
@@ -25,6 +26,22 @@ export type BookingWindowOverride = {
   note: string;
 };
 
+export type BookingAttempt = {
+  [key: string]: unknown;
+  id: string;
+  attemptedOn: string;
+  result: BookingAttemptResult;
+  note: string;
+  reservationId: string | null;
+};
+
+export type BookingFallbackChoice = {
+  [key: string]: unknown;
+  title: string;
+  selectedOn: string;
+  note: string;
+};
+
 export type BookingTarget = {
   [key: string]: unknown;
   id: string;
@@ -37,6 +54,8 @@ export type BookingTarget = {
   manualOverride: BookingWindowOverride | null;
   linkedReservationId: string | null;
   notes: string;
+  attempts?: BookingAttempt[];
+  fallbackChoice?: BookingFallbackChoice | null;
 };
 
 export type BookingWindowDateStatus = "ready" | "needs_verification" | "unavailable" | "invalid";
@@ -63,6 +82,7 @@ export const BOOKING_TARGETS_STORAGE_KEY = "castlewatch.booking-targets.v1";
 const TARGET_TYPES: BookingTargetType[] = ["dining", "experience", "tour", "other"];
 const TARGET_PRIORITIES: BookingTargetPriority[] = ["must_do", "high", "standard", "low"];
 const TARGET_STATUSES: BookingTargetStatus[] = ["planned", "attempted", "booked", "unavailable", "backup"];
+const ATTEMPT_RESULTS: BookingAttemptResult[] = ["attempted", "booked", "unavailable"];
 const RULE_VERIFICATIONS: BookingRuleVerification[] = ["verified", "needs_verification", "unavailable"];
 
 function isDateOrNull(value: unknown): value is string | null {
@@ -98,6 +118,28 @@ function isBookingWindowOverride(value: unknown): value is BookingWindowOverride
     && typeof row.note === "string";
 }
 
+function isBookingAttempt(value: unknown): value is BookingAttempt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === "string"
+    && Boolean(row.id.trim())
+    && typeof row.attemptedOn === "string"
+    && calendarDay(row.attemptedOn) !== null
+    && ATTEMPT_RESULTS.includes(row.result as BookingAttemptResult)
+    && typeof row.note === "string"
+    && (row.reservationId === null || (typeof row.reservationId === "string" && Boolean(row.reservationId.trim())));
+}
+
+function isBookingFallbackChoice(value: unknown): value is BookingFallbackChoice {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.title === "string"
+    && Boolean(row.title.trim())
+    && typeof row.selectedOn === "string"
+    && calendarDay(row.selectedOn) !== null
+    && typeof row.note === "string";
+}
+
 export function isBookingTarget(value: unknown): value is BookingTarget {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
@@ -112,7 +154,11 @@ export function isBookingTarget(value: unknown): value is BookingTarget {
     && (row.bookingRule === null || isBookingWindowRule(row.bookingRule))
     && (row.manualOverride === null || isBookingWindowOverride(row.manualOverride))
     && (row.linkedReservationId === null || typeof row.linkedReservationId === "string")
-    && typeof row.notes === "string";
+    && typeof row.notes === "string"
+    && (row.attempts === undefined || (Array.isArray(row.attempts)
+      && row.attempts.every(isBookingAttempt)
+      && new Set(row.attempts.map((attempt) => attempt.id)).size === row.attempts.length))
+    && (row.fallbackChoice === undefined || row.fallbackChoice === null || isBookingFallbackChoice(row.fallbackChoice));
 }
 
 export function validBookingTargetCollection(value: unknown): value is BookingTarget[] {

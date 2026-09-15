@@ -81,7 +81,15 @@ async function action(page, operation) {
     }
     const card = document.querySelector('[data-target-id="multi-tab-A"]');
     if (!card) throw new Error("Multi-tab target is missing");
-    const editor = card.querySelector("details");
+    if (op === "recordAttempt") {
+      const workflow = card.querySelector(".booking-lifecycle");
+      if (!workflow.open) workflow.querySelector("summary").click();
+      const button = [...workflow.querySelectorAll("button")].find((node) => node.textContent === "Record attempt");
+      if (!button) throw new Error("Missing planner lifecycle attempt action");
+      button.click();
+      return;
+    }
+    const editor = card.querySelector(".booking-target-editor");
     if (!editor.open) editor.querySelector("summary").click();
     if (op === "edit") {
       const row = [...card.querySelectorAll("label")].find((node) => node.querySelector("span")?.textContent === "Planning notes");
@@ -108,17 +116,87 @@ async function pending(page, count) {
   }, "both planner actions queued behind real browser lock", LOCK, count);
 }
 
+export async function plannerWritesSettled(lock, locks = navigator.locks, root = document) {
+  const state = await locks.query();
+  const lockQueueIdle = [...state.held, ...state.pending].every((item) => item.name !== lock);
+  return lockQueueIdle && Boolean(root.querySelector('.booking-planner[aria-busy="false"]'));
+}
+
 async function settled(page) {
-  await waitFor(page, () => Boolean(document.querySelector('.booking-planner[aria-busy="false"]')), "planner finished saving");
+  await waitFor(page, plannerWritesSettled, "planner lock queue drained and rendering finished", LOCK);
+}
+
+export async function waitForPlannerStorageConvergence(readViews, pause = () => new Promise((resolve) => setTimeout(resolve, 50)), attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const [firstRaw, secondRaw] = await readViews();
+    if (firstRaw !== null && firstRaw === secondRaw) return JSON.parse(firstRaw);
+    await pause();
+  }
+  throw new Error("Multi-tab smoke timed out: both tabs observe the same stored planner collection");
+}
+
+async function convergedRows(first, second) {
+  return waitForPlannerStorageConvergence(() => Promise.all([
+    evaluate(first, (key) => localStorage.getItem(key), KEY),
+    evaluate(second, (key) => localStorage.getItem(key), KEY),
+  ]));
+}
+
+// Synthetic test fixtures only. Keep per-renderer reads and writes so a failed
+// preservation assertion can distinguish stale writer input from observation.
+async function tracePlannerStorage(page) {
+  await evaluate(page, (key, lockName) => {
+    const trace = window.__cwPlannerTrace = [];
+    const record = (event, value) => trace.push({ at: performance.timeOrigin + performance.now(), event, value });
+    const getItem = Storage.prototype.getItem;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (name) {
+      const value = getItem.call(this, name);
+      if (this === localStorage && name === key) record("read", value);
+      return value;
+    };
+    Storage.prototype.setItem = function (name, value) {
+      if (this === localStorage && name === key) record("write", value);
+      return setItem.call(this, name, value);
+    };
+    addEventListener("storage", (event) => {
+      if (event.key === key) record("storage-event", event.newValue);
+    });
+    const request = navigator.locks.request.bind(navigator.locks);
+    navigator.locks.request = (name, options, callback) => {
+      if (name !== lockName) return request(name, options, callback);
+      record("requested");
+      return request(name, options, (lock) => {
+        record("acquired");
+        const value = callback(lock);
+        if (value?.then) return value.finally(() => record("callback-returned"));
+        record("callback-returned");
+        return value;
+      });
+    };
+  }, KEY, LOCK);
 }
 
 export async function verifyBookingTargetMultiTab(first, second) {
+  await tracePlannerStorage(first);
+  await tracePlannerStorage(second);
+  try {
+    await verifyPairs(first, second);
+  } catch (error) {
+    for (const [index, page] of [first, second].entries()) {
+      console.error("Planner failure trace, renderer " + index, JSON.stringify(await evaluate(page, () => window.__cwPlannerTrace)));
+    }
+    throw error;
+  }
+}
+
+async function verifyPairs(first, second) {
   await waitFor(second, () => document.readyState === "complete" && [...document.querySelectorAll(".top-park-button")].some((node) => node.textContent.includes("Booking Planner")), "second tab hydrated");
   await evaluate(second, () => [...document.querySelectorAll(".top-park-button")].find((node) => node.textContent.includes("Booking Planner")).click());
   await waitFor(second, () => Boolean(document.querySelector(".booking-planner")), "second planner rendered");
   await settled(first);
 
-  for (const op of ["add", "edit", "clearRule", "clearOverrides", "remove"]) {
+  for (const op of ["add", "edit", "clearRule", "clearOverrides", "recordAttempt", "remove"]) {
     for (const reverse of [false, true]) {
       await seed(first, second);
       await hold(first);
@@ -133,7 +211,10 @@ export async function verifyBookingTargetMultiTab(first, second) {
       }
       await settled(first);
       await settled(second);
-      const rows = await evaluate(first, (key) => JSON.parse(localStorage.getItem(key)), KEY);
+      // Lock completion proves both writes returned, but Chromium may deliver
+      // the final writer's storage update to the observing renderer later.
+      // Compare both renderer-local views before evaluating preservation.
+      const rows = await convergedRows(first, second);
       assert.deepEqual(rows.find((row) => row.id === initial[1].id), initial[1]);
       assert.equal(rows.filter((row) => row.title === "Cinderella's Royal Table").length, 1, op + " preserves the other tab's addition");
       const edited = rows.find((row) => row.id === initial[0].id);
@@ -143,6 +224,11 @@ export async function verifyBookingTargetMultiTab(first, second) {
         if (op === "edit") assert.equal(edited.notes, "Captured queued edit");
         if (op === "clearRule") assert.equal(edited.bookingRule, null);
         if (op === "clearOverrides") assert.equal(edited.manualOverride, null);
+        if (op === "recordAttempt") {
+          assert.equal(edited.status, "attempted");
+          assert.equal(edited.attempts.length, 1);
+          assert.equal(edited.attempts[0].result, "attempted");
+        }
       }
       if (op === "add") assert.equal(rows.filter((row) => row.title === "New booking target").length, 1);
       for (const page of [first, second]) {
@@ -180,5 +266,5 @@ export async function verifyBookingTargetMultiTab(first, second) {
       await waitFor(page, () => Boolean(document.querySelector(".booking-planner")), "remount planner");
     }
   }
-  console.log("CastleWatch rendered multi-tab planner smoke passed: 10 ordered action pairs; 3 malformed/future-storage interleavings");
+  console.log("CastleWatch rendered multi-tab planner smoke passed: 12 ordered action pairs; 3 malformed/future-storage interleavings");
 }

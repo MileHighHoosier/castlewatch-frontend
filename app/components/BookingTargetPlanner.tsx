@@ -13,10 +13,21 @@ import {
   updateBookingTargets,
   validBookingTargetCollection,
 } from "../lib/bookingTargets";
+import {
+  BookingLifecycleAction,
+  applyBookingLifecycleAction,
+  summarizeBookingLifecycle,
+} from "../lib/bookingTargetLifecycle";
 import { buildBookingTimeline } from "../lib/bookingTargetTimeline";
 import { subscribeDecisionClock } from "../lib/decisionClock";
 import { tripDateKey } from "../lib/tripDate";
 import { BOOKING_TARGETS_UPDATED_EVENT } from "../lib/bookingTargetWriteLock";
+import {
+  RESERVATION_STORAGE_KEY,
+  TripReservation,
+  loadRawReservations,
+  validReservationCollection,
+} from "../lib/tripProfile";
 
 const TARGET_TEMPLATES: Array<{ title: string; targetType: BookingTargetType }> = [
   { title: "Bibbidi Bobbidi Boutique", targetType: "experience" },
@@ -39,6 +50,30 @@ const VERIFICATION_LABELS: Record<BookingRuleVerification, string> = {
   unavailable: "Unavailable",
 };
 
+const STATUS_LABELS: Record<BookingTarget["status"], string> = {
+  planned: "Planned",
+  attempted: "Attempted",
+  booked: "Booked",
+  unavailable: "Unavailable",
+  backup: "Backup selected",
+};
+
+type LifecycleDraft = {
+  actionDate: string;
+  attemptNote: string;
+  fallbackTitle: string;
+  fallbackNote: string;
+  reservationId: string;
+};
+
+const EMPTY_LIFECYCLE_DRAFT: LifecycleDraft = {
+  actionDate: "",
+  attemptNote: "",
+  fallbackTitle: "",
+  fallbackNote: "",
+  reservationId: "",
+};
+
 function newId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -57,6 +92,8 @@ function newTarget(title: string, targetType: BookingTargetType): BookingTarget 
     manualOverride: null,
     linkedReservationId: null,
     notes: "",
+    attempts: [],
+    fallbackChoice: null,
   };
 }
 
@@ -95,6 +132,9 @@ export default function BookingTargetPlanner() {
   const [targets, setTargets] = useState<BookingTarget[]>([]);
   const [todayDate, setTodayDate] = useState("");
   const [storageError, setStorageError] = useState("");
+  const [reservations, setReservations] = useState<TripReservation[]>([]);
+  const [reservationError, setReservationError] = useState("");
+  const [lifecycleDrafts, setLifecycleDrafts] = useState<Record<string, LifecycleDraft>>({});
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const pendingWrites = useRef(0);
@@ -115,35 +155,52 @@ export default function BookingTargetPlanner() {
     setStorageError("");
   }, []);
 
+  const refreshReservations = useCallback(() => {
+    const raw = loadRawReservations();
+    if (!validReservationCollection(raw)) {
+      setReservations([]);
+      setReservationError("Stored reservations are malformed or unsupported. Booking links are paused so the reservation data stays unchanged.");
+      return;
+    }
+    setReservations(raw);
+    setReservationError("");
+  }, []);
+
   useEffect(() => {
     mounted.current = true;
     refreshTargets();
+    refreshReservations();
     const onStorage = (event: StorageEvent) => {
       if (event.key === BOOKING_TARGETS_STORAGE_KEY || event.key === null) refreshTargets();
+      if (event.key === RESERVATION_STORAGE_KEY || event.key === null) refreshReservations();
+    };
+    const onFocus = () => {
+      refreshTargets();
+      refreshReservations();
     };
     window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", refreshTargets);
+    window.addEventListener("focus", onFocus);
     window.addEventListener(BOOKING_TARGETS_UPDATED_EVENT, refreshTargets);
     const stopClock = subscribeDecisionClock((nowIso) => setTodayDate(tripDateKey(nowIso) || ""), window);
     return () => {
       mounted.current = false;
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", refreshTargets);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener(BOOKING_TARGETS_UPDATED_EVENT, refreshTargets);
       stopClock();
     };
-  }, [refreshTargets]);
+  }, [refreshReservations, refreshTargets]);
 
   const timeline = useMemo(() => buildBookingTimeline(targets, todayDate), [targets, todayDate]);
 
-  async function commit(change: (current: BookingTarget[]) => BookingTarget[]) {
+  async function commit(change: (current: BookingTarget[]) => BookingTarget[], optimistic = true) {
     if (storageError) return;
     pendingWrites.current += 1;
     setSaving(true);
     setSaveError("");
     // Keep typing responsive while persistence waits. This is only a UI draft;
     // the write callback is separately applied to storage under the lock.
-    setTargets(change);
+    if (optimistic) setTargets(change);
     try {
       await updateBookingTargets(change);
     } catch (error) {
@@ -177,6 +234,35 @@ export default function BookingTargetPlanner() {
     });
   }
 
+  function lifecycleDraft(id: string) {
+    return lifecycleDrafts[id] || EMPTY_LIFECYCLE_DRAFT;
+  }
+
+  function updateLifecycleDraft(id: string, patch: Partial<LifecycleDraft>) {
+    setLifecycleDrafts((current) => ({
+      ...current,
+      [id]: { ...EMPTY_LIFECYCLE_DRAFT, ...current[id], ...patch },
+    }));
+  }
+
+  function lifecycleAction(id: string, action: BookingLifecycleAction) {
+    void commit((current) => {
+      const target = current.find((row) => row.id === id);
+      if (!target) throw new Error("That booking target no longer exists. No lifecycle change was saved.");
+
+      let currentReservations = reservations;
+      if (action.type === "link_booked") {
+        const rawReservations = loadRawReservations();
+        if (!validReservationCollection(rawReservations)) {
+          throw new Error("Stored reservations changed to an unsupported shape. No booking link was saved.");
+        }
+        currentReservations = rawReservations;
+      }
+      const next = applyBookingLifecycleAction(target, action, currentReservations);
+      return current.map((row) => row.id === id ? next : row);
+    }, false);
+  }
+
   return (
     <section className="card booking-planner" aria-busy={saving}>
       <header className="booking-planner-header">
@@ -192,7 +278,13 @@ export default function BookingTargetPlanner() {
         <span>CastleWatch does not assume an official booking policy. Add the source, as-of date and offsets you have verified, or enter a clearly labeled family override.</span>
       </aside>
 
+      <aside className="booking-planner-impact">
+        <strong>Lifecycle changes stay in the planner</strong>
+        <span>Recording an attempt, an unavailable result or a backup choice does not claim live availability and does not change reservations or Trip Week. Linking a booked target only points to a reservation you already created deliberately; that reservation remains the source for timing, transportation, conflicts and Trip Week effects.</span>
+      </aside>
+
       {storageError && <p className="booking-planner-error" role="alert">{storageError}</p>}
+      {reservationError && <p className="booking-planner-error" role="alert">{reservationError}</p>}
       {saveError && <p className="booking-planner-error" role="alert">{saveError}</p>}
       {saving && <p className="muted" role="status">Saving planning changes…</p>}
 
@@ -213,6 +305,10 @@ export default function BookingTargetPlanner() {
         {timeline.map(({ target, window, readiness }) => {
           const rule = target.bookingRule;
           const sourceUrl = safeSourceUrl(rule?.provenance.sourceUrl || null);
+          const draft = lifecycleDraft(target.id);
+          const actionDate = draft.actionDate || todayDate;
+          const lifecycle = summarizeBookingLifecycle(target, reservations);
+          const attempts = target.attempts || [];
           return (
             <article className={`booking-target-card booking-target-${readiness.tone}`} key={target.id} data-target-id={target.id}>
               <div className="booking-target-top">
@@ -242,8 +338,58 @@ export default function BookingTargetPlanner() {
                 <span>{rule ? VERIFICATION_LABELS[rule.verification] : "No rule entered"}</span>
                 <span>{rule?.provenance.source ? <>Source: {sourceUrl ? <a href={sourceUrl} rel="noreferrer" target="_blank">{rule.provenance.source}</a> : rule.provenance.source}</> : "Source needed"}</span>
                 <span>As of: {rule?.provenance.asOfDate || "not entered"}</span>
-                <span>Target state: {target.status}</span>
+                <span>Target state: {STATUS_LABELS[target.status]}</span>
               </div>
+
+              <details className="booking-lifecycle">
+                <summary>Attempt &amp; contingency workflow</summary>
+                <p className="booking-lifecycle-boundary">Every action below updates this booking target only. It never creates, confirms, edits or deletes a reservation and never changes the itinerary.</p>
+                {lifecycle.warning && <p className="booking-lifecycle-warning" role="alert">{lifecycle.warning}</p>}
+                {lifecycle.linkedReservationTitle && (
+                  <p className="booking-lifecycle-linked"><strong>Linked reservation:</strong> {lifecycle.linkedReservationTitle}</p>
+                )}
+                {target.fallbackChoice && (
+                  <p className="booking-lifecycle-fallback"><strong>Selected backup:</strong> {target.fallbackChoice.title} · {target.fallbackChoice.selectedOn}{target.fallbackChoice.note ? ` · ${target.fallbackChoice.note}` : ""}</p>
+                )}
+                {attempts.length > 0 && (
+                  <ol className="booking-attempt-list" aria-label="Recorded attempts">
+                    {attempts.map((attempt) => (
+                      <li key={attempt.id}><strong>{STATUS_LABELS[attempt.result]}</strong> · {attempt.attemptedOn}{attempt.note ? ` · ${attempt.note}` : ""}</li>
+                    ))}
+                  </ol>
+                )}
+
+                <div className="booking-lifecycle-form">
+                  <label><span>Action date</span><input type="date" value={actionDate} onChange={inputValue((value) => updateLifecycleDraft(target.id, { actionDate: value }))} /></label>
+                  <label><span>Attempt/result note</span><input placeholder="What happened?" value={draft.attemptNote} onChange={inputValue((value) => updateLifecycleDraft(target.id, { attemptNote: value }))} /></label>
+                  <div className="booking-lifecycle-actions booking-target-wide">
+                    <button type="button" disabled={Boolean(target.linkedReservationId)} onClick={() => lifecycleAction(target.id, { type: "record_attempt", attemptId: newId(), attemptedOn: actionDate, note: draft.attemptNote })}>Record attempt</button>
+                    <button type="button" disabled={Boolean(target.linkedReservationId)} onClick={() => lifecycleAction(target.id, { type: "mark_unavailable", attemptId: newId(), attemptedOn: actionDate, note: draft.attemptNote })}>Record unavailable result</button>
+                    {target.status !== "planned" && !target.linkedReservationId && <button type="button" onClick={() => lifecycleAction(target.id, { type: "return_to_planned" })}>Return to planned</button>}
+                  </div>
+
+                  <label><span>Backup choice</span><input placeholder="Family-selected alternative" value={draft.fallbackTitle} onChange={inputValue((value) => updateLifecycleDraft(target.id, { fallbackTitle: value }))} /></label>
+                  <label><span>Backup note</span><input placeholder="Why this fallback?" value={draft.fallbackNote} onChange={inputValue((value) => updateLifecycleDraft(target.id, { fallbackNote: value }))} /></label>
+                  <div className="booking-lifecycle-actions booking-target-wide">
+                    <button type="button" disabled={Boolean(target.linkedReservationId)} onClick={() => lifecycleAction(target.id, { type: "choose_backup", selectedOn: actionDate, title: draft.fallbackTitle, note: draft.fallbackNote })}>Select this backup</button>
+                  </div>
+
+                  <label className="booking-target-wide"><span>Existing reservation to link</span>
+                    <select value={draft.reservationId} disabled={Boolean(reservationError) || Boolean(target.linkedReservationId)} onChange={inputValue((value) => updateLifecycleDraft(target.id, { reservationId: value }))}>
+                      <option value="">Select an existing reservation</option>
+                      {reservations.map((reservation) => <option key={reservation.id} value={reservation.id}>{reservation.title} · {reservation.date} · {reservation.status}</option>)}
+                    </select>
+                  </label>
+                  <p className="booking-lifecycle-reservation-help booking-target-wide">Create or edit reservations deliberately in Trip Week. The planner only links to an existing record and does not change its details or confirmation state.</p>
+                  <div className="booking-lifecycle-actions booking-target-wide">
+                    {target.linkedReservationId ? (
+                      <button type="button" onClick={() => lifecycleAction(target.id, { type: "unlink_booking" })}>Unlink booking and return to attempted</button>
+                    ) : (
+                      <button type="button" disabled={Boolean(reservationError)} onClick={() => lifecycleAction(target.id, { type: "link_booked", attemptId: newId(), attemptedOn: actionDate, note: draft.attemptNote, reservationId: draft.reservationId })}>Link reservation &amp; mark booked</button>
+                    )}
+                  </div>
+                </div>
+              </details>
 
               <details className="booking-target-editor">
                 <summary>Edit planning details</summary>

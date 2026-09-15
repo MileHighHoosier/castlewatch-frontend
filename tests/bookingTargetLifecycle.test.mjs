@@ -109,6 +109,33 @@ test("backup selection is explicit, dated, and does not invent availability", ()
   assert.equal(backup.linkedReservationId, null);
 });
 
+test("backup reselection updates known values and preserves unknown fallback fields", () => {
+  const existing = target({
+    status: "backup",
+    fallbackChoice: {
+      title: "Original family backup",
+      selectedOn: "2027-08-10",
+      note: "Original note",
+      futureMetadata: { keep: true },
+    },
+  });
+
+  const updated = applyBookingLifecycleAction(existing, {
+    type: "choose_backup",
+    selectedOn: "2027-08-11",
+    title: "  Updated family backup  ",
+    note: "  Updated note  ",
+  });
+
+  assert.deepEqual(updated.fallbackChoice, {
+    title: "Updated family backup",
+    selectedOn: "2027-08-11",
+    note: "Updated note",
+    futureMetadata: { keep: true },
+  });
+  assert.deepEqual(existing.fallbackChoice.futureMetadata, { keep: true });
+});
+
 test("booked state requires a deliberate link to an existing reservation", () => {
   const action = {
     type: "link_booked",

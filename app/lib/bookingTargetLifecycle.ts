@@ -69,6 +69,7 @@ export function applyBookingLifecycleAction(
 
   if (action.type === "choose_backup") {
     const fallbackChoice: BookingFallbackChoice = {
+      ...(value.fallbackChoice || {}),
       title: requiredText(action.title, "Backup choice"),
       selectedOn: requiredDate(action.selectedOn, "Backup selection date"),
       note: action.note.trim(),

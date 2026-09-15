@@ -142,7 +142,55 @@ async function convergedRows(first, second) {
   ]));
 }
 
+// Synthetic test fixtures only. Keep per-renderer reads and writes so a failed
+// preservation assertion can distinguish stale writer input from observation.
+async function tracePlannerStorage(page) {
+  await evaluate(page, (key, lockName) => {
+    const trace = window.__cwPlannerTrace = [];
+    const record = (event, value) => trace.push({ at: performance.timeOrigin + performance.now(), event, value });
+    const getItem = Storage.prototype.getItem;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (name) {
+      const value = getItem.call(this, name);
+      if (this === localStorage && name === key) record("read", value);
+      return value;
+    };
+    Storage.prototype.setItem = function (name, value) {
+      if (this === localStorage && name === key) record("write", value);
+      return setItem.call(this, name, value);
+    };
+    addEventListener("storage", (event) => {
+      if (event.key === key) record("storage-event", event.newValue);
+    });
+    const request = navigator.locks.request.bind(navigator.locks);
+    navigator.locks.request = (name, options, callback) => {
+      if (name !== lockName) return request(name, options, callback);
+      record("requested");
+      return request(name, options, (lock) => {
+        record("acquired");
+        const value = callback(lock);
+        if (value?.then) return value.finally(() => record("callback-returned"));
+        record("callback-returned");
+        return value;
+      });
+    };
+  }, KEY, LOCK);
+}
+
 export async function verifyBookingTargetMultiTab(first, second) {
+  await tracePlannerStorage(first);
+  await tracePlannerStorage(second);
+  try {
+    await verifyPairs(first, second);
+  } catch (error) {
+    for (const [index, page] of [first, second].entries()) {
+      console.error("Planner failure trace, renderer " + index, JSON.stringify(await evaluate(page, () => window.__cwPlannerTrace)));
+    }
+    throw error;
+  }
+}
+
+async function verifyPairs(first, second) {
   await waitFor(second, () => document.readyState === "complete" && [...document.querySelectorAll(".top-park-button")].some((node) => node.textContent.includes("Booking Planner")), "second tab hydrated");
   await evaluate(second, () => [...document.querySelectorAll(".top-park-button")].find((node) => node.textContent.includes("Booking Planner")).click());
   await waitFor(second, () => Boolean(document.querySelector(".booking-planner")), "second planner rendered");
